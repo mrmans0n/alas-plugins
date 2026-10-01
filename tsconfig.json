@@ -3,7 +3,7 @@
   // ECMAScript built-ins and `alas`, so `console`, `setTimeout` or `process` fail here.
   "compilerOptions": {
     "target": "es2022",
-    "lib": ["es2022"],
+    "lib": ["es2023"],
     "types": [],
     "module": "preserve",
     "moduleResolution": "bundler",

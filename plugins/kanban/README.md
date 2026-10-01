@@ -3,16 +3,16 @@
 A small ticket tracker for a project whose tickets start agents. Starting a
 ticket creates a worktree and starts an agent with the ticket's title and
 description; the ticket then follows its session, and the agent's final reply
-is added to it as a comment. It uses plugin API 3 (view tabs, `task/start`,
+is added to it as a comment. It uses plugin API 4 (view tabs, `task/start`,
 `session/last_message`, `agent/list` and storage) and is the reference plugin
-for that API.
+for view tabs. It is written in TypeScript on `@alas/plugin`.
 
 ## Build and install
 
 From the repository root:
 
 ```bash
-rustup target add wasm32-unknown-unknown
+npm install
 plugins/kanban/build.sh
 ```
 
@@ -98,11 +98,11 @@ screen opens or an agent comment arrives.
 | Comment | 2,000 characters; a longer agent reply is cut |
 | Labels | 8 of 32 characters |
 
-Alas gives every plugin call a fixed fuel budget, and parsing, saving and
-drawing tickets costs fuel per ticket and per byte. The index cap keeps the
-costliest board call under half the budget, and the comment caps do the same
-for opening a full ticket or adding a comment to it. Archived tickets leave the index
-and their bodies are deleted. When the tracker is full, a new ticket is
+Alas gives every plugin call 250 ms, and the board is redrawn as one view tree
+after every change. The index cap keeps that tree well inside the host's 2,000
+nodes, and the costliest call at the caps (loading a full board of long
+titles) takes a few milliseconds in JavaScriptCore. Archived tickets leave the
+index and their bodies are deleted. When the tracker is full, a new ticket is
 refused until you delete some.
 
 ## Known limits
@@ -110,8 +110,5 @@ refused until you delete some.
 - If Alas quits while a ticket is starting, the ticket is not linked to the
   worktree and agent that were created: after a relaunch it moves to In review,
   and **Start again** makes a second worktree.
-- Text dense with quotes, backslashes or line breaks costs more fuel to read.
-  A full ticket of such text stays within a plugin call's budget but uses more
-  than half of it.
 - All of a project's tickets share the plugin's 1 MB of storage. When it is
   full, saving shows an error.
