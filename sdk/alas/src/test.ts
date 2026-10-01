@@ -88,8 +88,21 @@ export const testHost = {
     testHost.dispatch({ jsonrpc: "2.0", id, error: { code, message } });
   },
 
-  /** Secrets the user has set. An `http/fetch` naming any other is refused with -32602, as in Alas. */
+  /**
+   * Secrets the user has set: `settings` payloads list them in `secretsSet`, and an `http/fetch`
+   * naming any other is refused with -32602, as in Alas.
+   */
   secrets,
+
+  /** Answers a `settings/get` request `id` with `values` and the set `secrets`. */
+  replySettings(id: number, values: Record<string, string | boolean>): void {
+    testHost.reply(id, { values, secretsSet: [...secrets] });
+  },
+
+  /** Delivers `settings/changed` with `values` and the set `secrets`. */
+  changeSettings(values: Record<string, string | boolean>): void {
+    testHost.notify("settings/changed", { values, secretsSet: [...secrets] });
+  },
 
   /** Every message sent since the last call, parsed. */
   takeSent(): any[] {

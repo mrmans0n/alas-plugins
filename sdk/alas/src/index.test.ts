@@ -65,7 +65,7 @@ test("notifications decode into events", () => {
     ["command/run", { command: "fix", target: { kind: "project" } }],
     ["session/state", { session: "s", worktree: "w", state: "running" }],
     ["session/finished", { session: "s", worktree: "w" }],
-    ["settings/changed", { values: { team: "ENG", on: true, junk: 3 } }],
+    ["settings/changed", { values: { team: "ENG", on: true, junk: 3 }, secretsSet: ["token", 4] }],
     ["timer/fired", { id: "refresh" }],
     ["view/event", { panel: "issues", id: "b", kind: "click" }],
     ["panel/visible", { panel: "issues", visible: true }],
@@ -84,7 +84,7 @@ test("notifications decode into events", () => {
     { type: "command", command: "fix", target: { kind: "project" } },
     { type: "sessionState", session: "s", worktree: "w", state: "running" },
     { type: "sessionFinished", session: "s", worktree: "w" },
-    { type: "settings", values: { team: "ENG", on: true }, changed: true },
+    { type: "settings", values: { team: "ENG", on: true }, secretsSet: ["token"], changed: true },
     { type: "timer", id: "refresh" },
     { type: "panelEvent", panel: "issues", id: "b", kind: "click", value: undefined },
     { type: "panelVisible", panel: "issues", visible: true },
@@ -114,9 +114,14 @@ test("snapshot and storage replies arrive as their own events, other replies sta
 
 test("settings and fetch replies are decoded, and an unset secret is refused without a request", () => {
   const events = recorder();
-  const settings = getSettings();
-  testHost.reply(settings, { values: { team: "" } });
-  assert.deepEqual(events, [{ type: "settings", values: { team: "" }, changed: false }]);
+  testHost.reply(getSettings(), { values: { team: "" } });
+  testHost.secrets.add("token");
+  testHost.replySettings(getSettings(), { team: "x" });
+  testHost.secrets.delete("token");
+  assert.deepEqual(events, [
+    { type: "settings", values: { team: "" }, secretsSet: [], changed: false },
+    { type: "settings", values: { team: "x" }, secretsSet: ["token"], changed: false },
+  ]);
 
   const results: unknown[] = [];
   testHost.secrets.add("token");

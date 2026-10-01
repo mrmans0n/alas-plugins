@@ -41,7 +41,7 @@ function activate(settings: object = {}, sessions: unknown = null, key = true) {
   const sent = testHost.takeSent();
   assert.deepEqual(sentOne(sent, "timer/set").params, { id: "refresh", seconds: 300, repeat: true });
   testHost.reply(sentOne(sent, "storage/get").id, { value: sessions });
-  testHost.reply(sentOne(sent, "settings/get").id, { values: { teamKey: "", commentOnFinish: true, ...settings } });
+  testHost.replySettings(sentOne(sent, "settings/get").id, { teamKey: "", commentOnFinish: true, ...settings });
   return { bridge, sent: testHost.takeSent() };
 }
 
@@ -114,27 +114,37 @@ test("a remembered session that finishes posts the agent's last message as a com
   assert.deepEqual(sentOne(testHost.takeSent(), "notify").params, { title: "Commented on ENG-1" });
 
   // With commentOnFinish off nothing is asked.
-  testHost.notify("settings/changed", { values: { teamKey: "", commentOnFinish: false } });
+  testHost.changeSettings({ teamKey: "", commentOnFinish: false });
   testHost.takeSent();
   testHost.notify("session/finished", { session: "s1", worktree: "w" });
   assert.deepEqual(testHost.takeSent().filter((m) => m.method === "session/last_message"), []);
 });
 
+test("without an API key the panel asks for one and nothing is fetched until it is set", () => {
+  const { sent } = activate({}, { s1: { issueId: "issue-1", identifier: "ENG-1", branch: "eng-1" } }, false);
+  assert.ok(lastPanel(sent).includes(JSON.stringify(MISSING_KEY)));
+  testHost.notify("timer/fired", { id: "refresh" });
+  testHost.notify("session/finished", { session: "s1", worktree: "w" });
+  const idle = testHost.takeSent().map((m) => m.method);
+  assert.ok(!idle.includes("http/fetch") && !idle.includes("session/last_message"), JSON.stringify(idle));
+
+  testHost.secrets.add("apiKey");
+  testHost.changeSettings({ teamKey: "", commentOnFinish: true });
+  sentOne(testHost.takeSent(), "http/fetch");
+});
+
 for (const [name, answer, expected] of [
-  ["without an API key the panel asks for one", undefined, MISSING_KEY],
+  ["a fetch refused for its params is taken as a cleared key", { error: "secret apiKey is not set", code: -32602 }, MISSING_KEY],
   ["a refused key shows Linear's status and message", { result: linear({ errors: [{ message: "Authentication required" }] }, 401) }, "Linear answered 401: Authentication required"],
-  ["a network failure shows its reason", { error: "request failed: offline" }, "Linear request failed: request failed: offline"],
+  ["a network failure shows its reason", { error: "request failed: offline", code: -32003 }, "Linear request failed: request failed: offline"],
   ["a non-JSON body shows its status", { result: { status: 502, headers: {}, body: "Bad gateway" } }, "Linear answered 502: Bad gateway"],
 ] as const) {
   test(name, () => {
-    const { sent } = activate({}, null, answer !== undefined);
-    if (answer) {
-      const id = sentOne(sent, "http/fetch").id;
-      if ("error" in answer) testHost.replyError(id, -32003, answer.error);
-      else testHost.reply(id, answer.result);
-    }
-    // Without a key Alas refuses the request itself, and the refusal already came back.
-    const panel = lastPanel(answer ? testHost.takeSent() : sent);
+    const { sent } = activate();
+    const id = sentOne(sent, "http/fetch").id;
+    if ("error" in answer) testHost.replyError(id, answer.code, answer.error);
+    else testHost.reply(id, answer.result);
+    const panel = lastPanel(testHost.takeSent());
     assert.ok(panel.includes(JSON.stringify(expected)), panel);
   });
 }

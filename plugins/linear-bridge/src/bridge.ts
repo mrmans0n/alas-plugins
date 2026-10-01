@@ -59,6 +59,8 @@ export class LinearBridge implements Plugin {
   sessions: Record<string, Started> = {};
   teamKey = "";
   commentOnFinish = true;
+  /** From `secretsSet`: without the key no request is attempted. */
+  apiKeySet = false;
   private loading = false;
   private reloadAfter = false;
   private starting = false;
@@ -73,6 +75,7 @@ export class LinearBridge implements Plugin {
       case "settings":
         this.teamKey = typeof event.values.teamKey === "string" ? event.values.teamKey.trim() : "";
         this.commentOnFinish = event.values.commentOnFinish !== false;
+        this.apiKeySet = event.secretsSet.includes("apiKey");
         return this.refresh();
       case "stored":
         // Sessions started before the stored ones arrived win.
@@ -100,6 +103,11 @@ export class LinearBridge implements Plugin {
   }
 
   refresh(): void {
+    if (!this.apiKeySet) {
+      this.message = MISSING_KEY;
+      this.issues = [];
+      return this.render();
+    }
     if (this.loading) {
       this.reloadAfter = true;
       return;
@@ -149,7 +157,7 @@ export class LinearBridge implements Plugin {
 
   private finished(sessionId: string): void {
     const started = this.sessions[sessionId];
-    if (!started || !this.commentOnFinish) return;
+    if (!started || !this.commentOnFinish || !this.apiKeySet) return;
     lastMessage(sessionId, ({ result }) => {
       const text = parseLastMessage(result)?.trim();
       if (!text) return;
@@ -179,8 +187,9 @@ export class LinearBridge implements Plugin {
 function graphql(query: string, variables: object, done: (data: any, error?: string) => void): void {
   fetch({ method: "POST", url: ENDPOINT, headers: HEADERS, body: JSON.stringify({ query, variables }) }, (result: FetchResult) => {
     if (result.error) {
-      const missing = result.error.code === -32602 && /secret apiKey is not set/.test(result.error.message);
-      return done(undefined, missing ? MISSING_KEY : cut(`Linear request failed: ${result.error.message}`, 500));
+      // The only invalid params a fixed request can have is an unset secret: the key was cleared meanwhile.
+      if (result.error.code === -32602) return done(undefined, MISSING_KEY);
+      return done(undefined, cut(`Linear request failed: ${result.error.message}`, 500));
     }
     const { status, body } = result.response;
     let json: any;

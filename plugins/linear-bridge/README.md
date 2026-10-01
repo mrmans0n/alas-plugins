@@ -36,8 +36,9 @@ Changing a setting reloads the list.
 - **The list** shows up to 50 issues: identifier, title, state and a **Start**
   button. It reloads when the panel is shown, every 5 minutes, on
   **Refresh Linear issues** (the repo selector and **View → Plugins**), and
-  when a setting changes. Without a key, or when Linear answers with an error,
-  the panel says why (the status code and Linear's message) instead of a list.
+  when a setting changes. Without a key (Alas tells the plugin whether one is
+  set, never its value) nothing is requested and the panel asks for one; when
+  Linear answers with an error, the panel shows the status code and Linear's message.
 - **Start** starts an agent in a new worktree on branch `<identifier>` in lower
   case (`eng-123`), titled `<IDENTIFIER> <title>`, with the issue's title, URL and
   description as the prompt (cut to Alas's 32 KiB prompt limit). It comments

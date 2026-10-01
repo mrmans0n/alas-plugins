@@ -118,8 +118,11 @@ export type Event =
   | { type: "sessionState"; session: string; worktree: string; state: string }
   /** API 5, event `session.finished`: a session went from `running` to `idle`. */
   | { type: "sessionFinished"; session: string; worktree: string }
-  /** API 5: the reply to `getSettings`, or `changed` when the user edited a setting (a secret included). */
-  | { type: "settings"; values: SettingValues; changed: boolean }
+  /**
+   * API 5: the reply to `getSettings`, or `changed` when the user edited a setting (a secret included).
+   * `secretsSet` lists the secret settings that hold a value; their values never reach the plugin.
+   */
+  | { type: "settings"; values: SettingValues; secretsSet: string[]; changed: boolean }
   /** API 5: a timer set with `setTimer` is due. */
   | { type: "timer"; id: string }
   /** API 5: a control in a panel was used; see `viewEvent`. */
@@ -324,6 +327,11 @@ function settingValues(payload: unknown): SettingValues | undefined {
   return out;
 }
 
+function secretsSet(payload: unknown): string[] {
+  const keys = isObject(payload) ? payload.secretsSet : undefined;
+  return Array.isArray(keys) ? keys.filter((k: unknown): k is string => typeof k === "string") : [];
+}
+
 function snapshotOf(payload: unknown): Snapshot | undefined {
   const snapshot = isObject(payload) ? payload.snapshot : undefined;
   return isObject(snapshot) && Array.isArray(snapshot.worktrees) ? (snapshot as Snapshot) : undefined;
@@ -385,7 +393,7 @@ export function dispatch(plugin: Plugin, json: string): void {
       return plugin.handle({ type: "sessionFinished", session: params.session, worktree: params.worktree });
     case "settings/changed": {
       const values = settingValues(params);
-      return values && plugin.handle({ type: "settings", values, changed: true });
+      return values && plugin.handle({ type: "settings", values, secretsSet: secretsSet(params), changed: true });
     }
     case "timer/fired":
       return typeof params?.id === "string" ? plugin.handle({ type: "timer", id: params.id }) : undefined;
@@ -423,7 +431,7 @@ export function dispatch(plugin: Plugin, json: string): void {
   }
   if (kind === "settings") {
     const values = settingValues(message.result);
-    return values && plugin.handle({ type: "settings", values, changed: false });
+    return values && plugin.handle({ type: "settings", values, secretsSet: secretsSet(message.result), changed: false });
   }
   plugin.handle({ type: "reply", id, result: message.result ?? null });
 }

@@ -22,7 +22,7 @@ const issues = linear({ viewer: { assignedIssues: { nodes } } });
 
 reply("$storage/get", { value: null });
 reply("$timer/set", {});
-reply("$settings/get", { values: { teamKey: "", commentOnFinish: true } });
+reply("$settings/get", { values: { teamKey: "", commentOnFinish: true }, secretsSet: ["apiKey"] });
 reply("$http/fetch", issues);
 for (let i = 0; i < 10; i++) {
   out({ method: i % 2 ? "timer/fired" : "panel/visible", params: i % 2 ? { id: "refresh" } : { panel: "issues", visible: true } });

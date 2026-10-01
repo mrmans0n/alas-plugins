@@ -74,7 +74,8 @@ const sent = testHost.takeSent(); // parsed messages
 const frames = testHost.takeFrames(); // { tab, width, pixels }
 testHost.reply(sent[0].id, { status: 200, headers: {}, body: "{}" }); // answer a request
 testHost.notify("timer/fired", { id: "refresh" }); // or settings/changed, panel/visible, ...
-testHost.secrets.add("apiKey"); // http/fetch naming an unset secret is refused, as in Alas
+testHost.secrets.add("apiKey"); // listed in secretsSet; a fetch naming an unset one is refused
+testHost.changeSettings({ team: "ENG" }); // settings/changed with secretsSet filled in
 ```
 
 Node is faster than Alas and has more globals, so on a Mac check a built plugin in
