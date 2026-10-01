@@ -40,6 +40,12 @@ import * as view from "./view.ts";
 export const TRACKER_FULL = "The tracker is full: delete some tickets first.";
 export const SAVE_FAILED = "Could not save: ";
 const DESCRIPTION_CUT = "The description was cut to 4,000 characters.";
+/**
+ * session/last_message requests in flight at once. Alas stops a plugin that sends more than 64
+ * messages in one call, and a snapshot can turn every followed ticket idle together, so the rest
+ * wait in `fetchQueue` and go out as replies arrive. Leaves room for the saves and the render.
+ */
+export const MAX_FETCHES_IN_FLIGHT = 16;
 
 /** What to do with a ticket body once it is read: show it, append an agent's comment, or start the ticket. */
 type Then = { kind: "open" } | { kind: "comment"; text: string } | { kind: "start" };
@@ -78,6 +84,8 @@ export class Kanban implements Plugin {
   pendingStarts = new Map<number, number>();
   /** session/last_message id → ticket. */
   fetches = new Map<number, number>();
+  /** Last messages still to fetch: (ticket, session id), oldest first. */
+  fetchQueue: [number, string][] = [];
   agentRequest?: number;
   /** The session/focus request of the last Open session click. */
   focusRequest?: number;
@@ -160,9 +168,17 @@ export class Kanban implements Plugin {
   sync(): boolean {
     if (!this.sessions) return false;
     const { changed, fetch } = this.tracker.sync(this.sessions);
-    for (const [n, session] of fetch) this.fetches.set(lastMessage(session), n);
+    this.fetchQueue.push(...fetch);
+    this.drainFetches();
     if (changed) this.commit(true, false, []);
     return changed;
+  }
+
+  drainFetches(): void {
+    while (this.fetches.size < MAX_FETCHES_IN_FLIGHT && this.fetchQueue.length > 0) {
+      const [n, session] = this.fetchQueue.shift()!;
+      this.fetches.set(lastMessage(session), n);
+    }
   }
 
   apply(snapshot: Snapshot): void {
@@ -485,6 +501,7 @@ export class Kanban implements Plugin {
     const fetch = this.fetches.get(id);
     if (fetch !== undefined) {
       this.fetches.delete(id);
+      this.drainFetches();
       return this.fetched(fetch, result, error);
     }
     if (id === this.focusRequest) {

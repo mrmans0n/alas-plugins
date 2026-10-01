@@ -175,3 +175,25 @@ test("an undecodable body is shown read-only and never written", () => {
   event("delete-1");
   assert.ok(writes(testHost.takeSent()).every(([key]) => key !== "ticket-1"));
 });
+
+test("many tickets going idle at once stay under the send cap and all get their last message", () => {
+  const count = 70;
+  const tickets = Array.from({ length: count }, (_, i) => ({
+    number: i + 1, title: `t${i + 1}`, status: "in_progress", session_id: `s${i + 1}`, agent_state: "running", following: true, seen: true,
+  }));
+  activate({ version: 1, next_number: count + 1 }, tickets, null);
+  testHost.takeSent();
+  const sessions = (state: string) => tickets.map((t) => ({ id: t.session_id, agent: "a", title: t.title, state }));
+  // The test host throws past 64 messages in one call, as Alas stops the plugin.
+  testHost.dispatch({ jsonrpc: "2.0", method: "workspace/changed", params: { snapshot: { worktrees: [{ id: "w", branch: "b", current: false, sessions: sessions("idle") }] } } });
+
+  const fetched = new Set<string>();
+  let pending = testHost.takeSent().filter((m) => m.method === "session/last_message");
+  while (pending.length > 0) {
+    const [fetch, ...rest] = pending;
+    fetched.add(fetch.params.id);
+    reply(fetch.id, { message: null });
+    pending = [...rest, ...testHost.takeSent().filter((m) => m.method === "session/last_message")];
+  }
+  assert.equal(fetched.size, count);
+});
