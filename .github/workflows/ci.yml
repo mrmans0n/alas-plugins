@@ -21,3 +21,18 @@ jobs:
         run: npm test
       - name: Build every plugin.js
         run: npm run build
+
+  # Node tests run with globals Alas does not have; this activates every built bundle in a bare
+  # JavaScriptCore context, exactly as Alas runs it, so a stray `Buffer` or `console` fails here.
+  jsc:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Activate every plugin in bare JavaScriptCore
+        run: for bundle in plugins/*/dist/plugin.js; do echo "$bundle"; scripts/jsc-run "$bundle"; done
