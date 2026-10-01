@@ -1,6 +1,7 @@
 {
   "id": "io.nlopez.pixel-office",
   "name": "Pixel Office",
+  "summary": "Your project as a pixel-art office: a desk per worktree, a character per agent session.",
   "version": "0.1.0",
   "api": 2,
   "entry": "plugin.wasm",

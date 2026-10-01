@@ -11,7 +11,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-alas-plugin = { path = "../alas-plugin" }
+alas-plugin = { path = "../../sdk/alas-plugin" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 

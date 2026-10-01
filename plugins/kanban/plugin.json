@@ -1,6 +1,7 @@
 {
   "id": "io.nlopez.kanban",
   "name": "Kanban",
+  "summary": "A ticket board for the project. Starting a ticket starts an agent in a new worktree.",
   "version": "0.2.0",
   "api": 3,
   "entry": "plugin.wasm",

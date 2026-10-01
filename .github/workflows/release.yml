@@ -1,0 +1,55 @@
+name: Release
+
+# Tag <plugin folder>-v<version>, e.g. kanban-v0.2.0. The version must match plugin.json.
+on:
+  push:
+    tags: ["*-v*", "!sdk-v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-index
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve plugin
+        id: plugin
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          folder="${tag%-v*}"
+          version="${tag##*-v}"
+          dir="plugins/$folder"
+          manifest_version="$(jq -r .version "$dir/plugin.json")"
+          if [ "$manifest_version" != "$version" ]; then
+            echo "::error::tag says $version but $dir/plugin.json says $manifest_version"
+            exit 1
+          fi
+          echo "folder=$folder" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - name: Build
+        working-directory: ${{ steps.plugin.outputs.dir }}
+        run: |
+          cargo build --locked --release --target wasm32-unknown-unknown
+          wasm=(target/wasm32-unknown-unknown/release/*.wasm)
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp plugin.json "$GITHUB_WORKSPACE/dist/plugin.json"
+          cp "${wasm[0]}" "$GITHUB_WORKSPACE/dist/plugin.wasm"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/plugin.json dist/plugin.wasm --title "$GITHUB_REF_NAME" --generate-notes
+      - name: Update index.json
+        run: |
+          hash="$(scripts/trust-hash dist/plugin.json dist/plugin.wasm)"
+          git fetch --quiet origin main
+          git checkout --quiet -B main origin/main
+          scripts/update-index.py "${{ steps.plugin.outputs.folder }}" "$GITHUB_REF_NAME" dist/plugin.json "$hash"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet -am "chore(index): add $GITHUB_REF_NAME"
+          git push origin HEAD:main
