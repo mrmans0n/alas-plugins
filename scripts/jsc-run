@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Builds (when stale) and runs scripts/jsc-run.swift: a plugin.js in a bare JavaScriptCore
+# context, exactly as Alas runs API 4 plugins, with per-call timings. macOS only.
+# Usage: scripts/jsc-run <plugin.js> [messages.jsonl] [-v] [--png frame.png]
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+src="$here/jsc-run.swift"
+bin="$here/../.build/jsc-run"
+if [ ! -x "$bin" ] || [ "$src" -nt "$bin" ]; then
+  mkdir -p "$(dirname "$bin")"
+  swiftc -O "$src" -o "$bin"
+  # Hardened runtime without the allow-jit entitlement, as Alas ships: JavaScriptCore stays on
+  # its interpreter tiers, and the execution time limit works.
+  codesign -f -s - -o runtime "$bin" 2>/dev/null
+fi
+exec "$bin" "$@"

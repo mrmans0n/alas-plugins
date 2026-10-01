@@ -1,0 +1,21 @@
+{
+  "name": "alas-plugins",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "workspaces": [
+    "sdk/alas",
+    "plugins/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run gen --workspaces --if-present && tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "npm test --workspaces",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.0"
+  }
+}

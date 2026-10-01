@@ -1,0 +1,20 @@
+{
+  // Plugin sources. No DOM or Node types: inside Alas the only globals are the
+  // ECMAScript built-ins and `alas`, so `console`, `setTimeout` or `process` fail here.
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true
+  },
+  "include": ["sdk/*/src/**/*.ts", "plugins/*/src/**/*.ts"],
+  "exclude": ["**/*.test.ts", "sdk/alas/src/test.ts"]
+}

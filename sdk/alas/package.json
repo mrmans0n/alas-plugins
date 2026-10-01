@@ -1,0 +1,15 @@
+{
+  "name": "@alas/plugin",
+  "version": "0.4.0",
+  "description": "SDK for Alas plugins (API 4: JavaScript in JavaScriptCore).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test": "./src/test.ts"
+  },
+  "files": ["src", "!src/**/*.test.ts"],
+  "scripts": {
+    "test": "node --test \"src/**/*.test.ts\""
+  }
+}
