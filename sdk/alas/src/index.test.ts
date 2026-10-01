@@ -3,8 +3,14 @@ import assert from "node:assert/strict";
 import { testHost } from "./test.ts";
 import {
   agentList,
+  cancelTimer,
   definePlugin,
+  fetch,
+  getSettings,
   lastMessage,
+  notify,
+  renderPanel,
+  setTimer,
   parseAgents,
   parseLastMessage,
   request,
@@ -55,6 +61,14 @@ test("notifications decode into events", () => {
     ["view/event", { tab: 1, id: "f", kind: "select", value: "x" }],
     ["view/event", { tab: 1, id: "b", kind: "click" }],
     ["task/failed", { sessionId: "s", reason: "boom" }],
+    ["command/run", { command: "fix", target: { kind: "worktree", worktree: "w" } }],
+    ["command/run", { command: "fix", target: { kind: "project" } }],
+    ["session/state", { session: "s", worktree: "w", state: "running" }],
+    ["session/finished", { session: "s", worktree: "w" }],
+    ["settings/changed", { values: { team: "ENG", on: true, junk: 3 } }],
+    ["timer/fired", { id: "refresh" }],
+    ["view/event", { panel: "issues", id: "b", kind: "click" }],
+    ["panel/visible", { panel: "issues", visible: true }],
     ["alas/deactivate", {}],
   ] as const) {
     testHost.dispatch({ jsonrpc: "2.0", method, params });
@@ -66,6 +80,14 @@ test("notifications decode into events", () => {
     { type: "viewEvent", tab: 1, id: "f", kind: "select", value: "x" },
     { type: "viewEvent", tab: 1, id: "b", kind: "click", value: undefined },
     { type: "taskFailed", sessionId: "s", reason: "boom" },
+    { type: "command", command: "fix", target: { kind: "worktree", worktree: "w" } },
+    { type: "command", command: "fix", target: { kind: "project" } },
+    { type: "sessionState", session: "s", worktree: "w", state: "running" },
+    { type: "sessionFinished", session: "s", worktree: "w" },
+    { type: "settings", values: { team: "ENG", on: true }, changed: true },
+    { type: "timer", id: "refresh" },
+    { type: "panelEvent", panel: "issues", id: "b", kind: "click", value: undefined },
+    { type: "panelVisible", panel: "issues", visible: true },
     { type: "deactivate" },
   ]);
 });
@@ -90,6 +112,30 @@ test("snapshot and storage replies arrive as their own events, other replies sta
   ]);
 });
 
+test("settings and fetch replies are decoded, and an unset secret is refused without a request", () => {
+  const events = recorder();
+  const settings = getSettings();
+  testHost.reply(settings, { values: { team: "" } });
+  assert.deepEqual(events, [{ type: "settings", values: { team: "" }, changed: false }]);
+
+  const results: unknown[] = [];
+  testHost.secrets.add("token");
+  const ok = fetch({ method: "GET", url: "https://a.example/x", headers: { Authorization: "{{secret:token}}" } }, (r) => results.push(r));
+  const failed = fetch({ method: "GET", url: "https://a.example/y" }, (r) => results.push(r));
+  testHost.replyError(failed, -32003, "request failed: offline");
+  testHost.reply(ok, { status: 404, headers: { "content-type": "text/plain" }, body: "nope" });
+  testHost.secrets.delete("token");
+  testHost.dispatch({ jsonrpc: "2.0", method: "tick", params: { dt: 1 } });
+  definePlugin({ handle: () => void fetch({ method: "GET", url: "https://a.example/z", headers: { A: "x {{secret:token}}" } }, (r) => results.push(r)) });
+  testHost.notify("timer/fired", { id: "t" });
+  assert.deepEqual(results, [
+    { error: { code: -32003, message: "request failed: offline" } },
+    { response: { status: 404, headers: { "content-type": "text/plain" }, body: "nope" } },
+    { error: { code: -32602, message: "secret token is not set" } },
+  ]);
+  testHost.takeSent();
+});
+
 test("malformed messages are ignored", () => {
   const events = recorder();
   testHost.dispatch("{not json");
@@ -107,6 +153,10 @@ test("helpers send the documented requests", () => {
   lastMessage("s1");
   agentList();
   taskStart("t", "p", { branch: "task/kan-3", agent: "claude" });
+  notify("Done", "body");
+  setTimer("r", 300, true);
+  cancelTimer("r");
+  renderPanel("issues", { kind: "spacer", id: "s" });
   const sent = testHost.takeSent().map((m) => [m.method, m.params]);
   assert.deepEqual(sent, [
     ["task/start", { title: "T", prompt: "do it" }],
@@ -115,6 +165,10 @@ test("helpers send the documented requests", () => {
     ["session/last_message", { id: "s1" }],
     ["agent/list", {}],
     ["task/start", { title: "t", prompt: "p", branch: "task/kan-3", agent: "claude" }],
+    ["notify", { title: "Done", body: "body" }],
+    ["timer/set", { id: "r", seconds: 300, repeat: true }],
+    ["timer/cancel", { id: "r" }],
+    ["view/render", { panel: "issues", root: { kind: "spacer", id: "s" } }],
   ]);
 
   assert.equal(parseLastMessage({ message: "hi" }), "hi");

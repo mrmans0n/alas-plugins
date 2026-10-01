@@ -20,6 +20,23 @@ const MAX_FRAME_BYTES = 4 << 20;
 let sent: string[] = [];
 let frames: Frame[] = [];
 let sendsThisCall = 0;
+/** Refusals Alas would answer an `http/fetch` with, delivered after the call that sent it. */
+let refusals: object[] = [];
+const secrets = new Set<string>();
+
+/** Like Alas, an `http/fetch` naming an unset `{{secret:key}}` is refused without making the request. */
+function refuseUnsetSecret(json: string): void {
+  const message = JSON.parse(json);
+  if (message.method !== "http/fetch") return;
+  for (const value of Object.values<string>(message.params?.headers ?? {})) {
+    for (const [, key] of String(value).matchAll(/\{\{secret:([^}]*)\}\}/g)) {
+      if (!secrets.has(key)) {
+        refusals.push({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: `secret ${key} is not set` } });
+        return;
+      }
+    }
+  }
+}
 
 globalThis.alas = {
   send(json) {
@@ -29,6 +46,7 @@ globalThis.alas = {
     }
     if (++sendsThisCall > MAX_SENDS_PER_CALL) throw new RangeError("more than 64 messages in one call");
     sent.push(json);
+    refuseUnsetSecret(json);
   },
   present(tab, pixels, width) {
     if (!(pixels instanceof Uint8Array)) throw new TypeError("alas.present takes a Uint8Array");
@@ -51,7 +69,27 @@ export const testHost = {
     } finally {
       sendsThisCall = 0;
     }
+    const pending = refusals;
+    refusals = [];
+    for (const refusal of pending) testHost.dispatch(refusal);
   },
+
+  /** Delivers the notification `method`, e.g. `timer/fired`, `settings/changed`, `panel/visible`, `session/finished`. */
+  notify(method: string, params: object = {}): void {
+    testHost.dispatch({ jsonrpc: "2.0", method, params });
+  },
+
+  /** Answers request `id`, e.g. an `http/fetch` with `{status, headers, body}`. */
+  reply(id: number, result: unknown): void {
+    testHost.dispatch({ jsonrpc: "2.0", id, result });
+  },
+
+  replyError(id: number, code: number, message: string): void {
+    testHost.dispatch({ jsonrpc: "2.0", id, error: { code, message } });
+  },
+
+  /** Secrets the user has set. An `http/fetch` naming any other is refused with -32602, as in Alas. */
+  secrets,
 
   /** Every message sent since the last call, parsed. */
   takeSent(): any[] {
