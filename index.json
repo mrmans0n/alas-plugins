@@ -39,6 +39,18 @@
       "id": "io.nlopez.pixel-office",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 4,
+          "capabilities": [
+            "workspace.read",
+            "worktree.switch",
+            "session.focus"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.2.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.2.0/plugin.js",
+          "hash": "991079df7c73f028e57e2f59aff6a22a541264b3248355d53eba2d896410aa66"
+        },
+        {
           "version": "0.1.0",
           "api": 2,
           "capabilities": [
