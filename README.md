@@ -103,9 +103,24 @@ git tag kanban-v0.3.0 && git push origin kanban-v0.3.0
 ```
 
 The release workflow builds the plugin, publishes `plugin.json` and `plugin.js` as a
-GitHub release, and adds the version to `index.json`. The index entry carries the hash Alas
-approves the plugin by (`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas
-verifies the download before the user is asked to approve it.
+GitHub release, and adds the version to `index.json`:
+
+```json
+{
+  "version": "0.3.0",
+  "api": 4,
+  "capabilities": ["workspace.read", "session.focus", "session.read", "tasks.start"],
+  "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.3.0/plugin.json",
+  "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.3.0/plugin.js",
+  "hash": "<scripts/trust-hash plugin.json plugin.js>"
+}
+```
+
+`entry` is the URL of the release's `plugin.js`. `hash` is what Alas approves the plugin by
+(`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
+before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
+the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
+an `api` other than 4.
 
 ## License
 

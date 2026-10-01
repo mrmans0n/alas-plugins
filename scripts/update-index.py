@@ -2,6 +2,9 @@
 """Adds one released plugin version to index.json.
 
 Usage: update-index.py <folder> <tag> <plugin.json> <hash>
+
+Only the released version's entry is written. Other versions are kept as they are, including
+WebAssembly-era entries (api 1 to 3, a "wasm" URL and no "entry"), which Alas skips.
 """
 import json
 import sys
