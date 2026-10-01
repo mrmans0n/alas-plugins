@@ -2,6 +2,27 @@
   "format": 1,
   "plugins": [
     {
+      "id": "io.nlopez.kanban",
+      "versions": [
+        {
+          "version": "0.2.0",
+          "api": 3,
+          "capabilities": [
+            "workspace.read",
+            "session.focus",
+            "session.read",
+            "tasks.start"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.2.0/plugin.json",
+          "wasm": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.2.0/plugin.wasm",
+          "hash": "b133ea4046fa1f5cf0dc72d20e0cea7dedb3df8a4c5e720cdb31c47d5e1bc602"
+        }
+      ],
+      "name": "Kanban",
+      "summary": "A ticket board for the project. Starting a ticket starts an agent in a new worktree.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/kanban"
+    },
+    {
       "id": "io.nlopez.pixel-office",
       "versions": [
         {
