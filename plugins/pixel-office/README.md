@@ -1,14 +1,15 @@
 # Pixel Office
 
 A plugin that draws your project as a pixel-art office: one desk per worktree,
-one character per agent session. It uses plugin API 2 (canvas tabs).
+one character per agent session. It uses plugin API 4 (canvas tabs) and is
+written in TypeScript on `@alas/plugin`.
 
 ## Build and install
 
 From the repository root:
 
 ```bash
-rustup target add wasm32-unknown-unknown
+npm install
 plugins/pixel-office/build.sh
 ```
 
@@ -43,5 +44,6 @@ Click a character to open its session. Click a desk to switch to its worktree.
 
 ## Art rules
 
-- Art is palette-only PNGs in `assets/`. `build.rs` rejects any off-palette colour.
-- Sprite sheet layouts live in `src/atlas.rs`.
+- Art is palette-only PNGs in `assets/`. `scripts/sprites.mjs` decodes them into
+  palette indices at build time (`src/sprites.gen.ts`) and rejects any off-palette colour.
+- Sprite sheet layouts live in `src/atlas.ts`.
