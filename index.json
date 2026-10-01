@@ -5,6 +5,19 @@
       "id": "io.nlopez.kanban",
       "versions": [
         {
+          "version": "0.3.0",
+          "api": 4,
+          "capabilities": [
+            "workspace.read",
+            "session.focus",
+            "session.read",
+            "tasks.start"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.3.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.3.0/plugin.js",
+          "hash": "ef6b21dfbdfd14171047661f3cb50987a011ed68526c0f613ccc667d44149f2c"
+        },
+        {
           "version": "0.2.0",
           "api": 3,
           "capabilities": [
