@@ -128,21 +128,22 @@ export class World {
   step(dtMs: number): void {
     this.clockMs += dtMs;
     for (const c of this.characters) {
-      const taken = takenSpots(this.characters);
       c.walkMs = (c.walkMs + dtMs) >>> 0;
       const idle = c.mood === "idle" && !c.leaving;
       if (idle) c.idleMs += dtMs;
       advance(c, dtMs);
       if (c.activity === "walking" || !idle) continue;
+      // Spots are listed only when one is picked: listing them for everyone on every tick is
+      // quadratic in characters. `advance` moved only `c`, and only onto its own target.
       if (c.idleMs >= SLEEP_AFTER_MS && c.activity !== "sleeping") {
-        c.walkTo(pickSpot(c, COUCH_SPOTS, taken), "sleeping");
+        c.walkTo(pickSpot(c, COUCH_SPOTS, takenSpots(this.characters)), "sleeping");
         continue;
       }
       if (c.activity === "sleeping") continue;
       c.dwellMs = Math.max(0, c.dwellMs - dtMs);
       if (c.dwellMs === 0) {
         if (c.activity === "lounging" && c.nextRandom() % 2 === 0) c.walkTo(c.seat, "seated");
-        else c.walkTo(pickSpot(c, LOUNGE, taken), "lounging");
+        else c.walkTo(pickSpot(c, LOUNGE, takenSpots(this.characters)), "lounging");
       }
     }
     this.characters = this.characters.filter((c) => !(c.leaving && c.activity !== "walking"));
