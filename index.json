@@ -1,4 +1,25 @@
 {
   "format": 1,
-  "plugins": []
+  "plugins": [
+    {
+      "id": "io.nlopez.pixel-office",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 2,
+          "capabilities": [
+            "workspace.read",
+            "worktree.switch",
+            "session.focus"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.1.0/plugin.json",
+          "wasm": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.1.0/plugin.wasm",
+          "hash": "dae0dfb71af7ecc4f9acb16f1f81a8c9dd329c10710b68ad2dae25bab04f044e"
+        }
+      ],
+      "name": "Pixel Office",
+      "summary": "Your project as a pixel-art office: a desk per worktree, a character per agent session.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/pixel-office"
+    }
+  ]
 }
