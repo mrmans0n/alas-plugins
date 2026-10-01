@@ -5,7 +5,8 @@
 // The plugin gets a fresh JSContextGroup whose global object holds only the ECMAScript
 // built-ins and `alas` (`send`, `present`). The script is evaluated once, `alas/activate` (API 4)
 // is delivered, then each line of messages.jsonl, one `handle(json)` call per line. Calls are
-// limited to 250 ms (1 s for evaluation and activation) with the same private watchdog Alas uses.
+// limited to 250 ms (1 s for evaluation and activation) with the same private watchdog Alas uses,
+// which counts the thread's CPU time.
 //
 // A reply line may name its id as "$<method>", e.g. {"jsonrpc":"2.0","id":"$storage/get",...}:
 // it becomes the id of the latest request the plugin sent with that method.
@@ -106,8 +107,11 @@ func timed(_ limit: Double, _ body: () -> Void) -> (Double, Double, String?) {
     body()
     let ms = milliseconds(clock.now - start), cpu = cpuMilliseconds() - cpuStart
     if let violation { return (ms, cpu, violation) }
-    if ms > limit * 1000 { return (ms, cpu, "took longer than \(Int(limit * 1000)) ms") }
-    if let exception = context.exception { return (ms, cpu, "threw: \(exception)") }
+    // The watchdog counts the thread's CPU time, so on a loaded machine a call can run past the
+    // limit in wall time and still finish.
+    if let exception = context.exception {
+        return (ms, cpu, cpu >= limit * 1000 ? "took longer than \(Int(limit * 1000)) ms (\(exception))" : "threw: \(exception)")
+    }
     return (ms, cpu, nil)
 }
 
