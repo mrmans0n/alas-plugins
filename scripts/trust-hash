@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 # Prints the hash Alas approves a plugin by (PluginTrust.hash in mrmans0n/alas).
-# Usage: scripts/trust-hash plugin.json plugin.wasm
+# Usage: scripts/trust-hash plugin.json plugin.js
 set -euo pipefail
 { printf 'alas-plugin-trust-v1\0'; cat "$1"; printf '\0'; cat "$2"; } | shasum -a 256 | cut -d' ' -f1

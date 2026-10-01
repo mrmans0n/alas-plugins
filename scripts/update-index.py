@@ -26,7 +26,7 @@ version = {
     "api": manifest["api"],
     "capabilities": manifest.get("capabilities", []),
     "manifest": f"{download}/plugin.json",
-    "wasm": f"{download}/plugin.wasm",
+    "entry": f"{download}/plugin.js",
     "hash": digest,
 }
 versions = [v for v in plugin["versions"] if v["version"] != version["version"]] + [version]

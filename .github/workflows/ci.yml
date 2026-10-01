@@ -7,25 +7,17 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.project }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        project: [sdk/alas-plugin, plugins/kanban, plugins/pixel-office]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/setup-node@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ${{ matrix.project }}/target
-          key: cargo-${{ matrix.project }}-${{ hashFiles(format('{0}/Cargo.lock', matrix.project), 'rust-toolchain.toml') }}
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
       - name: Test
-        working-directory: ${{ matrix.project }}
-        run: cargo test --locked
-      - name: Build wasm
-        if: startsWith(matrix.project, 'plugins/')
-        working-directory: ${{ matrix.project }}
-        run: cargo build --locked --release --target wasm32-unknown-unknown
+        run: npm test
+      - name: Build every plugin.js
+        run: npm run build
