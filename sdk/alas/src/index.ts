@@ -1,6 +1,7 @@
 /**
- * SDK for Alas plugins, API 4: one `plugin.js` evaluated in a bare JavaScriptCore context.
- * Handles the JSON-RPC framing, the activation handshake and request ids.
+ * SDK for Alas plugins, API 4 and 5: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
+ * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -66,6 +67,37 @@ export interface Agent {
   name: string;
 }
 
+/** Where a command was chosen: the current project, or a worktree by its `workspace/snapshot` id. */
+export type CommandTarget = { kind: "project" } | { kind: "worktree"; worktree: string };
+
+/** `string` and `bool` settings by key, defaults applied. Secrets are never included. */
+export type SettingValues = Record<string, string | boolean>;
+
+export interface HttpRequest {
+  method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** `https` only, on a host the manifest's `network` lists. */
+  url: string;
+  /** A value may hold `{{secret:<key>}}`, which Alas substitutes for the secret's hosts. */
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export interface HttpResponse {
+  status: number;
+  /** Lowercase names. */
+  headers: Record<string, string>;
+  body: string;
+}
+
+/** A request's outcome: `error` when Alas refused it or it failed, `response` otherwise (any status). */
+export type FetchResult = { response: HttpResponse; error?: undefined } | { response?: undefined; error: RpcError };
+
+/** A reply handed to a request's callback: `result` on success, `error` on failure. */
+export interface Reply {
+  result?: unknown;
+  error?: RpcError;
+}
+
 export type Event =
   | { type: "activate"; projectId: string; projectName: string; grants: string[] }
   | { type: "deactivate" }
@@ -80,7 +112,24 @@ export type Event =
   | { type: "taskFailed"; sessionId: string; reason: string }
   /** The reply to `storageGet`: `value` is `null` when the key is unset, `undefined` with `error`. */
   | { type: "stored"; id: number; value?: unknown; error?: RpcError }
-  /** Any other reply: `result` on success, `error` on failure. */
+  /** API 5: a manifest command was chosen. */
+  | { type: "command"; command: string; target: CommandTarget }
+  /** API 5, event `session.state`: a session appeared or changed state. */
+  | { type: "sessionState"; session: string; worktree: string; state: string }
+  /** API 5, event `session.finished`: a session went from `running` to `idle`. */
+  | { type: "sessionFinished"; session: string; worktree: string }
+  /**
+   * API 5: the reply to `getSettings`, or `changed` when the user edited a setting (a secret included).
+   * `secretsSet` lists the secret settings that hold a value; their values never reach the plugin.
+   */
+  | { type: "settings"; values: SettingValues; secretsSet: string[]; changed: boolean }
+  /** API 5: a timer set with `setTimer` is due. */
+  | { type: "timer"; id: string }
+  /** API 5: a control in a panel was used; see `viewEvent`. */
+  | { type: "panelEvent"; panel: string; id: string; kind: string; value?: string }
+  /** API 5: a panel was shown or hidden. */
+  | { type: "panelVisible"; panel: string; visible: boolean }
+  /** Any other reply without a callback: `result` on success, `error` on failure. */
   | { type: "reply"; id: number; result?: unknown; error?: RpcError };
 
 export interface Plugin {
@@ -91,22 +140,34 @@ function send(message: object): void {
   globalThis.alas.send(JSON.stringify(message));
 }
 
-export function notify(method: string, params: unknown): void {
+/** Sends a JSON-RPC notification (a message without an id). */
+export function sendNotification(method: string, params: unknown): void {
   send({ jsonrpc: "2.0", method, params });
 }
 
 export function log(level: "debug" | "info" | "warn" | "error", message: string): void {
-  notify("log", { level, message });
+  sendNotification("log", { level, message });
+}
+
+/** API 5, capability `notify`: an in-app notification. At most one every 2 s; others are dropped. */
+export function notify(title: string, body?: string): void {
+  sendNotification("notify", { title, body });
 }
 
 let nextId = 1;
 /** Replies decoded into their own event instead of `reply`. */
-const typed = new Map<number, "snapshot" | "storage">();
+const typed = new Map<number, "snapshot" | "storage" | "settings">();
+/** Replies handed to the callback their request was sent with. */
+const callbacks = new Map<number, (reply: Reply) => void>();
 
-/** Sends a request and returns its id. The reply arrives in a later call as a `reply` event. */
-export function request(method: string, params: unknown = {}): number {
+/**
+ * Sends a request and returns its id. The reply arrives in a later call: to `callback` when one
+ * is given, otherwise as a `reply` event.
+ */
+export function request(method: string, params: unknown = {}, callback?: (reply: Reply) => void): number {
   const id = nextId++;
   send({ jsonrpc: "2.0", id, method, params });
+  if (callback) callbacks.set(id, callback);
   return id;
 }
 
@@ -125,9 +186,9 @@ export function sessionFocus(id: string): number {
   return request("session/focus", { id });
 }
 
-/** The reply (a `reply` event) decodes with `parseLastMessage`. */
-export function lastMessage(sessionId: string): number {
-  return request("session/last_message", { id: sessionId });
+/** The reply (a `reply` event, or `callback`'s) decodes with `parseLastMessage`. */
+export function lastMessage(sessionId: string, callback?: (reply: Reply) => void): number {
+  return request("session/last_message", { id: sessionId }, callback);
 }
 
 /** The reply (a `reply` event) decodes with `parseAgents`. */
@@ -135,9 +196,45 @@ export function agentList(): number {
   return request("agent/list");
 }
 
-/** Starts a task in a new worktree. The reply holds `{sessionId, branch}`. */
-export function taskStart(title: string, prompt: string, options: { branch?: string; agent?: string } = {}): number {
-  return request("task/start", { title, prompt, branch: options.branch, agent: options.agent });
+/** Starts a task in a new worktree. The reply holds `{sessionId, branch}`. `prompt` is at most 32 KiB of UTF-8. */
+export function taskStart(
+  title: string,
+  prompt: string,
+  options: { branch?: string; agent?: string } = {},
+  callback?: (reply: Reply) => void,
+): number {
+  return request("task/start", { title, prompt, branch: options.branch, agent: options.agent }, callback);
+}
+
+/** API 5. The reply arrives as a `settings` event. */
+export function getSettings(): number {
+  const id = request("settings/get");
+  typed.set(id, "settings");
+  return id;
+}
+
+/**
+ * API 5, capability `network`: an HTTPS request. Alas answers once it finishes, in a later call,
+ * and `callback` gets the response or the reason it failed. Replies to a restarted plugin are dropped.
+ */
+export function fetch(req: HttpRequest, callback: (result: FetchResult) => void): number {
+  return request("http/fetch", req, ({ result, error }) => {
+    if (error) return callback({ error });
+    const r = isObject(result) ? result : {};
+    const ok = typeof r.status === "number" && typeof r.body === "string";
+    callback(ok
+      ? { response: { status: r.status, headers: isObject(r.headers) ? r.headers : {}, body: r.body } }
+      : { error: { code: -32603, message: "malformed http/fetch reply" } });
+  });
+}
+
+/** API 5, capability `timers`: a `timer` event after `seconds` (60 to 86,400). Replaces a timer with the same id. */
+export function setTimer(id: string, seconds: number, repeat = false): number {
+  return request("timer/set", { id, seconds, repeat });
+}
+
+export function cancelTimer(id: string): number {
+  return request("timer/cancel", { id });
 }
 
 /** The reply arrives as a `stored` event. */
@@ -173,7 +270,7 @@ export function present(tab: number, pixels: Uint8Array, width: number): void {
 }
 
 export function setRegions(tab: number, regions: Region[]): void {
-  notify("canvas/regions", { tab, regions });
+  sendNotification("canvas/regions", { tab, regions });
 }
 
 export type Tone = "normal" | "dim" | "accent" | "warn" | "danger";
@@ -202,7 +299,12 @@ export type Node =
 
 /** Replaces the tree shown in view tab `tab`. */
 export function render(tab: number, root: Node): void {
-  notify("view/render", { tab, root });
+  sendNotification("view/render", { tab, root });
+}
+
+/** API 5: replaces the tree shown in the manifest's panel `panel`. */
+export function renderPanel(panel: string, root: Node): void {
+  sendNotification("view/render", { panel, root });
 }
 
 function isObject(value: unknown): value is Record<string, any> {
@@ -213,6 +315,21 @@ function rpcError(value: unknown): RpcError | undefined {
   return isObject(value) && typeof value.code === "number" && typeof value.message === "string"
     ? { code: value.code, message: value.message }
     : undefined;
+}
+
+function settingValues(payload: unknown): SettingValues | undefined {
+  const values = isObject(payload) ? payload.values : undefined;
+  if (!isObject(values)) return undefined;
+  const out: SettingValues = {};
+  for (const key of Object.keys(values)) {
+    if (typeof values[key] === "string" || typeof values[key] === "boolean") out[key] = values[key];
+  }
+  return out;
+}
+
+function secretsSet(payload: unknown): string[] {
+  const keys = isObject(payload) ? payload.secretsSet : undefined;
+  return Array.isArray(keys) ? keys.filter((k: unknown): k is string => typeof k === "string") : [];
 }
 
 function snapshotOf(payload: unknown): Snapshot | undefined {
@@ -253,10 +370,36 @@ export function dispatch(plugin: Plugin, json: string): void {
       if (typeof params?.tab !== "number" || typeof params.region !== "string") return;
       return plugin.handle({ type: "click", tab: params.tab, region: params.region });
     case "view/event": {
-      if (typeof params?.tab !== "number" || typeof params.id !== "string" || typeof params.kind !== "string") return;
+      if (typeof params?.id !== "string" || typeof params.kind !== "string") return;
       const value = typeof params.value === "string" ? params.value : undefined;
+      if (typeof params.panel === "string") {
+        return plugin.handle({ type: "panelEvent", panel: params.panel, id: params.id, kind: params.kind, value });
+      }
+      if (typeof params.tab !== "number") return;
       return plugin.handle({ type: "viewEvent", tab: params.tab, id: params.id, kind: params.kind, value });
     }
+    case "command/run": {
+      const target = params?.target;
+      if (typeof params?.command !== "string" || !isObject(target)) return;
+      if (target.kind === "project") return plugin.handle({ type: "command", command: params.command, target: { kind: "project" } });
+      if (target.kind !== "worktree" || typeof target.worktree !== "string") return;
+      return plugin.handle({ type: "command", command: params.command, target: { kind: "worktree", worktree: target.worktree } });
+    }
+    case "session/state":
+      if (typeof params?.session !== "string" || typeof params.worktree !== "string" || typeof params.state !== "string") return;
+      return plugin.handle({ type: "sessionState", session: params.session, worktree: params.worktree, state: params.state });
+    case "session/finished":
+      if (typeof params?.session !== "string" || typeof params.worktree !== "string") return;
+      return plugin.handle({ type: "sessionFinished", session: params.session, worktree: params.worktree });
+    case "settings/changed": {
+      const values = settingValues(params);
+      return values && plugin.handle({ type: "settings", values, secretsSet: secretsSet(params), changed: true });
+    }
+    case "timer/fired":
+      return typeof params?.id === "string" ? plugin.handle({ type: "timer", id: params.id }) : undefined;
+    case "panel/visible":
+      if (typeof params?.panel !== "string" || typeof params.visible !== "boolean") return;
+      return plugin.handle({ type: "panelVisible", panel: params.panel, visible: params.visible });
     case "task/failed":
       if (typeof params?.sessionId !== "string" || typeof params.reason !== "string") return;
       return plugin.handle({ type: "taskFailed", sessionId: params.sessionId, reason: params.reason });
@@ -271,6 +414,11 @@ export function dispatch(plugin: Plugin, json: string): void {
   const kind = typed.get(id);
   typed.delete(id);
   const error = rpcError(message.error);
+  const callback = callbacks.get(id);
+  if (callback) {
+    callbacks.delete(id);
+    return callback(error ? { error } : { result: message.result ?? null });
+  }
   if (kind === "storage") {
     if (error) return plugin.handle({ type: "stored", id, error });
     if (!isObject(message.result)) return;
@@ -280,6 +428,10 @@ export function dispatch(plugin: Plugin, json: string): void {
   if (kind === "snapshot") {
     const snapshot = snapshotOf(message.result);
     return snapshot && plugin.handle({ type: "snapshot", snapshot });
+  }
+  if (kind === "settings") {
+    const values = settingValues(message.result);
+    return values && plugin.handle({ type: "settings", values, secretsSet: secretsSet(message.result), changed: false });
   }
   plugin.handle({ type: "reply", id, result: message.result ?? null });
 }

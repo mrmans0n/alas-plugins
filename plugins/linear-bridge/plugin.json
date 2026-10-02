@@ -1,0 +1,20 @@
+{
+  "id": "io.nlopez.linear-bridge",
+  "name": "Linear",
+  "summary": "Your assigned Linear issues in a panel. Start one to run an agent on it and comment back when it finishes.",
+  "version": "0.1.0",
+  "api": 5,
+  "entry": "plugin.js",
+  "capabilities": ["workspace.read", "session.read", "tasks.start", "network", "timers", "notify"],
+  "network": ["api.linear.app"],
+  "events": ["session.finished"],
+  "settings": [
+    { "key": "apiKey", "title": "Linear API key", "type": "secret", "hosts": ["api.linear.app"] },
+    { "key": "teamKey", "title": "Team key (optional)", "type": "string" },
+    { "key": "commentOnFinish", "title": "Comment when the agent finishes", "type": "bool", "default": true }
+  ],
+  "contributes": {
+    "commands": [{ "id": "refresh", "title": "Refresh Linear issues", "icon": "arrow.clockwise", "slots": ["palette", "menubar"] }],
+    "panels": [{ "id": "issues", "title": "Linear", "icon": "checklist", "location": "right" }]
+  }
+}

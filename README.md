@@ -12,6 +12,7 @@ Plugins are experimental, and the API may still change.
 |---|---|---|
 | [Kanban](plugins/kanban) | 4 | A ticket board. Starting a ticket starts an agent in a new worktree. |
 | [Pixel Office](plugins/pixel-office) | 4 | Your project as a pixel-art office, one character per agent session. |
+| [Linear](plugins/linear-bridge) | 5 | Your assigned Linear issues in a panel. Starting one runs an agent and comments back. |
 
 ## How a plugin runs
 
@@ -36,8 +37,9 @@ definePlugin({
 ```
 
 The SDK answers `alas/activate` before the plugin sees it, numbers requests, and decodes
-replies: `requestSnapshot()` and `storageGet()` replies arrive as `snapshot` and `stored`
-events, every other reply as a `reply` event carrying the id the request returned.
+replies: `requestSnapshot()`, `storageGet()` and `getSettings()` replies arrive as `snapshot`,
+`stored` and `settings` events; a request sent with a callback (`fetch` always is) hands its
+reply to it; every other reply arrives as a `reply` event carrying the id the request returned.
 
 ## Building one locally
 
@@ -70,6 +72,10 @@ definePlugin(new MyPlugin());
 testHost.dispatch({ jsonrpc: "2.0", method: "tick", params: { dt: 66 } });
 const sent = testHost.takeSent(); // parsed messages
 const frames = testHost.takeFrames(); // { tab, width, pixels }
+testHost.reply(sent[0].id, { status: 200, headers: {}, body: "{}" }); // answer a request
+testHost.notify("timer/fired", { id: "refresh" }); // or settings/changed, panel/visible, ...
+testHost.secrets.add("apiKey"); // listed in secretsSet; a fetch naming an unset one is refused
+testHost.changeSettings({ team: "ENG" }); // settings/changed with secretsSet filled in
 ```
 
 Node is faster than Alas and has more globals, so on a Mac check a built plugin in
@@ -87,7 +93,8 @@ the latest request the plugin sent with that method. `--png <file>` saves the la
 ## Adding a plugin
 
 1. Copy an existing plugin folder into `plugins/<your-plugin>` and change its `plugin.json`:
-   a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4`,
+   a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4` (or 5 for
+   commands, panels, settings, network, timers and events),
    `"entry": "plugin.js"`, and only the capabilities it uses. Rename the package in its
    `package.json` and run `npm install` at the root.
 2. Open a pull request. CI typechecks, tests and builds every workspace. Review is the
@@ -120,7 +127,7 @@ GitHub release, and adds the version to `index.json`:
 (`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
 before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` other than 4.
+an `api` it does not support (4 and 5 today).
 
 ## License
 
