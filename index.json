@@ -36,6 +36,29 @@
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/kanban"
     },
     {
+      "id": "io.nlopez.linear-bridge",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 5,
+          "capabilities": [
+            "workspace.read",
+            "session.read",
+            "tasks.start",
+            "network",
+            "timers",
+            "notify"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/linear-bridge-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/linear-bridge-v0.1.0/plugin.js",
+          "hash": "de77059cf6cad471f381a2c904d3e49847abffca5691b765970eb935de1104a1"
+        }
+      ],
+      "name": "Linear",
+      "summary": "Your assigned Linear issues in a panel. Start one to run an agent on it and comment back when it finishes.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/linear-bridge"
+    },
+    {
       "id": "io.nlopez.pixel-office",
       "versions": [
         {
