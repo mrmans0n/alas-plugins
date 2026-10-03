@@ -1,0 +1,12 @@
+{
+  "name": "nacho-pr-inbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin.js",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@alas/plugin": "*"
+  }
+}

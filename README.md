@@ -15,6 +15,7 @@ Plugins are experimental, and the API may still change.
 | [Linear](plugins/linear-bridge) | 5 | Your assigned Linear issues in a panel. Starting one runs an agent and comments back. |
 | [Prompt Library](plugins/prompt-library) | 7 | Slash prompts for reviews, explanations, tests, commit messages and fixes, with editable templates. |
 | [Notion Context](plugins/notion-context) | 7 | Adds a Notion page's content to every prompt sent to the project's agents. |
+| [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 8 | The repository's open pull requests by what they need, with squash-merge for the ready ones, through `gh`. |
 
 ## How a plugin runs
 
@@ -112,7 +113,8 @@ the latest request the plugin sent with that method. `--png <file>` saves the la
 1. Copy an existing plugin folder into `plugins/<your-plugin>` and change its `plugin.json`:
    a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4` (5 for
    commands, panels, settings, network, timers and events; 6 for the Changes, Run and session
-   slots, badges, runs, reviews, processes and files; 7 for slash prompts and prompt context),
+   slots, badges, runs, reviews, processes and files; 7 for slash prompts and prompt context;
+   8 for commands that open a tab and the `progress` and `link` view nodes),
    `"entry": "plugin.js"`, and only the capabilities it uses. Rename the package in its
    `package.json` and run `npm install` at the root.
 2. Open a pull request. CI typechecks, tests and builds every workspace. Review is the
@@ -145,7 +147,7 @@ GitHub release, and adds the version to `index.json`:
 (`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
 before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (4 to 7 today).
+an `api` it does not support (4 to 8 today).
 
 ## License
 
