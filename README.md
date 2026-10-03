@@ -41,6 +41,21 @@ replies: `requestSnapshot()`, `storageGet()` and `getSettings()` replies arrive 
 `stored` and `settings` events; a request sent with a callback (`fetch` always is) hands its
 reply to it; every other reply arrives as a `reply` event carrying the id the request returned.
 
+API 7 also has Alas ask the plugin: `promptExpand` (a slash prompt) and `contextProvide`
+events carry `respond(text)` and `fail(message)`, which answer with the request's id. A
+prompt may be answered in a later call, within 30 s, so it can `fetch` first; context must
+be answered during the same `handle` call, from data the plugin already has:
+
+```ts
+handle(event: Event) {
+  if (event.type === "contextProvide") event.respond(cachedNotes ?? null);
+  if (event.type === "promptExpand") {
+    fetch({ method: "GET", url: `https://api.example/issues/${event.args}` }, ({ response, error }) =>
+      response ? event.respond(`Fix this issue:\n${response.body}`) : event.fail(error.message));
+  }
+}
+```
+
 ## Building one locally
 
 Needs Node.js 22.18 or later.
@@ -93,8 +108,9 @@ the latest request the plugin sent with that method. `--png <file>` saves the la
 ## Adding a plugin
 
 1. Copy an existing plugin folder into `plugins/<your-plugin>` and change its `plugin.json`:
-   a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4` (or 5 for
-   commands, panels, settings, network, timers and events),
+   a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4` (5 for
+   commands, panels, settings, network, timers and events; 6 for the Changes, Run and session
+   slots, badges, runs, reviews, processes and files; 7 for slash prompts and prompt context),
    `"entry": "plugin.js"`, and only the capabilities it uses. Rename the package in its
    `package.json` and run `npm install` at the root.
 2. Open a pull request. CI typechecks, tests and builds every workspace. Review is the
@@ -127,7 +143,7 @@ GitHub release, and adds the version to `index.json`:
 (`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
 before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (4 and 5 today).
+an `api` it does not support (4 to 7 today).
 
 ## License
 
