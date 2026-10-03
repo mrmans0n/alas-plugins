@@ -39,16 +39,22 @@ when it starts, when a setting changes and every 10 minutes, and answers each
 prompt from that copy. Until the first fetch finishes, or without a token or a
 valid page, it adds nothing.
 
-The page's top-level blocks become Markdown-ish text: paragraphs, headings
-(`#`, `##`, `###`), bulleted and numbered list items, to-dos (`- [ ]`,
-`- [x]`), code blocks with their language, quotes and callouts (as `>`
-quotes). Other blocks (images, tables, embeds, databases, toggles' contents)
-are left out.
+The page's blocks become Markdown: paragraphs, headings (`#`, `##`, `###`),
+bulleted and numbered list items, to-dos (`- [ ]`, `- [x]`), toggles (as list
+items), code blocks with their language, quotes and callouts (as `>` quotes).
+Bold, italic, strikethrough, inline code and links keep their formatting
+(`**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, `[text](url)`). Nested
+blocks are fetched too, up to 3 levels below the page's own: children of list
+items and toggles are indented under them, and other blocks' children follow
+them. Other blocks (images, tables, embeds, databases) are left out, and so are
+child pages.
 
 Alas accepts up to 16 KiB of context per plugin, so a longer page is cut at a
 line break under that and ends with "[… the rest of the page was cut]". The
-plugin reads at most 10 batches of 100 blocks, and stops as soon as it has
-more than fits.
+plugin reads the page in document order, 100 blocks per request, makes at most
+30 requests per refresh, and stops as soon as it has more than fits. A nested
+block it cannot read (say, a synced block from a page the integration cannot
+see) is left out without failing the rest.
 
 When a fetch fails (a bad token, a page not shared with the integration,
 Notion being down), the plugin's log in **Settings → Plugins** says why, with
@@ -69,9 +75,10 @@ requests to `api.notion.com`. It is never logged.
 
 ## Limitations
 
-- One page, and only its top-level blocks: nested blocks (the inside of a
-  toggle, sub-bullets, a child page) are not fetched.
-- Mentions and links come through as their plain text; formatting is dropped.
+- One page. Blocks nested more than 3 levels below the page's own, and
+  anything past the 30th request, are left out.
+- Mentions come through as their text, linked when Notion gives them a web
+  link; colors and underline are dropped.
 - Edits in Notion show up within 10 minutes, or right away after changing a
   setting.
 - Every prompt carries the page, which costs tokens on every turn. Keep the
