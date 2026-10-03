@@ -89,6 +89,22 @@
       "name": "Pixel Office",
       "summary": "Your project as a pixel-art office: a desk per worktree, a character per agent session.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/pixel-office"
+    },
+    {
+      "id": "io.nlopez.prompt-library",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 7,
+          "capabilities": [],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.1.0/plugin.js",
+          "hash": "5ef1970c147983835840132f4fcbfc4b18b790d68e2bde9bce32ad66a9762e96"
+        }
+      ],
+      "name": "Prompt Library",
+      "summary": "Slash prompts for everyday requests: /review, /explain, /tests, /commit and /fix, each with a template you can change.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library"
     }
   ]
 }
