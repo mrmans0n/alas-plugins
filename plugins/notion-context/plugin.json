@@ -1,0 +1,14 @@
+{
+  "id": "io.nlopez.notion-context",
+  "name": "Notion Context",
+  "summary": "Adds a Notion page's content to every prompt sent to agents in the project.",
+  "version": "0.1.0",
+  "api": 7,
+  "entry": "plugin.js",
+  "capabilities": ["session.context", "network", "timers"],
+  "network": ["api.notion.com"],
+  "settings": [
+    { "key": "token", "title": "Notion integration token", "type": "secret", "hosts": ["api.notion.com"] },
+    { "key": "page", "title": "Page URL or ID", "type": "string" }
+  ]
+}
