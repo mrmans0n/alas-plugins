@@ -29,7 +29,7 @@ most recently updated first within each group:
 
 | Group | When |
 |---|---|
-| Ready to merge | Checks passed, approved (or the repository requires no review), a 👍 from the Codex bot on the description, not a draft, no conflicts |
+| Ready to merge | Checks passed, a 👍 from the Codex bot on the description, not a draft, no conflicts. Review state shows as a badge but never blocks |
 | Failing | Checks failed or errored |
 | Waiting | Every other open pull request |
 | Drafts | Drafts |

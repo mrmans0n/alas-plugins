@@ -78,10 +78,8 @@ export function parseInbox(stdout: string): Inbox | undefined {
 }
 
 export function isReady(p: Pull): boolean {
-  // A null decision means the repository requires no review (a solo maintainer cannot approve their own PR),
-  // so the Codex 👍 is the approval there.
-  const reviewed = p.reviewDecision === "APPROVED" || p.reviewDecision === null;
-  return !p.isDraft && p.ci === "SUCCESS" && reviewed && p.codexThumbsUp && p.mergeable !== "CONFLICTING";
+  // Review state is shown, never required: the Codex 👍 is the approval that counts.
+  return !p.isDraft && p.ci === "SUCCESS" && p.codexThumbsUp && p.mergeable !== "CONFLICTING";
 }
 
 export function bucketOf(p: Pull): Bucket {

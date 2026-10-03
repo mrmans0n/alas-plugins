@@ -45,7 +45,7 @@ function badges(p: Pull): Node[] {
   if (p.ci === "SUCCESS") out.push({ kind: "badge", id: id("ci"), text: "CI ✓", tone: "accent" });
   else if (p.ci === "FAILURE" || p.ci === "ERROR") out.push({ kind: "badge", id: id("ci"), text: "CI ✗", tone: "danger" });
   else if (p.ci !== null) out.push({ kind: "badge", id: id("ci"), text: "CI …", tone: "dim" });
-  if (p.reviewDecision === "APPROVED") out.push({ kind: "badge", id: id("review"), text: "Approved", tone: "accent" });
+  if (p.reviewDecision === "APPROVED") out.push({ kind: "badge", id: id("review"), text: "✓ Approved", tone: "accent" });
   else if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ kind: "badge", id: id("review"), text: "Changes requested", tone: "warn" });
   else if (p.reviewDecision === "REVIEW_REQUIRED") out.push({ kind: "badge", id: id("review"), text: "Review needed", tone: "dim" });
   out.push(p.codexThumbsUp
