@@ -7,9 +7,19 @@ import { definePlugin, fetch, getSettings, log, setTimer, type Event, type Plugi
 import { CONTEXT_BYTES, parsePageId, renderBlocks, truncate, type Block } from "./notion.ts";
 
 const REFRESH_SECONDS = 600;
-/** 100 blocks a page; stop after this many pages, well past the context limit for real pages. */
-const MAX_PAGES = 10;
+/** Requests per refresh, top-level pages and nested children together. */
+const MAX_REQUESTS = 30;
+/** How far below the page's own blocks nested children are fetched. */
+const MAX_DEPTH = 3;
 const HEADERS = { Authorization: "Bearer {{secret:token}}", "Notion-Version": "2022-06-28" };
+
+/** A block list still to read: `id`'s children, appended to `into`. */
+interface Work {
+  id: string;
+  into: Block[];
+  depth: number;
+  cursor?: string;
+}
 
 class NotionContext implements Plugin {
   private pageId: string | undefined;
@@ -50,32 +60,58 @@ class NotionContext implements Plugin {
       return;
     }
     this.loading = true;
-    this.fetchBlocks(this.pageId, undefined, [], 1);
+    const page: Block[] = [];
+    this.fetchTree(page, [{ id: this.pageId, into: page, depth: 0 }], 0);
   }
 
-  private fetchBlocks(pageId: string, cursor: string | undefined, blocks: Block[], page: number): void {
-    const query = cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : "";
-    const url = `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100${query}`;
-    fetch({ method: "GET", url, headers: HEADERS }, ({ response, error }) => {
-      if (this.reloadAfter) return this.restart();
-      if (error) return this.failed(error.message);
-      let body: any;
-      try {
-        body = JSON.parse(response.body);
-      } catch {
-        return this.failed(`HTTP ${response.status}, not JSON`);
-      }
-      if (response.status !== 200) {
-        return this.failed(`HTTP ${response.status}${typeof body?.message === "string" ? `: ${body.message}` : ""}`);
-      }
-      if (Array.isArray(body?.results)) blocks.push(...body.results);
-      const text = renderBlocks(blocks);
-      // Characters never outnumber UTF-8 bytes, so past the limit in characters is past it in bytes.
-      if (body?.has_more && typeof body.next_cursor === "string" && page < MAX_PAGES && text.length < CONTEXT_BYTES) {
-        return this.fetchBlocks(pageId, body.next_cursor, blocks, page + 1);
-      }
+  /**
+   * Fetches block lists one request at a time, in document order: `work` is a stack whose top is
+   * the next list (or page of a list) to read. Stops at `MAX_REQUESTS`, or once the page renders
+   * past the context limit, and keeps what it has.
+   */
+  private fetchTree(page: Block[], work: Work[], requests: number): void {
+    const text = renderBlocks(page);
+    const next = work.pop();
+    // Characters never outnumber UTF-8 bytes, so past the limit in characters is past it in bytes.
+    if (!next || requests >= MAX_REQUESTS || text.length >= CONTEXT_BYTES) {
       this.loading = false;
       this.cached = text ? truncate(text) : null;
+      return;
+    }
+    const { id, into, depth, cursor } = next;
+    const query = cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : "";
+    const url = `https://api.notion.com/v1/blocks/${encodeURIComponent(id)}/children?page_size=100${query}`;
+    fetch({ method: "GET", url, headers: HEADERS }, ({ response, error }) => {
+      if (this.reloadAfter) return this.restart();
+      let body: any;
+      let failure = error?.message;
+      if (response) {
+        try {
+          body = JSON.parse(response.body);
+        } catch {
+          failure = `HTTP ${response.status}, not JSON`;
+        }
+        if (!failure && response.status !== 200) failure = `HTTP ${response.status}${typeof body?.message === "string" ? `: ${body.message}` : ""}`;
+      }
+      if (failure) {
+        if (depth === 0) return this.failed(failure);
+        // A nested block that cannot be read (a synced block from an unshared page) is left out.
+        log("debug", `Skipped the children of block ${id}: ${failure}`);
+        return this.fetchTree(page, work, requests + 1);
+      }
+      const blocks: Block[] = Array.isArray(body?.results) ? body.results.filter((b: unknown) => typeof b === "object" && b !== null) : [];
+      into.push(...blocks);
+      // Pushed in reverse so the next page of this list comes after the children of this page.
+      if (body?.has_more && typeof body.next_cursor === "string") work.push({ id, into, depth, cursor: body.next_cursor });
+      if (depth < MAX_DEPTH) {
+        for (const block of blocks.toReversed()) {
+          // A child page's or database's children are another page, not this one's content.
+          if (block.has_children !== true || typeof block.id !== "string" || block.type === "child_page" || block.type === "child_database") continue;
+          block.children = [];
+          work.push({ id: block.id, into: block.children, depth: depth + 1 });
+        }
+      }
+      this.fetchTree(page, work, requests + 1);
     });
   }
 

@@ -55,6 +55,39 @@ test("blocks render as Markdown-ish text, list items grouped and unknown types s
   );
 });
 
+test("nested children indent under list items and follow other blocks", () => {
+  const text = renderBlocks([
+    { ...block("bulleted_list_item", "parent"), children: [
+      { ...block("numbered_list_item", "child"), children: [block("to_do", "grandchild", { checked: false })] },
+      block("paragraph", "note"),
+    ] },
+    { ...block("toggle", "Details"), children: [block("paragraph", "hidden")] },
+    { type: "column_list", column_list: {}, children: [block("paragraph", "in a column")] },
+    { ...block("callout", "Heads up"), children: [block("bulleted_list_item", "inside")] },
+  ]);
+  assert.equal(
+    text,
+    [
+      "- parent\n  1. child\n    - [ ] grandchild\n\n  note\n- Details\n\n  hidden",
+      "in a column",
+      "> Heads up\n\n- inside",
+    ].join("\n\n"),
+  );
+});
+
+test("rich text annotations and links become inline Markdown, spaces outside the markers", () => {
+  const run = (plain_text: string, annotations: object = {}, href: string | null = null) => ({ plain_text, annotations, href });
+  const text = renderBlocks([{
+    type: "paragraph",
+    paragraph: { rich_text: [
+      run("Use "), run("bold ", { bold: true }), run("and", { italic: true, bold: true }), run(" "),
+      run("x()", { code: true }), run(" not "), run("this", { strikethrough: true }), run(", see "),
+      run("the docs", {}, "https://example.com/d"), run(" or "), run("page", {}, "/1a2b"), run("  ", { bold: true }),
+    ] },
+  }, block("code", "**raw**")]);
+  assert.equal(text, "Use **bold** ***and*** `x()` not ~~this~~, see [the docs](https://example.com/d) or page  \n\n```\n**raw**\n```");
+});
+
 test("text within the limit is kept whole", () => {
   const text = "é".repeat(CONTEXT_BYTES / 2);
   assert.equal(truncate(text), text);

@@ -21,19 +21,40 @@ export function parsePageId(input: string): string | undefined {
 /** One block from `GET /v1/blocks/{id}/children`, as far as it is rendered. */
 export interface Block {
   type: string;
+  has_children?: boolean;
+  /** Fetched by the plugin for blocks with `has_children`; Notion's reply never carries them. */
+  children?: Block[];
   [type: string]: any;
 }
 
-const LIST_TYPES = new Set(["bulleted_list_item", "numbered_list_item", "to_do"]);
+const LIST_TYPES = new Set(["bulleted_list_item", "numbered_list_item", "to_do", "toggle"]);
 
 function plain(richText: unknown): string {
   return Array.isArray(richText) ? richText.map((t) => (typeof t?.plain_text === "string" ? t.plain_text : "")).join("") : "";
 }
 
+/** One rich text run as Markdown, its spaces kept outside the markers so `**bold **` cannot happen. */
+function inline(run: any): string {
+  const text = typeof run?.plain_text === "string" ? run.plain_text : "";
+  const [, lead, core, trail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!;
+  if (!core) return text;
+  const a = run.annotations ?? {};
+  let out = a.code ? "`" + core + "`" : core;
+  if (a.strikethrough) out = `~~${out}~~`;
+  if (a.italic) out = `*${out}*`;
+  if (a.bold) out = `**${out}**`;
+  if (typeof run.href === "string" && /^https?:\/\//.test(run.href)) out = `[${out}](${run.href})`;
+  return lead + out + trail;
+}
+
+function markdown(richText: unknown): string {
+  return Array.isArray(richText) ? richText.map(inline).join("") : "";
+}
+
 function renderBlock(block: Block): string | undefined {
   const data = block[block.type];
   if (typeof data !== "object" || data === null) return undefined;
-  const text = plain(data.rich_text);
+  const text = markdown(data.rich_text);
   switch (block.type) {
     case "paragraph":
       return text;
@@ -44,13 +65,15 @@ function renderBlock(block: Block): string | undefined {
     case "heading_3":
       return `### ${text}`;
     case "bulleted_list_item":
+    case "toggle":
       return `- ${text}`;
     case "numbered_list_item":
       return `1. ${text}`;
     case "to_do":
       return `- [${data.checked ? "x" : " "}] ${text}`;
     case "code":
-      return "```" + (typeof data.language === "string" && data.language !== "plain text" ? data.language : "") + `\n${text}\n` + "```";
+      // Code stays as typed: Markdown inside it would be literal.
+      return "```" + (typeof data.language === "string" && data.language !== "plain text" ? data.language : "") + `\n${plain(data.rich_text)}\n` + "```";
     case "quote":
       return `> ${text.replaceAll("\n", "\n> ")}`;
     case "callout": {
@@ -64,18 +87,23 @@ function renderBlock(block: Block): string | undefined {
 
 /**
  * Blocks as Markdown-ish text: consecutive list items one per line, everything else a paragraph.
- * Empty paragraphs and block types not listed above are skipped; nested children are not fetched.
+ * A list item's (or toggle's) children are indented under it; other blocks' children follow them,
+ * and a block type not listed above shows only its children (a column's content, say). Empty
+ * paragraphs are skipped.
  */
-export function renderBlocks(blocks: Block[]): string {
+export function renderBlocks(blocks: Block[], indent = ""): string {
   let out = "";
   let lastWasList = false;
   for (const block of blocks) {
-    const text = renderBlock(block);
-    if (text === undefined || !text.trim()) continue;
     const isList = LIST_TYPES.has(block.type);
+    const own = renderBlock(block);
+    const text = own?.trim() ? own.replaceAll(/^/gm, indent) : "";
+    const children = block.children?.length ? renderBlocks(block.children, isList && text ? indent + "  " : indent) : "";
+    const whole = text && children ? `${text}${isList && LIST_TYPES.has(block.children![0].type) ? "\n" : "\n\n"}${children}` : text || children;
+    if (!whole) continue;
     if (out) out += isList && lastWasList ? "\n" : "\n\n";
-    out += text;
-    lastWasList = isList;
+    out += whole;
+    lastWasList = isList && !!text;
   }
   return out;
 }
