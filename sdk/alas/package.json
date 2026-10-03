@@ -1,7 +1,7 @@
 {
   "name": "@alas/plugin",
-  "version": "0.7.0",
-  "description": "SDK for Alas plugins (API 4 to 7: JavaScript in JavaScriptCore).",
+  "version": "0.8.0",
+  "description": "SDK for Alas plugins (API 4 to 8: JavaScript in JavaScriptCore).",
   "license": "MIT",
   "type": "module",
   "exports": {

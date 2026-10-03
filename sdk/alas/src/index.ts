@@ -1,9 +1,10 @@
 /**
- * SDK for Alas plugins, API 4 to 7: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 8: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
- * comments, processes, files) `"api": 6`; API 7 ones (message menu, slash prompts, context) `"api": 7`.
+ * comments, processes, files) `"api": 6`; API 7 ones (message menu, slash prompts, context) `"api": 7`;
+ * API 8 ones (commands that open a tab, `progress` and `link` view nodes) `"api": 8`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -459,7 +460,11 @@ export type Node =
   | { kind: "menu"; id: string; label: string; items: MenuItem[] }
   | { kind: "card"; id: string; children: Node[]; tone?: Tone; clickable?: boolean; width?: number }
   | { kind: "divider"; id: string }
-  | { kind: "spacer"; id: string };
+  | { kind: "spacer"; id: string }
+  /** API 8: a small indeterminate spinner with an optional dim caption. */
+  | { kind: "progress"; id: string; text?: string }
+  /** API 8: link-styled text; Alas opens the https `url` in the browser on click, without an event. */
+  | { kind: "link"; id: string; label: string; url: string };
 
 /** Replaces the tree shown in view tab `tab`. */
 export function render(tab: number, root: Node): void {
