@@ -96,6 +96,18 @@
       "id": "io.nlopez.notion-context",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 7,
+          "capabilities": [
+            "session.context",
+            "network",
+            "timers"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.2.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.2.0/plugin.js",
+          "hash": "3b6ad68b58fa410b492b2bbf567c3e1e2cf23e4b3e02b1fd9bdd4c6ebdd9df53"
+        },
+        {
           "version": "0.1.0",
           "api": 7,
           "capabilities": [
