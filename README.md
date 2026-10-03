@@ -60,7 +60,7 @@ handle(event: Event) {
 ```
 
 The manifest has a type too: `Manifest` (with `TabDecl`, `CommandDecl`, `PanelDecl`,
-`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 9, and
+`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 10, and
 the SDK's tests check every `plugins/*/plugin.json` against it.
 
 ## Building one locally
@@ -152,7 +152,7 @@ GitHub release, and adds the version to `index.json`:
 (`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
 before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (4 to 9 today).
+an `api` it does not support (4 to 10 today).
 
 ## License
 
