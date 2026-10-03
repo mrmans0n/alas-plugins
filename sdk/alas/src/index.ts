@@ -1,12 +1,12 @@
 /**
- * SDK for Alas plugins, API 4 to 9: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 10: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
  * comments, processes, files) `"api": 6`; API 7 ones (message menu, slash prompts, context) `"api": 7`;
  * API 8 ones (commands that open a tab, `progress` and `link` view nodes) `"api": 8`; API 9 ones
  * (configure panels, plugin-scoped storage, runtime prompts, tab visibility, `markdown` view nodes)
- * `"api": 9`.
+ * `"api": 9`. API 10 tells the plugin which SSH host a remote project runs on (`host` on `activate`).
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -27,7 +27,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 9. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 10. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -37,7 +37,7 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10;
   /** The script, relative to the plugin folder. */
   entry: string;
   capabilities?: Capability[];
@@ -287,7 +287,15 @@ export interface Reply {
 
 export type Event =
   /** `api` is the manifest's. */
-  | { type: "activate"; api: number; projectId: string; projectName: string; grants: string[] }
+  | {
+      type: "activate";
+      api: number;
+      projectId: string;
+      projectName: string;
+      /** The SSH host of a remote project; absent for a local one. Remote worktrees refuse `process/*` and `file/*`. */
+      host?: string;
+      grants: string[];
+    }
   | { type: "deactivate" }
   | { type: "workspaceChanged"; snapshot: Snapshot }
   /** The reply to `requestSnapshot`. */
@@ -737,7 +745,8 @@ export function dispatch(plugin: Plugin, json: string): void {
       if (!isObject(project) || typeof project.id !== "string" || typeof project.name !== "string") return;
       const grants = Array.isArray(params!.grants) ? params!.grants.filter((g: unknown) => typeof g === "string") : [];
       const api = typeof params!.api === "number" ? params!.api : 4;
-      return plugin.handle({ type: "activate", api, projectId: project.id, projectName: project.name, grants });
+      const host = typeof project.host === "string" ? { host: project.host } : {};
+      return plugin.handle({ type: "activate", api, projectId: project.id, projectName: project.name, ...host, grants });
     }
     case "alas/deactivate":
       return plugin.handle({ type: "deactivate" });

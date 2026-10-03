@@ -49,6 +49,12 @@ test("activation is answered before the plugin sees it", () => {
   assert.deepEqual(events, [{ type: "activate", api: 4, projectId: "p", projectName: "Proj", grants: ["workspace.read"] }]);
 });
 
+test("activation names the SSH host of a remote project", () => {
+  const events = recorder();
+  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 10, project: { id: "p", name: "Proj", host: "devbox" }, grants: [] } });
+  assert.deepEqual(events, [{ type: "activate", api: 10, projectId: "p", projectName: "Proj", host: "devbox", grants: [] }]);
+});
+
 test("requests get increasing ids and replies carry them back", () => {
   const events = recorder();
   const first = request("worktree/switch", { id: "w" });
