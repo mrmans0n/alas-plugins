@@ -13,9 +13,9 @@ Plugins are experimental, and the API may still change.
 | [Kanban](plugins/kanban) | 4 | A ticket board. Starting a ticket starts an agent in a new worktree. |
 | [Pixel Office](plugins/pixel-office) | 4 | Your project as a pixel-art office, one character per agent session. |
 | [Linear](plugins/linear-bridge) | 5 | Your assigned Linear issues in a panel. Starting one runs an agent and comments back. |
-| [Prompt Library](plugins/prompt-library) | 7 | Slash prompts for reviews, explanations, tests, commit messages and fixes, with editable templates. |
+| [Prompt Library](plugins/prompt-library) | 9 | Slash prompts for reviews, explanations, tests, commit messages and fixes, plus your own, managed in a Configure… sheet. |
 | [Notion Context](plugins/notion-context) | 7 | Adds a Notion page's content to every prompt sent to the project's agents. |
-| [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 8 | The repository's open pull requests by what they need, with squash-merge for the ready ones, through `gh`. |
+| [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 9 | The repository's open pull requests by what they need, with squash-merge for the ready ones, through `gh`. |
 
 ## How a plugin runs
 
@@ -58,6 +58,10 @@ handle(event: Event) {
   }
 }
 ```
+
+The manifest has a type too: `Manifest` (with `TabDecl`, `CommandDecl`, `PanelDecl`,
+`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 9, and
+the SDK's tests check every `plugins/*/plugin.json` against it.
 
 ## Building one locally
 
@@ -114,7 +118,8 @@ the latest request the plugin sent with that method. `--png <file>` saves the la
    a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4` (5 for
    commands, panels, settings, network, timers and events; 6 for the Changes, Run and session
    slots, badges, runs, reviews, processes and files; 7 for slash prompts and prompt context;
-   8 for commands that open a tab and the `progress` and `link` view nodes),
+   8 for commands that open a tab and the `progress` and `link` view nodes; 9 for a configure
+   panel, plugin-scoped storage, runtime prompts, tab visibility and the `markdown` view node),
    `"entry": "plugin.js"`, and only the capabilities it uses. Rename the package in its
    `package.json` and run `npm install` at the root.
 2. Open a pull request. CI typechecks, tests and builds every workspace. Review is the
@@ -147,7 +152,7 @@ GitHub release, and adds the version to `index.json`:
 (`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
 before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (4 to 8 today).
+an `api` it does not support (4 to 9 today).
 
 ## License
 

@@ -1,15 +1,16 @@
-import { definePlugin, notify, processRun, render, requestSnapshot, setTimer, type Event, type Snapshot } from "@alas/plugin";
+import { cancelTimer, definePlugin, notify, processRun, render, requestSnapshot, setTimer, type Event, type Snapshot } from "@alas/plugin";
 import { isReady, parseInbox, processError } from "./inbox.ts";
 import { inboxView, mergeTarget, type ViewState } from "./view.ts";
 
 const TAB = 0;
+const REFRESH_SECONDS = 60;
 
 let worktree: string | undefined;
 const state: ViewState = { refreshing: false, mergeErrors: {} };
 let listing = false;
 /** A refresh asked for while one was running, so its data may predate a merge. */
 let again = false;
-let polling = false;
+let visible = false;
 
 const draw = () => render(TAB, inboxView(state, Date.now()));
 
@@ -56,19 +57,21 @@ function merge(number: number): void {
   });
 }
 
-/** Someone is looking at the inbox: keep it fresh every minute from now on. */
-function startPolling(): void {
-  if (polling) return;
-  polling = true;
-  // ponytail: view tabs report no visibility, so once opened the inbox polls until the plugin restarts.
-  setTimer("refresh", 60, true);
+/** The tab refreshes every minute only while it is shown, and at once when shown with stale data. */
+function setVisible(shown: boolean): void {
+  visible = shown;
+  if (!shown) {
+    cancelTimer("refresh");
+    return;
+  }
+  setTimer("refresh", REFRESH_SECONDS, true);
+  if (!listing && (state.fetchedAt === undefined || Date.now() - state.fetchedAt > REFRESH_SECONDS * 1000)) refresh();
 }
 
 function useSnapshot(snapshot: Snapshot): void {
   const first = worktree === undefined;
-  // Alas lists a project's main worktree first.
-  worktree = snapshot.worktrees[0]?.id;
-  if (first && worktree) refresh();
+  worktree = (snapshot.worktrees.find((w) => w.main) ?? snapshot.worktrees[0])?.id;
+  if (first && worktree && visible) refresh();
 }
 
 definePlugin({
@@ -81,15 +84,12 @@ definePlugin({
       case "snapshot":
       case "workspaceChanged":
         return useSnapshot(event.snapshot);
-      case "command":
-        if (event.command !== "open") return;
-        startPolling();
-        return refresh();
+      case "tabVisible":
+        return event.tab === TAB ? setVisible(event.visible) : undefined;
       case "timer":
         return event.id === "refresh" ? refresh() : undefined;
       case "viewEvent": {
         if (event.tab !== TAB || event.kind !== "click") return;
-        startPolling();
         if (event.id === "refresh" || event.id === "retry") return refresh();
         const number = mergeTarget(event.id);
         if (number !== undefined) merge(number);

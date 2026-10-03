@@ -3,9 +3,9 @@
 A personal tool for Nacho's merge workflow: a tab listing the repository's open
 pull requests, sorted by what they need, with a button that squash-merges the
 ones that are ready. Anyone who uses the GitHub CLI can install it; it reuses
-your `gh` login and asks for no token. It uses plugin API 8 (a command that
-opens its tab, progress and link view nodes) and runs `gh` through
-`process.exec`.
+your `gh` login and asks for no token. It uses plugin API 9 (a command that
+opens its tab, progress and link view nodes, tab visibility and the main
+worktree flag) and runs `gh` through `process.exec`.
 
 ## Build and install
 
@@ -37,8 +37,9 @@ most recently updated first within each group:
 Each row shows the branch and badges for checks, review, the Codex 👍 and
 conflicts, and opens the pull request in the browser. Ready rows get
 **Squash & merge**, which runs `gh pr merge --squash --delete-branch <number>`;
-a failure shows under the title. The list refreshes when the tab opens, after a
-merge, on **Refresh**, and every minute once you have opened or used it.
+a failure shows under the title. The list refreshes when the tab is shown and
+its data is over a minute old, after a merge, on **Refresh**, and every minute
+while the tab is shown. Nothing runs while it is hidden.
 
 Without `gh`, or without a login, the tab asks you to run `gh auth login` in a
 terminal. Both commands run in the project's main worktree, and `gh` finds the
@@ -53,6 +54,4 @@ repository from its git remote.
 
 ## Limits
 
-- View tabs do not report whether they are shown, so once the tab has been
-  opened the plugin refreshes every minute until it restarts.
 - One merge at a time.
