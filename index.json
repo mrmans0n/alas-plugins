@@ -135,6 +135,14 @@
       "id": "io.nlopez.prompt-library",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 9,
+          "capabilities": [],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.2.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.2.0/plugin.js",
+          "hash": "c03171e69c55ecf182ddc174b6dce767ac4e4844173896dd8c7178981b480c45"
+        },
+        {
           "version": "0.1.0",
           "api": 7,
           "capabilities": [],
@@ -144,7 +152,7 @@
         }
       ],
       "name": "Prompt Library",
-      "summary": "Slash prompts for everyday requests: /review, /explain, /tests, /commit and /fix, each with a template you can change.",
+      "summary": "Slash prompts for everyday requests (/review, /explain, /tests, /commit, /fix) plus your own, all editable in its Configure\u2026 sheet.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library"
     }
   ]
