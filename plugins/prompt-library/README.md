@@ -4,8 +4,10 @@ Slash prompts for everyday requests to an agent. Type `/review`, `/explain`,
 `/tests`, `/commit` or `/fix` in an agent session's composer, optionally
 followed by more text, and send it: the plugin expands it into a full prompt
 that replaces your draft, so you can read and edit it before sending it to the
-agent. It uses plugin API 7 (slash prompts) and settings, and is the reference
-plugin for slash prompts. It is written in TypeScript on `@alas/plugin`.
+agent. You can add your own prompts and rewrite the built-in ones in its
+**Configure…** sheet. It uses plugin API 9 (slash prompts, runtime prompts, a
+configure panel and plugin-scoped storage), and is the reference plugin for
+slash prompts. It is written in TypeScript on `@alas/plugin`.
 
 ## Build and install
 
@@ -33,19 +35,37 @@ Approve it in **Settings → Plugins**.
 `/explain`, `/tests` and `/fix` need text after the command; without it Alas
 shows the usage and keeps your draft.
 
-## Settings
+## Configure
 
-Each prompt has a template setting (**/review template** and so on). Empty, the
-built-in template is used. Otherwise:
+**Settings → Plugins → Prompt Library → Configure…** opens a sheet with two
+lists:
+
+- **Custom prompts**: **Add prompt** opens a form with a name, an optional
+  description for the slash picker, and a multiline template. Press Return in
+  the name and description fields to keep them, and ⌘Return in the template to
+  save; a problem (a taken or invalid name, an empty template) shows under the
+  form. Each prompt has **Edit** and **Delete**.
+- **Built-in prompts**: **Edit** rewrites a built-in template, **Reset** brings
+  the original back. Saving the original text, or nothing, also resets it.
+
+Names are up to 32 lowercase letters, digits and dashes, and cannot be one of
+the five built-ins; descriptions are up to 200 characters and templates up to
+4,000. There can be 32 custom prompts.
+
+Templates work the same way for every prompt:
 
 - `{args}` is replaced by the text after the command. A line holding `{args}`
   is left out when there is no text, so `Focus on: {args}` only appears when
   you give a focus.
 - A template without `{args}` gets the text appended as its own paragraph.
-- Settings are one-line fields, so write `\n` for a line break.
 
-For example, **/review template** set to
-`Review the diff against main.\nOnly report bugs.\nFocus on: {args}`.
+Everything is stored once for the plugin, not per project, so a prompt added in
+one project is there in all of them; open projects pick up a change right away.
+
+The old **/review template (legacy)** settings and the like, one-line fields
+with `\n` for a line break, still apply until you save anything in the sheet,
+which copies them in. After that they are ignored, and will go away in a later
+version.
 
 ## Capabilities
 
@@ -54,13 +74,11 @@ of its prompts, and its answer goes into your composer, not to the agent.
 
 ## Limitations
 
-- The prompt names are fixed in the manifest, so settings can change what the
-  five prompts say but cannot add new ones. Fork the plugin to add a prompt:
-  declare it in `plugin.json` (`contributes.prompts` and a template setting)
-  and add its template to `src/prompts.ts`.
 - A name Alas or an earlier plugin already uses is skipped by Alas, and a
   plugin prompt hides an agent command with the same name (for example an
   agent's own `/review`).
-- There is no "…" menu command for messages: API 7 has no way to put text in
+- Custom prompts are registered when the plugin starts in a project, so they
+  are only offered in projects where it is running.
+- There is no "…" menu command for messages: there is no way to put text in
   the composer, and sending a follow-up straight to the agent with
   `session/send` would skip the question you want to ask.

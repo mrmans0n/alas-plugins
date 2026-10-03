@@ -1,16 +1,16 @@
 {
   "id": "io.nlopez.prompt-library",
   "name": "Prompt Library",
-  "summary": "Slash prompts for everyday requests: /review, /explain, /tests, /commit and /fix, each with a template you can change.",
-  "version": "0.1.0",
-  "api": 7,
+  "summary": "Slash prompts for everyday requests (/review, /explain, /tests, /commit, /fix) plus your own, all editable in its Configure… sheet.",
+  "version": "0.2.0",
+  "api": 9,
   "entry": "plugin.js",
   "settings": [
-    { "key": "review", "title": "/review template", "type": "string" },
-    { "key": "explain", "title": "/explain template", "type": "string" },
-    { "key": "tests", "title": "/tests template", "type": "string" },
-    { "key": "commit", "title": "/commit template", "type": "string" },
-    { "key": "fix", "title": "/fix template", "type": "string" }
+    { "key": "review", "title": "/review template (legacy)", "type": "string" },
+    { "key": "explain", "title": "/explain template (legacy)", "type": "string" },
+    { "key": "tests", "title": "/tests template (legacy)", "type": "string" },
+    { "key": "commit", "title": "/commit template (legacy)", "type": "string" },
+    { "key": "fix", "title": "/fix template (legacy)", "type": "string" }
   ],
   "contributes": {
     "prompts": [
@@ -19,6 +19,7 @@
       { "name": "tests", "description": "Write tests for the given code or behavior" },
       { "name": "commit", "description": "Draft a commit message for the staged changes" },
       { "name": "fix", "description": "Find the root cause of a problem and fix it" }
-    ]
+    ],
+    "panels": [{ "id": "configure", "title": "Prompt Library", "location": "configure" }]
   }
 }
