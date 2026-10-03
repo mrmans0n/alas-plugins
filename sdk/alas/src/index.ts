@@ -1,7 +1,9 @@
 /**
- * SDK for Alas plugins, API 4 and 5: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 7: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
- * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`.
+ * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
+ * ones (more command slots, decorations, section panels, git/run/review events, runs, review
+ * comments, processes, files) `"api": 6`; API 7 ones (message menu, slash prompts, context) `"api": 7`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -67,8 +69,78 @@ export interface Agent {
   name: string;
 }
 
-/** Where a command was chosen: the current project, or a worktree by its `workspace/snapshot` id. */
-export type CommandTarget = { kind: "project" } | { kind: "worktree"; worktree: string };
+/**
+ * What a command was chosen on. Ids are `workspace/snapshot`'s; `path` is relative to the worktree,
+ * `script` a run script key (`repo:dev.sh`), `run` a run id. `file` to `session` need API 6, `message` API 7.
+ */
+export type CommandTarget =
+  | { kind: "project" }
+  | { kind: "worktree"; worktree: string }
+  | { kind: "file"; worktree: string; path: string }
+  | { kind: "commit"; worktree: string; sha: string }
+  | { kind: "run"; worktree: string; script: string }
+  | { kind: "runReport"; worktree: string; run: string }
+  | { kind: "session"; session: string }
+  /** `text` is the message's Markdown, cut to 32 KiB. */
+  | { kind: "message"; session: string; text: string };
+
+/** The fields each target kind carries, all strings. */
+const targetFields: Record<CommandTarget["kind"], string[]> = {
+  project: [],
+  worktree: ["worktree"],
+  file: ["worktree", "path"],
+  commit: ["worktree", "sha"],
+  run: ["worktree", "script"],
+  runReport: ["worktree", "run"],
+  session: ["session"],
+  message: ["session", "text"],
+};
+
+/** API 6: the worktree a `changes.section` panel or the run a `run.report.section` panel is for. */
+export type PanelPlace = { worktree: string; run?: undefined } | { run: string; worktree?: undefined };
+
+export interface ReviewChecks {
+  passed: number;
+  failed: number;
+  pending: number;
+}
+
+/** A request's decoded outcome: `error` when Alas refused it or it failed, `result` otherwise. */
+export type Outcome<T> = { result: T; error?: undefined } | { result?: undefined; error: RpcError };
+
+export interface RunOutput {
+  /** The last 64 KiB of the run's output, or `null` when Alas did not keep it. */
+  output: string | null;
+  truncated: boolean;
+}
+
+export interface ProcessResult {
+  /** The exit code, or 128 plus the signal number. */
+  exit: number;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  timedOut: boolean;
+}
+
+export interface FileEntry {
+  name: string;
+  kind: "file" | "directory" | "symlink";
+}
+
+export interface FileList {
+  entries: FileEntry[];
+  truncated: boolean;
+}
+
+/**
+ * Answers a request Alas sent the plugin (API 7) with `{text}`, or `fail` with an error. Only the
+ * first answer is sent.
+ */
+export interface Responder<Text> {
+  respond(text: Text): void;
+  fail(message: string): void;
+}
 
 /** `string` and `bool` settings by key, defaults applied. Secrets are never included. */
 export type SettingValues = Record<string, string | boolean>;
@@ -99,7 +171,8 @@ export interface Reply {
 }
 
 export type Event =
-  | { type: "activate"; projectId: string; projectName: string; grants: string[] }
+  /** `api` is the manifest's. */
+  | { type: "activate"; api: number; projectId: string; projectName: string; grants: string[] }
   | { type: "deactivate" }
   | { type: "workspaceChanged"; snapshot: Snapshot }
   /** The reply to `requestSnapshot`. */
@@ -125,10 +198,30 @@ export type Event =
   | { type: "settings"; values: SettingValues; secretsSet: string[]; changed: boolean }
   /** API 5: a timer set with `setTimer` is due. */
   | { type: "timer"; id: string }
-  /** API 5: a control in a panel was used; see `viewEvent`. */
-  | { type: "panelEvent"; panel: string; id: string; kind: string; value?: string }
-  /** API 5: a panel was shown or hidden. */
-  | { type: "panelVisible"; panel: string; visible: boolean }
+  /** API 5: a control in a panel was used; see `viewEvent`. Section panels (API 6) carry their place. */
+  | ({ type: "panelEvent"; panel: string; id: string; kind: string; value?: string } & Partial<PanelPlace>)
+  /** API 5: a panel was shown or hidden. Section panels (API 6) carry their place. */
+  | ({ type: "panelVisible"; panel: string; visible: boolean } & Partial<PanelPlace>)
+  /** API 6, events `worktree.created`, `worktree.removed`, `git.changed` (dirty or conflict counts) and `focus.changed`. */
+  | { type: "worktreeCreated" | "worktreeRemoved" | "gitChanged" | "focusChanged"; worktree: string }
+  /** API 6, event `run.started`. */
+  | { type: "runStarted"; worktree: string; script: string; run: string }
+  /** API 6, event `run.finished`: `exitCode` is set for `succeeded` and `failed`. */
+  | { type: "runFinished"; worktree: string; script: string; run: string; outcome: "succeeded" | "failed" | "stopped" | "unknown"; exitCode?: number }
+  /** API 6, event `review.changed`: `state` is `none` when the branch has no pull request. */
+  | { type: "reviewChanged"; worktree: string; state: "open" | "closed" | "merged" | "none"; number?: number; checks?: ReviewChecks }
+  /** API 6: a process started with `processStart` exited. */
+  | { type: "processExited"; run: string; exit: number }
+  /**
+   * API 7: the user sent `/name args` in a session. `respond` with the prompt (1 byte to 32 KiB) that
+   * replaces the draft, in this call or a later one within 30 s, e.g. after a `fetch`.
+   */
+  | ({ type: "promptExpand"; name: string; args: string; session: string } & Responder<string>)
+  /**
+   * API 7, capability `session.context`: a session is about to send a prompt. `respond` within this
+   * call, with text (up to 16 KiB) to add to it or `null` for none; a later answer is ignored.
+   */
+  | ({ type: "contextProvide"; session: string; worktree: string } & Responder<string | null>)
   /** Any other reply without a callback: `result` on success, `error` on failure. */
   | { type: "reply"; id: number; result?: unknown; error?: RpcError };
 
@@ -237,6 +330,77 @@ export function cancelTimer(id: string): number {
   return request("timer/cancel", { id });
 }
 
+/** Sends a request whose reply `decode` turns into `T`; a malformed reply is a -32603 error. */
+function requestDecoded<T>(method: string, params: unknown, decode: (r: Record<string, any>) => T | undefined, callback: (outcome: Outcome<T>) => void): number {
+  return request(method, params, ({ result, error }) => {
+    if (error) return callback({ error });
+    const value = isObject(result) ? decode(result) : undefined;
+    callback(value === undefined ? { error: { code: -32603, message: `malformed ${method} reply` } } : { result: value });
+  });
+}
+
+/** API 6, capability `session.write`: queues `text` (up to 32 KiB) as a prompt in an agent session. */
+export function sessionSend(session: string, text: string, callback?: (reply: Reply) => void): number {
+  return request("session/send", { session, text }, callback);
+}
+
+/** API 6, capability `runs.start`: starts run script `script`. Its run id comes with `runStarted`. */
+export function runStart(worktree: string, script: string, callback?: (reply: Reply) => void): number {
+  return request("run/start", { worktree, script }, callback);
+}
+
+/** API 6, capability `runs.read`: a finished run's output. */
+export function runOutput(run: string, callback: (outcome: Outcome<RunOutput>) => void): number {
+  return requestDecoded("run/output", { run }, (r) =>
+    (typeof r.output === "string" || r.output === null) && typeof r.truncated === "boolean" ? { output: r.output, truncated: r.truncated } : undefined, callback);
+}
+
+/** API 6, capability `review.write`: a draft review comment on `line` (from 1) of `path`. `body` is Markdown. */
+export function reviewComment(worktree: string, path: string, line: number, body: string, callback?: (reply: Reply) => void): number {
+  return request("review/comment", { worktree, path, line, body }, callback);
+}
+
+/** API 6, capability `process.exec`: runs the manifest's process `id` to completion. `args` need `appendArgs`. */
+export function processRun(
+  id: string,
+  worktree: string,
+  options: { args?: string[]; stdin?: string },
+  callback: (outcome: Outcome<ProcessResult>) => void,
+): number {
+  return requestDecoded("process/run", { id, worktree, args: options.args, stdin: options.stdin }, (r) =>
+    typeof r.exit === "number" && typeof r.stdout === "string" && typeof r.stderr === "string"
+      ? { exit: r.exit, stdout: r.stdout, stderr: r.stderr, truncated: r.truncated === true, timedOut: r.timedOut === true }
+      : undefined, callback);
+}
+
+/** API 6, capability `process.exec`: starts the `longRunning` process `id`; the result is its run id. */
+export function processStart(id: string, worktree: string, args: string[] | undefined, callback: (outcome: Outcome<string>) => void): number {
+  return requestDecoded("process/start", { id, worktree, args }, (r) => (typeof r.run === "string" ? r.run : undefined), callback);
+}
+
+/** API 6: stops a process started with `processStart`. */
+export function processStop(run: string, callback?: (reply: Reply) => void): number {
+  return request("process/stop", { run }, callback);
+}
+
+/** API 6, capability `files.read`: a UTF-8 file of up to 512 KiB, by path relative to the worktree. */
+export function fileRead(worktree: string, path: string, callback: (outcome: Outcome<string>) => void): number {
+  return requestDecoded("file/read", { worktree, path }, (r) => (typeof r.content === "string" ? r.content : undefined), callback);
+}
+
+/** API 6, capability `files.read`: a folder's entries, `""` for the worktree itself. */
+export function fileList(worktree: string, dir: string, callback: (outcome: Outcome<FileList>) => void): number {
+  return requestDecoded("file/list", { worktree, dir }, (r) =>
+    Array.isArray(r.entries) && r.entries.every((e: unknown) => isObject(e) && typeof e.name === "string" && typeof e.kind === "string")
+      ? { entries: r.entries.map((e: FileEntry) => ({ name: e.name, kind: e.kind })), truncated: r.truncated === true }
+      : undefined, callback);
+}
+
+/** API 6, capability `files.write`: replaces a file (up to 512 KiB), creating missing folders. */
+export function fileWrite(worktree: string, path: string, content: string, callback?: (reply: Reply) => void): number {
+  return request("file/write", { worktree, path, content }, callback);
+}
+
 /** The reply arrives as a `stored` event. */
 export function storageGet(key: string): number {
   const id = request("storage/get", { key });
@@ -302,9 +466,29 @@ export function render(tab: number, root: Node): void {
   sendNotification("view/render", { tab, root });
 }
 
-/** API 5: replaces the tree shown in the manifest's panel `panel`. */
-export function renderPanel(panel: string, root: Node): void {
-  sendNotification("view/render", { panel, root });
+/** API 5: replaces the tree shown in the manifest's panel `panel`. API 6 section panels need their `place`. */
+export function renderPanel(panel: string, root: Node, place?: PanelPlace): void {
+  sendNotification("view/render", { panel, ...place, root });
+}
+
+export type DecorationSlot = "repo.row" | "worktree.row" | "run.row" | "changes.file";
+
+export interface Decoration {
+  /** Cut to 24 characters. */
+  text: string;
+  tone?: Tone;
+  tooltip?: string;
+  /** One of the manifest's commands: the badge becomes a button that runs it on the row's target. */
+  command?: string;
+}
+
+/**
+ * API 6: replaces the plugin's badges (at most 2) on one row; `[]` clears them. `target` is the
+ * project id for `repo.row`, a worktree id for `worktree.row`, a run script key for `run.row`
+ * and a path for `changes.file`; the last two also need `worktree`. Set them again on activation.
+ */
+export function setDecorations(slot: DecorationSlot, target: string, items: Decoration[], worktree?: string): void {
+  sendNotification("decorations/set", { slot, target, worktree, items });
 }
 
 function isObject(value: unknown): value is Record<string, any> {
@@ -332,6 +516,43 @@ function secretsSet(payload: unknown): string[] {
   return Array.isArray(keys) ? keys.filter((k: unknown): k is string => typeof k === "string") : [];
 }
 
+/** The `worktree` or `run` a section panel's message carries, if any. */
+function placeOf(params: Record<string, any>): Partial<PanelPlace> {
+  if (typeof params.worktree === "string") return { worktree: params.worktree };
+  return typeof params.run === "string" ? { run: params.run } : {};
+}
+
+const worktreeEvents = {
+  "worktree/created": "worktreeCreated",
+  "worktree/removed": "worktreeRemoved",
+  "git/changed": "gitChanged",
+  "focus/changed": "focusChanged",
+} as const;
+
+function commandTarget(target: unknown): CommandTarget | undefined {
+  if (!isObject(target) || !Object.hasOwn(targetFields, target.kind)) return undefined;
+  const out: Record<string, string> = { kind: target.kind };
+  for (const field of targetFields[target.kind as CommandTarget["kind"]]) {
+    if (typeof target[field] !== "string") return undefined;
+    out[field] = target[field];
+  }
+  return out as CommandTarget;
+}
+
+/** Answers Alas's request `id` once: `{result: {text}}`, or an error. */
+function responder<Text extends string | null>(id: unknown): Responder<Text> {
+  let answered = false;
+  const answer = (reply: object) => {
+    if (answered) return;
+    answered = true;
+    send({ jsonrpc: "2.0", id, ...reply });
+  };
+  return {
+    respond: (text) => answer({ result: { text } }),
+    fail: (message) => answer({ error: { code: -32000, message } }),
+  };
+}
+
 function snapshotOf(payload: unknown): Snapshot | undefined {
   const snapshot = isObject(payload) ? payload.snapshot : undefined;
   return isObject(snapshot) && Array.isArray(snapshot.worktrees) ? (snapshot as Snapshot) : undefined;
@@ -356,7 +577,8 @@ export function dispatch(plugin: Plugin, json: string): void {
       const project = params?.project;
       if (!isObject(project) || typeof project.id !== "string" || typeof project.name !== "string") return;
       const grants = Array.isArray(params!.grants) ? params!.grants.filter((g: unknown) => typeof g === "string") : [];
-      return plugin.handle({ type: "activate", projectId: project.id, projectName: project.name, grants });
+      const api = typeof params!.api === "number" ? params!.api : 4;
+      return plugin.handle({ type: "activate", api, projectId: project.id, projectName: project.name, grants });
     }
     case "alas/deactivate":
       return plugin.handle({ type: "deactivate" });
@@ -373,17 +595,15 @@ export function dispatch(plugin: Plugin, json: string): void {
       if (typeof params?.id !== "string" || typeof params.kind !== "string") return;
       const value = typeof params.value === "string" ? params.value : undefined;
       if (typeof params.panel === "string") {
-        return plugin.handle({ type: "panelEvent", panel: params.panel, id: params.id, kind: params.kind, value });
+        return plugin.handle({ type: "panelEvent", panel: params.panel, ...placeOf(params), id: params.id, kind: params.kind, value });
       }
       if (typeof params.tab !== "number") return;
       return plugin.handle({ type: "viewEvent", tab: params.tab, id: params.id, kind: params.kind, value });
     }
     case "command/run": {
-      const target = params?.target;
-      if (typeof params?.command !== "string" || !isObject(target)) return;
-      if (target.kind === "project") return plugin.handle({ type: "command", command: params.command, target: { kind: "project" } });
-      if (target.kind !== "worktree" || typeof target.worktree !== "string") return;
-      return plugin.handle({ type: "command", command: params.command, target: { kind: "worktree", worktree: target.worktree } });
+      const target = commandTarget(params?.target);
+      if (typeof params?.command !== "string" || !target) return;
+      return plugin.handle({ type: "command", command: params.command, target });
     }
     case "session/state":
       if (typeof params?.session !== "string" || typeof params.worktree !== "string" || typeof params.state !== "string") return;
@@ -399,7 +619,41 @@ export function dispatch(plugin: Plugin, json: string): void {
       return typeof params?.id === "string" ? plugin.handle({ type: "timer", id: params.id }) : undefined;
     case "panel/visible":
       if (typeof params?.panel !== "string" || typeof params.visible !== "boolean") return;
-      return plugin.handle({ type: "panelVisible", panel: params.panel, visible: params.visible });
+      return plugin.handle({ type: "panelVisible", panel: params.panel, ...placeOf(params), visible: params.visible });
+    case "worktree/created":
+    case "worktree/removed":
+    case "git/changed":
+    case "focus/changed": {
+      const type = worktreeEvents[message.method as keyof typeof worktreeEvents];
+      return typeof params?.worktree === "string" ? plugin.handle({ type, worktree: params.worktree }) : undefined;
+    }
+    case "run/started":
+    case "run/finished": {
+      if (typeof params?.worktree !== "string" || typeof params.script !== "string" || typeof params.run !== "string") return;
+      const run = { worktree: params.worktree, script: params.script, run: params.run };
+      if (message.method === "run/started") return plugin.handle({ type: "runStarted", ...run });
+      if (!["succeeded", "failed", "stopped", "unknown"].includes(params.outcome)) return;
+      const exitCode = typeof params.exitCode === "number" ? { exitCode: params.exitCode } : {};
+      return plugin.handle({ type: "runFinished", ...run, outcome: params.outcome, ...exitCode });
+    }
+    case "review/changed": {
+      if (typeof params?.worktree !== "string" || !["open", "closed", "merged", "none"].includes(params.state)) return;
+      const c = params.checks;
+      const checks = isObject(c) && typeof c.passed === "number" && typeof c.failed === "number" && typeof c.pending === "number"
+        ? { checks: { passed: c.passed, failed: c.failed, pending: c.pending } }
+        : {};
+      const number = typeof params.number === "number" ? { number: params.number } : {};
+      return plugin.handle({ type: "reviewChanged", worktree: params.worktree, state: params.state, ...number, ...checks });
+    }
+    case "process/exited":
+      if (typeof params?.run !== "string" || typeof params.exit !== "number") return;
+      return plugin.handle({ type: "processExited", run: params.run, exit: params.exit });
+    case "prompt/expand":
+      if (typeof params?.name !== "string" || typeof params.args !== "string" || typeof params.session !== "string") return;
+      return plugin.handle({ type: "promptExpand", name: params.name, args: params.args, session: params.session, ...responder<string>(message.id) });
+    case "context/provide":
+      if (typeof params?.session !== "string" || typeof params.worktree !== "string") return;
+      return plugin.handle({ type: "contextProvide", session: params.session, worktree: params.worktree, ...responder<string | null>(message.id) });
     case "task/failed":
       if (typeof params?.sessionId !== "string" || typeof params.reason !== "string") return;
       return plugin.handle({ type: "taskFailed", sessionId: params.sessionId, reason: params.reason });
