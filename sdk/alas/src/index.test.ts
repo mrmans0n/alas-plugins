@@ -15,6 +15,7 @@ import {
   processRun,
   processStart,
   processStop,
+  promptsSet,
   renderPanel,
   reviewComment,
   runOutput,
@@ -27,6 +28,7 @@ import {
   request,
   requestSnapshot,
   storageGet,
+  storageKeys,
   storageSet,
   taskStart,
   type Event,
@@ -96,6 +98,10 @@ test("notifications decode into events", () => {
     ["review/changed", { worktree: "w", state: "open", number: 7, checks: { passed: 3, failed: 1, pending: 0 } }],
     ["review/changed", { worktree: "w", state: "none" }],
     ["process/exited", { run: "p1", exit: 143 }],
+    ["storage/changed", { scope: "plugin", key: "library" }],
+    ["storage/changed", { scope: "project", key: "x" }],
+    ["tab/visible", { tab: 0, visible: false }],
+    ["tab/visible", { tab: "0", visible: true }],
     ["alas/deactivate", {}],
   ] as const) {
     testHost.dispatch({ jsonrpc: "2.0", method, params });
@@ -128,6 +134,8 @@ test("notifications decode into events", () => {
     { type: "reviewChanged", worktree: "w", state: "open", number: 7, checks: { passed: 3, failed: 1, pending: 0 } },
     { type: "reviewChanged", worktree: "w", state: "none" },
     { type: "processExited", run: "p1", exit: 143 },
+    { type: "storageChanged", scope: "plugin", key: "library" },
+    { type: "tabVisible", tab: 0, visible: false },
     { type: "deactivate" },
   ]);
 });
@@ -192,6 +200,7 @@ test("API 6 requests decode their replies, and a malformed one is an error", () 
   const read = fileRead("w", "a.ts", push);
   const listed = fileList("w", "", push);
   const refused = fileRead("w", ".git/config", push);
+  const keys = storageKeys(push, "plugin");
   assert.deepEqual(testHost.takeSent().map((m) => [m.method, m.params]), [
     ["run/output", { run: "r" }],
     ["run/output", { run: "r2" }],
@@ -200,6 +209,7 @@ test("API 6 requests decode their replies, and a malformed one is an error", () 
     ["file/read", { worktree: "w", path: "a.ts" }],
     ["file/list", { worktree: "w", dir: "" }],
     ["file/read", { worktree: "w", path: ".git/config" }],
+    ["storage/keys", { scope: "plugin" }],
   ]);
   testHost.reply(listed, { entries: [{ name: "src", kind: "directory" }], truncated: false });
   testHost.reply(output, { output: null, truncated: false });
@@ -208,6 +218,7 @@ test("API 6 requests decode their replies, and a malformed one is an error", () 
   testHost.reply(started, { run: "p1" });
   testHost.reply(read, { content: 5 });
   testHost.replyError(refused, -32003, ".git is refused");
+  testHost.reply(keys, { keys: ["a", "b"] });
   assert.deepEqual(outcomes, [
     { result: { entries: [{ name: "src", kind: "directory" }], truncated: false } },
     { result: { output: null, truncated: false } },
@@ -216,6 +227,7 @@ test("API 6 requests decode their replies, and a malformed one is an error", () 
     { result: "p1" },
     { error: { code: -32603, message: "malformed file/read reply" } },
     { error: { code: -32003, message: ".git is refused" } },
+    { result: ["a", "b"] },
   ]);
 });
 
@@ -278,6 +290,9 @@ test("helpers send the documented requests", () => {
   reviewComment("w", "a.ts", 3, "why?");
   processStop("p1");
   fileWrite("w", "a.ts", "x");
+  storageGet("lib", "plugin");
+  storageSet("lib", null, "plugin");
+  promptsSet([{ name: "deploy", description: "Ship it" }, { name: "x" }]);
   const sent = testHost.takeSent().map((m) => [m.method, m.params]);
   assert.deepEqual(sent, [
     ["task/start", { title: "T", prompt: "do it" }],
@@ -297,6 +312,9 @@ test("helpers send the documented requests", () => {
     ["review/comment", { worktree: "w", path: "a.ts", line: 3, body: "why?" }],
     ["process/stop", { run: "p1" }],
     ["file/write", { worktree: "w", path: "a.ts", content: "x" }],
+    ["storage/get", { key: "lib", scope: "plugin" }],
+    ["storage/set", { key: "lib", value: null, scope: "plugin" }],
+    ["prompts/set", { prompts: [{ name: "deploy", description: "Ship it" }, { name: "x" }] }],
   ]);
 
   assert.equal(parseLastMessage({ message: "hi" }), "hi");

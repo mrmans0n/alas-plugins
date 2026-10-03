@@ -1,10 +1,12 @@
 /**
- * SDK for Alas plugins, API 4 to 8: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 9: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
  * comments, processes, files) `"api": 6`; API 7 ones (message menu, slash prompts, context) `"api": 7`;
- * API 8 ones (commands that open a tab, `progress` and `link` view nodes) `"api": 8`.
+ * API 8 ones (commands that open a tab, `progress` and `link` view nodes) `"api": 8`; API 9 ones
+ * (configure panels, plugin-scoped storage, runtime prompts, tab visibility, `markdown` view nodes)
+ * `"api": 9`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -24,6 +26,116 @@ declare global {
   var handle: ((json: string) => void) | undefined;
 }
 
+/**
+ * `plugin.json`, API 4 to 9. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * Write `export default { ... } satisfies Manifest` to check a manifest against it.
+ */
+export interface Manifest {
+  /** Reverse-DNS: `[a-z0-9-]+(\.[a-z0-9-]+)+`. */
+  id: string;
+  name: string;
+  /** One line for the catalog. */
+  summary?: string;
+  version: string;
+  api: 4 | 5 | 6 | 7 | 8 | 9;
+  /** The script, relative to the plugin folder. */
+  entry: string;
+  capabilities?: Capability[];
+  /** API 5: each needs its capability (see `ManifestEvent`). */
+  events?: ManifestEvent[];
+  /** API 5, with capability `network`: exact lowercase host names. */
+  network?: string[];
+  /** API 5: at most 16. */
+  settings?: SettingDecl[];
+  /** API 6, with capability `process.exec`: at most 16 argv prefixes. */
+  processes?: ProcessDecl[];
+  contributes?: {
+    /** At most 4. */
+    tabs?: TabDecl[];
+    /** API 5: at most 16. */
+    commands?: CommandDecl[];
+    /** API 5: at most 2 (4 at API 6), and at most one `configure` (API 9). */
+    panels?: PanelDecl[];
+    /** API 7: at most 16. */
+    prompts?: PromptDecl[];
+  };
+}
+
+export type Capability =
+  | "workspace.read" | "worktree.switch" | "session.focus" | "session.read" | "tasks.start"
+  /** API 5. */
+  | "notify" | "network" | "timers"
+  /** API 6. */
+  | "session.write" | "runs.read" | "runs.start" | "review.read" | "review.write" | "process.exec" | "files.read" | "files.write"
+  /** API 7. */
+  | "session.context";
+
+/** `session.*` need `session.read`, `run.*` `runs.read`, `review.changed` `review.read`, the rest `workspace.read`. */
+export type ManifestEvent =
+  /** API 5. */
+  | "session.state" | "session.finished"
+  /** API 6. */
+  | "worktree.created" | "worktree.removed" | "git.changed" | "focus.changed" | "run.started" | "run.finished" | "review.changed";
+
+export interface TabDecl {
+  id: string;
+  title: string;
+  kind?: "canvas" | "view";
+}
+
+export type CommandSlot =
+  /** API 5. */
+  | "palette" | "menubar" | "toolbar" | "repo.menu" | "worktree.menu"
+  /** API 6. */
+  | "changes.toolbar" | "changes.file.menu" | "changes.commit.menu" | "run.menu" | "run.report" | "session.menu"
+  /** API 7. */
+  | "message.menu";
+
+export interface CommandDecl {
+  /** `[a-z0-9-]+(\.[a-z0-9-]+)*`. */
+  id: string;
+  /** 1 to 40 characters. */
+  title: string;
+  /** An SF Symbol name. */
+  icon?: string;
+  slots: CommandSlot[];
+  /** API 8: one of the manifest's tab ids, opened before `command/run`. */
+  opens?: string;
+}
+
+/**
+ * `right` (API 5), `changes.section` and `run.report.section` (API 6), or `configure` (API 9): the
+ * sheet Settings → Plugins opens from the plugin's Configure… button.
+ */
+export type PanelLocation = "right" | "changes.section" | "run.report.section" | "configure";
+
+export interface PanelDecl {
+  id: string;
+  title: string;
+  icon?: string;
+  location?: PanelLocation;
+}
+
+export interface PromptDecl {
+  /** `[a-z0-9][a-z0-9-]{0,31}`. */
+  name: string;
+  /** At most 200 characters. */
+  description?: string;
+}
+
+export type SettingDecl =
+  | { key: string; title: string; type: "string"; default?: string }
+  | { key: string; title: string; type: "bool"; default?: boolean }
+  /** `hosts` must also be in `network`. */
+  | { key: string; title: string; type: "secret"; hosts: string[] };
+
+export interface ProcessDecl {
+  id: string;
+  command: string[];
+  appendArgs?: boolean;
+  longRunning?: boolean;
+}
+
 export interface Snapshot {
   worktrees: Worktree[];
 }
@@ -32,6 +144,8 @@ export interface Worktree {
   id: string;
   branch: string;
   current: boolean;
+  /** API 9: `true` on the project's main worktree. */
+  main?: boolean;
   dirty?: Dirty | null;
   sessions: Session[];
 }
@@ -223,6 +337,13 @@ export type Event =
    * call, with text (up to 16 KiB) to add to it or `null` for none; a later answer is ignored.
    */
   | ({ type: "contextProvide"; session: string; worktree: string } & Responder<string | null>)
+  /**
+   * API 9: another instance of this plugin (in another project) set plugin-scoped `key`.
+   * Not sent for the instance's own writes.
+   */
+  | { type: "storageChanged"; scope: "plugin"; key: string }
+  /** API 9: view or canvas tab `tab` got its first view in this project (`true`) or lost its last one. */
+  | { type: "tabVisible"; tab: number; visible: boolean }
   /** Any other reply without a callback: `result` on success, `error` on failure. */
   | { type: "reply"; id: number; result?: unknown; error?: RpcError };
 
@@ -402,16 +523,44 @@ export function fileWrite(worktree: string, path: string, content: string, callb
   return request("file/write", { worktree, path, content }, callback);
 }
 
+/**
+ * Where a stored key lives: `project` (the default) is this project's own store; `plugin` (API 9)
+ * is one app-wide store shared by the plugin's instances in every project.
+ */
+export type StorageScope = "project" | "plugin";
+
 /** The reply arrives as a `stored` event. */
-export function storageGet(key: string): number {
-  const id = request("storage/get", { key });
+export function storageGet(key: string, scope?: StorageScope): number {
+  const id = request("storage/get", { key, scope });
   typed.set(id, "storage");
   return id;
 }
 
-/** A `null` value deletes the key. */
-export function storageSet(key: string, value: unknown): number {
-  return request("storage/set", { key, value });
+/** A `null` value deletes the key. A `plugin`-scoped write sends `storage/changed` to the plugin's other instances. */
+export function storageSet(key: string, value: unknown, scope?: StorageScope): number {
+  return request("storage/set", { key, value, scope });
+}
+
+/** The stored keys, sorted. */
+export function storageKeys(callback: (outcome: Outcome<string[]>) => void, scope?: StorageScope): number {
+  return requestDecoded("storage/keys", { scope }, (r) =>
+    Array.isArray(r.keys) && r.keys.every((k: unknown) => typeof k === "string") ? r.keys : undefined, callback);
+}
+
+/** API 9: a slash prompt added at runtime, expanded through `promptExpand` like a manifest one. */
+export interface RuntimePrompt {
+  /** `[a-z0-9][a-z0-9-]{0,31}`, not one of the manifest's prompts. */
+  name: string;
+  /** At most 200 characters. */
+  description?: string;
+}
+
+/**
+ * API 9: replaces this instance's runtime slash prompts (at most 32). They end with the instance,
+ * so send them again on activation.
+ */
+export function promptsSet(prompts: RuntimePrompt[], callback?: (reply: Reply) => void): number {
+  return request("prompts/set", { prompts }, callback);
 }
 
 /** `{message: "..."}` gives the text; `null` or a missing key gives `undefined`. */
@@ -464,7 +613,12 @@ export type Node =
   /** API 8: a small indeterminate spinner with an optional dim caption. */
   | { kind: "progress"; id: string; text?: string }
   /** API 8: link-styled text; Alas opens the https `url` in the browser on click, without an event. */
-  | { kind: "link"; id: string; label: string; url: string };
+  | { kind: "link"; id: string; label: string; url: string }
+  /**
+   * API 9: up to 32 KiB of Markdown, rendered natively. `https` links open in the browser, images
+   * are not loaded, HTML is not rendered, and nothing reaches the plugin.
+   */
+  | { kind: "markdown"; id: string; text: string };
 
 /** Replaces the tree shown in view tab `tab`. */
 export function render(tab: number, root: Node): void {
@@ -659,6 +813,12 @@ export function dispatch(plugin: Plugin, json: string): void {
     case "context/provide":
       if (typeof params?.session !== "string" || typeof params.worktree !== "string") return;
       return plugin.handle({ type: "contextProvide", session: params.session, worktree: params.worktree, ...responder<string | null>(message.id) });
+    case "storage/changed":
+      if (params?.scope !== "plugin" || typeof params.key !== "string") return;
+      return plugin.handle({ type: "storageChanged", scope: "plugin", key: params.key });
+    case "tab/visible":
+      if (typeof params?.tab !== "number" || typeof params.visible !== "boolean") return;
+      return plugin.handle({ type: "tabVisible", tab: params.tab, visible: params.visible });
     case "task/failed":
       if (typeof params?.sessionId !== "string" || typeof params.reason !== "string") return;
       return plugin.handle({ type: "taskFailed", sessionId: params.sessionId, reason: params.reason });
