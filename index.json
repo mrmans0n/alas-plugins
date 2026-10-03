@@ -59,6 +59,26 @@
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/linear-bridge"
     },
     {
+      "id": "io.nlopez.notion-context",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 7,
+          "capabilities": [
+            "session.context",
+            "network",
+            "timers"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.1.0/plugin.js",
+          "hash": "7b37699e294370f0951c027b489c2011d6d3b277498dce225b378abba611d88e"
+        }
+      ],
+      "name": "Notion Context",
+      "summary": "Adds a Notion page's content to every prompt sent to agents in the project.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/notion-context"
+    },
+    {
       "id": "io.nlopez.pixel-office",
       "versions": [
         {
