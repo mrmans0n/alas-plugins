@@ -16,6 +16,7 @@ Plugins are experimental, and the API may still change.
 | [Prompt Library](plugins/prompt-library) | 9 | Slash prompts for reviews, explanations, tests, commit messages and fixes, plus your own, managed in a Configure… sheet. |
 | [Notion Context](plugins/notion-context) | 7 | Adds a Notion page's content to every prompt sent to the project's agents. |
 | [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 9 | The repository's open pull requests by what they need, with squash-merge for the ready ones, through `gh`. |
+| [Worktree Setup](plugins/worktree-setup) | 11 | Copies files like `.env` from the main worktree into each new worktree and runs your setup command there, locally or on an SSH host. |
 
 ## How a plugin runs
 
