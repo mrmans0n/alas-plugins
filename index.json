@@ -179,6 +179,28 @@
       "name": "Prompt Library",
       "summary": "Slash prompts for everyday requests (/review, /explain, /tests, /commit, /fix) plus your own, all editable in its Configure\u2026 sheet.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library"
+    },
+    {
+      "id": "io.nlopez.worktree-setup",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 11,
+          "capabilities": [
+            "workspace.read",
+            "files.read",
+            "files.write",
+            "process.exec",
+            "notify"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/worktree-setup-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/worktree-setup-v0.1.0/plugin.js",
+          "hash": "9fdea0dba520892f089c64bf7265665fbbe0cb80cb79c498805d2264e1a00247"
+        }
+      ],
+      "name": "Worktree Setup",
+      "summary": "Sets up each new worktree: copies files like .env from the main worktree and runs your setup command, on this Mac or an SSH host.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/worktree-setup"
     }
   ]
 }
