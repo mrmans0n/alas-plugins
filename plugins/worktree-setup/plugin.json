@@ -1,0 +1,15 @@
+{
+  "id": "io.nlopez.worktree-setup",
+  "name": "Worktree Setup",
+  "summary": "Sets up each new worktree: copies files like .env from the main worktree and runs your setup command, on this Mac or an SSH host.",
+  "version": "0.1.0",
+  "api": 11,
+  "entry": "plugin.js",
+  "remote": true,
+  "capabilities": ["workspace.read", "files.read", "files.write", "process.exec", "notify"],
+  "events": ["worktree.created"],
+  "processes": [{ "id": "setup", "command": ["/bin/sh", "-c"], "appendArgs": true, "longRunning": true }],
+  "contributes": {
+    "panels": [{ "id": "configure", "title": "Worktree Setup", "location": "configure" }]
+  }
+}
