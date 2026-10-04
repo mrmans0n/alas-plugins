@@ -31,6 +31,9 @@ import {
   storageKeys,
   storageSet,
   taskStart,
+  usageLimits,
+  usageTurns,
+  webPost,
   type Event,
 } from "./index.ts";
 
@@ -334,4 +337,55 @@ test("the test host enforces the per-call send cap", () => {
   definePlugin({ handle: () => { for (let i = 0; i < 65; i++) request("log"); } });
   assert.throws(() => testHost.dispatch({ jsonrpc: "2.0", method: "tick", params: { dt: 1 } }), /64 messages/);
   testHost.takeSent();
+});
+
+test("web pages and recorded turns arrive as events, and posts go to the tab", () => {
+  const events = recorder();
+  const turn = { id: 7, session: "s", worktree: "w", agent: "claude", startedAt: 1, endedAt: 9, result: "completed", tokens: { total: 5, input: 5 } };
+  testHost.notify("web/message", { tab: 0, message: { ready: true } });
+  testHost.notify("web/message", { tab: 0, message: null });
+  testHost.notify("web/message", { tab: 0 });
+  testHost.notify("turn/finished", { session: "s", worktree: "w", turn });
+  testHost.notify("turn/finished", { session: "s", worktree: "w", turn: { ...turn, result: "exploded" } });
+  webPost(0, { points: [3] });
+  assert.deepEqual(events, [
+    { type: "webMessage", tab: 0, message: { ready: true } },
+    { type: "webMessage", tab: 0, message: null },
+    {
+      type: "turnFinished", session: "s", worktree: "w",
+      turn: { ...turn, tokens: { total: 5, input: 5, cachedInput: 0, cachedWrite: 0, output: 0, reasoningOutput: 0 } },
+    },
+  ]);
+  assert.deepEqual(testHost.takeSent(), [{ jsonrpc: "2.0", method: "web/post", params: { tab: 0, message: { points: [3] } } }]);
+});
+
+test("usage pages decode their entries and cursor, skipping malformed entries", () => {
+  recorder();
+  const outcomes: unknown[] = [];
+  const push = (o: unknown) => outcomes.push(o);
+  const cursor = { before: 100, beforeId: 40 };
+  const turns = usageTurns({ since: 0, limit: 1000, scope: "all", cursor }, push);
+  const limits = usageLimits({ since: 0 }, push);
+  const broken = usageTurns({ since: 0 }, push);
+  assert.deepEqual(testHost.takeSent().map((m) => [m.method, m.params]), [
+    ["usage/turns", { since: 0, limit: 1000, scope: "all", cursor }],
+    ["usage/limits", { since: 0 }],
+    ["usage/turns", { since: 0 }],
+  ]);
+  const cost = { amount: 0.5, currency: "USD" };
+  testHost.reply(turns, {
+    turns: [{ id: 2, session: "s", agent: "a", model: "m", startedAt: 1, endedAt: 2, result: "limited", cost }, { id: "x" }],
+    truncated: true,
+    next: { before: 2, beforeId: 2 },
+  });
+  testHost.reply(limits, { limits: [{ session: "s", agent: "a", detectedAt: 5, resetsAt: 9, resetSource: "parsed" }, { session: "s", agent: "a", detectedAt: 6 }], truncated: false });
+  testHost.reply(broken, { truncated: false });
+  assert.deepEqual(outcomes, [
+    { result: { items: [{ id: 2, session: "s", model: "m", agent: "a", startedAt: 1, endedAt: 2, result: "limited", cost }], next: { before: 2, beforeId: 2 } } },
+    { result: { items: [
+      { session: "s", agent: "a", detectedAt: 5, resetsAt: 9, resetSource: "parsed" },
+      { session: "s", agent: "a", detectedAt: 6, resetSource: "unknown" },
+    ] } },
+    { error: { code: -32603, message: "malformed usage/turns reply" } },
+  ]);
 });
