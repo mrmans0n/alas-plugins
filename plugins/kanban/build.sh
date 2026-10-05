@@ -10,5 +10,6 @@ dest="${ALAS_APP_SUPPORT_DIR:-$HOME/Library/Application Support/Alas}/Plugins/$(
 mkdir -p "$dest"
 cp plugin.json "$dest/plugin.json"
 cp dist/plugin.js "$dest/plugin.js"
+cp dist/ui.js "$dest/ui.js"
 rm -f "$dest/plugin.wasm"
 echo "Installed to $dest"

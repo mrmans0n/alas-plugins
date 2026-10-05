@@ -11,8 +11,8 @@ export const MAX_LABEL_CHARS = 32;
 /** A full body is about 24,000 characters; opening it or adding a comment stays a few ms. */
 export const MAX_COMMENTS = 10;
 export const MAX_COMMENT_CHARS = 2_000;
-/** Bounds the view tree (each ticket is about ten nodes, the host allows 2,000) and the time to draw the board. */
-export const MAX_INDEX = 75;
+/** Bounds the index, posted whole to the page after every change, well inside the 1 MiB message and storage limits. */
+export const MAX_INDEX = 300;
 /** Closed tickets kept in the index; older ones leave it and their bodies are deleted. */
 export const ARCHIVE_KEEP = 15;
 export const FORMAT_VERSION = 1;
@@ -135,9 +135,9 @@ const COLUMN_STATUS: Record<Column, Status> = {
 export class Tracker {
   meta: Meta = { version: 0, next_number: 0 };
   /**
-   * Open tickets in creation order; a ticket moves to the end when it is closed, so closed
-   * tickets are in closing order and `archive` drops the oldest-closed. Not number order:
-   * callers that display by number must sort by number.
+   * Board order: the page shows each status's tickets in index order. New tickets go to the end, and
+   * a ticket moves to the end when it is closed, so closed tickets are in closing order (unless
+   * reordered by hand) and `archive` drops the first of them.
    */
   index: Entry[] = [];
 
@@ -178,6 +178,21 @@ export class Tracker {
     e.status = status;
     e.following = !closed(status) && e.session_id !== undefined;
     if (closing) this.index.push(...this.index.splice(i, 1));
+  }
+
+  /**
+   * Drag and drop: gives the ticket `status` (as `setStatus` does) and places it just before ticket
+   * `before`, or last among `status`'s tickets when `before` is absent or not in that status.
+   */
+  move(number: number, status: Status, before?: number): void {
+    if (!this.entry(number) || number === before) return;
+    this.setStatus(number, status);
+    const i = this.index.findIndex((e) => e.number === number);
+    const [e] = this.index.splice(i, 1);
+    const target = this.index.findIndex((t) => t.number === before && t.status === status);
+    if (target >= 0) return void this.index.splice(target, 0, e);
+    const last = this.index.findLastIndex((t) => t.status === status);
+    this.index.splice(last >= 0 ? last + 1 : this.index.length, 0, e);
   }
 
   delete(number: number): void {
