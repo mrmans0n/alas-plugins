@@ -10,7 +10,7 @@ Plugins are experimental, and the API may still change.
 
 | Plugin | API | What it does |
 |---|---|---|
-| [Kanban](plugins/kanban) | 4 | A ticket board. Starting a ticket starts an agent in a new worktree. |
+| [Kanban](plugins/kanban) | 12 | A ticket board. Starting a ticket starts an agent in a new worktree. |
 | [Pixel Office](plugins/pixel-office) | 4 | Your project as a pixel-art office, one character per agent session. |
 | [Linear](plugins/linear-bridge) | 5 | Your assigned Linear issues in a panel. Starting one runs an agent and comments back. |
 | [Prompt Library](plugins/prompt-library) | 9 | Slash prompts for reviews, explanations, tests, commit messages and fixes, plus your own, managed in a Configure… sheet. |

@@ -196,3 +196,20 @@ test("archive keeps the newest closed tickets", () => {
   assert.deepEqual(t.archive(), [4]);
   assert.ok(t.entry(1));
 });
+
+test("moving a ticket sets its status and places it before the target, or last in that status", () => {
+  const t = new Tracker();
+  for (const title of ["a", "b", "c", "d"]) t.create(title, "none");
+  t.setStatus(4, "todo");
+  const order = (status: Status) => t.inStatus(status).map((e) => e.number);
+
+  t.move(3, "backlog", 1);
+  assert.deepEqual(order("backlog"), [3, 1, 2]);
+  t.move(1, "todo", 4);
+  assert.deepEqual(order("todo"), [1, 4]);
+  t.move(2, "todo", 3); // 3 is not in Todo
+  assert.deepEqual(order("todo"), [1, 4, 2]);
+  t.move(3, "done");
+  assert.deepEqual([order("backlog"), order("done")], [[], [3]]);
+  assert.equal(t.entry(3)!.following, false);
+});

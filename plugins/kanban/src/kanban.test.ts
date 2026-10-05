@@ -6,7 +6,10 @@ import { Kanban, SAVE_FAILED } from "./kanban.ts";
 
 const reply = (id: number, result: unknown) => testHost.dispatch({ jsonrpc: "2.0", id, result });
 const fail = (id: number, message: string) => testHost.dispatch({ jsonrpc: "2.0", id, error: { code: -32003, message } });
-const event = (id: string, value?: string) => testHost.dispatch({ jsonrpc: "2.0", method: "view/event", params: { tab: 0, id, kind: "click", value } });
+/** What the board page sends. */
+const page = (message: object) => testHost.dispatch({ jsonrpc: "2.0", method: "web/message", params: { tab: 0, message } });
+/** The last state posted to the page. */
+const posted = (sent: any[]): any => sent.findLast((m) => m.method === "web/post")?.params.message;
 
 function snapshot(state: string): void {
   testHost.dispatch({
@@ -57,8 +60,9 @@ test("a legacy board is migrated once and left in place", () => {
 
 test("an unreadable store is never overwritten", () => {
   const k = activate({ version: 1, next_number: 2 }, "garbage", null);
-  assert.ok(JSON.stringify(sentOne(testHost.takeSent(), "view/render").params.root).includes("could not be read"));
-  event("new-description-0", "New ticket");
+  const state = posted(testHost.takeSent());
+  assert.ok(state.readOnly && state.notice.includes("could not be read"));
+  page({ type: "create", title: "", description: "New ticket", priority: "none" });
   snapshot("idle");
   assert.equal(k.tracker.index.length, 1, "the tracker still works in memory");
   assert.deepEqual(writes(testHost.takeSent()), []);
@@ -96,20 +100,20 @@ test("an idle session adds its last message as one comment", () => {
 });
 
 test("edits before the body loads write nothing", () => {
-  const k = withTicket();
-  event("ticket-1");
+  withTicket();
+  page({ type: "open", number: 1 });
   sentOne(testHost.takeSent(), "storage/get");
-  event(`description-1-${k.form}`, "new description");
-  event(`comment-1-${k.commentForm}`, "a comment");
+  page({ type: "describe", number: 1, text: "new description" });
+  page({ type: "comment", number: 1, text: "a comment" });
   assert.deepEqual(testHost.takeSent(), []);
 });
 
 test("a start reply for a deleted ticket is ignored", () => {
   const k = withTicket();
-  event("start-1");
+  page({ type: "start", number: 1 });
   reply(sentOne(testHost.takeSent(), "storage/get").id, { value: null });
   const start = sentOne(testHost.takeSent(), "task/start");
-  event("delete-1");
+  page({ type: "delete", number: 1 });
   assert.deepEqual(writes(testHost.takeSent()).find(([key]) => key === "ticket-1"), ["ticket-1", null]);
 
   reply(start.id, { sessionId: "s", branch: "task/kan-1" });
@@ -122,16 +126,16 @@ test("a start for an assignee no longer listed is not sent", () => {
   k.agentRequest = agentList();
   testHost.takeSent();
   reply(k.agentRequest, { agents: [{ id: "claude", name: "Claude" }] });
-  event("start-1");
+  page({ type: "start", number: 1 });
   assert.ok(!testHost.takeSent().some((m) => m.method === "task/start" || m.method === "storage/get"));
   assert.equal(k.notice, "gone is no longer available — pick another agent.");
 });
 
 test("start sends the ticket and assignee", () => {
   withTicket({ assignee: "claude" });
-  event("start-1");
+  page({ type: "start", number: 1 });
   const read = sentOne(testHost.takeSent(), "storage/get");
-  event("start-1");
+  page({ type: "start", number: 1 });
   assert.ok(!testHost.takeSent().some((m) => m.method === "storage/get"), "a second Start waits for the first");
 
   reply(read.id, { value: { description: "Make it work." } });
@@ -145,34 +149,34 @@ test("start sends the ticket and assignee", () => {
 
 test("a failed write stays visible until a later save fully succeeds", () => {
   const k = withTicket();
-  event("new-description-0", "New ticket\nwith a body");
+  page({ type: "create", title: "", description: "New ticket\nwith a body", priority: "none" });
   const sets = testHost.takeSent().filter((m) => m.method === "storage/set").map((m) => m.id);
   assert.equal(sets.length, 3, "meta, body, index");
   reply(sets[0], {});
   fail(sets[1], "storage is full");
   reply(sets[2], {});
   assert.ok(k.notice?.startsWith(SAVE_FAILED), "its own later writes do not hide it");
-  event("ticket-1");
-  event("back");
-  const render = testHost.takeSent().findLast((m) => m.method === "view/render");
-  assert.ok(JSON.stringify(render.params.root).includes(SAVE_FAILED), "navigating keeps it");
+  page({ type: "open", number: 1 });
+  page({ type: "close" });
+  assert.ok(posted(testHost.takeSent()).notice.startsWith(SAVE_FAILED), "opening and closing a ticket keeps it");
   fail(k.agentRequest!, "agents unavailable");
   assert.ok(k.notice?.startsWith(SAVE_FAILED), "another notice does not replace it");
 
-  event("status-1", "done");
+  page({ type: "move", number: 1, status: "done" });
   for (const set of testHost.takeSent().filter((m) => m.method === "storage/set")) reply(set.id, {});
   assert.equal(k.notice, undefined);
 });
 
 test("an undecodable body is shown read-only and never written", () => {
   withTicket();
-  event("ticket-1");
+  page({ type: "open", number: 1 });
   reply(sentOne(testHost.takeSent(), "storage/get").id, { value: "not a body" });
-  const root = JSON.stringify(sentOne(testHost.takeSent(), "view/render").params.root);
-  assert.ok(root.includes("could not be read") && !root.includes("description-1-") && !root.includes("comment-1-"));
+  const state = posted(testHost.takeSent());
+  assert.ok(state.notice.includes("could not be read"));
+  assert.deepEqual(state.open, { number: 1, unreadable: true });
 
-  event("comment-1-0", "hi");
-  event("delete-1");
+  page({ type: "comment", number: 1, text: "hi" });
+  page({ type: "delete", number: 1 });
   assert.ok(writes(testHost.takeSent()).every(([key]) => key !== "ticket-1"));
 });
 

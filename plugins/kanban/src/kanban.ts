@@ -1,4 +1,5 @@
-// Kanban: a small ticket tracker whose tickets start agents in new worktrees and follow them.
+// Kanban: a small ticket tracker whose tickets start agents in new worktrees and follow them. The board
+// is a web page (page/main.ts) that draws the state this posts and sends back what the user did.
 
 import {
   agentList,
@@ -6,18 +7,19 @@ import {
   log,
   parseAgents,
   parseLastMessage,
-  render,
   requestSnapshot,
   sessionFocus,
   storageGet,
   storageSet,
   taskStart,
+  webPost,
   type Agent,
   type Event,
   type Plugin,
   type RpcError,
   type Snapshot,
 } from "@alas/plugin";
+import { parsePageMessage, type PageMessage, type PluginMessage, type TicketView } from "./protocol.ts";
 import * as store from "./store.ts";
 import { firstLine, takeChars } from "./text.ts";
 import {
@@ -29,13 +31,14 @@ import {
   agentReply,
   closed,
   emptyBody,
-  isPriority,
-  isStatus,
   type Body,
   type Entry,
+  type Priority,
   type SessionRef,
 } from "./tickets.ts";
-import * as view from "./view.ts";
+
+/** The board's web tab. */
+const TAB = 0;
 
 export const TRACKER_FULL = "The tracker is full: delete some tickets first.";
 export const SAVE_FAILED = "Could not save: ";
@@ -62,15 +65,11 @@ function sendStart(e: Entry, description: string): number {
 
 export class Kanban implements Plugin {
   tracker = new Tracker();
-  screen: view.Screen = view.boardScreen();
+  /** The ticket open in the page's side panel. */
+  openNumber?: number;
   /** The open ticket's body, once read. Its description and comments are editable only then, so a body is never saved before it is known. */
   openBody?: { number: number; body: Body };
   agents: Agent[] = [];
-  draft = view.emptyDraft();
-  /** Generation of the New ticket and description field ids; bumping it resets those fields. */
-  form = 0;
-  /** Generation of the comment field id, separate so posting keeps unsaved description text. */
-  commentForm = 0;
   notice?: string;
   loaded = false;
   /** The store could not be read, so it is never overwritten. */
@@ -101,27 +100,38 @@ export class Kanban implements Plugin {
   /** The last agent/list reply succeeded, so `agents` is the set Start may use. */
   agentsLoaded = false;
 
+  /** Posts the whole state to the page; one that is not showing drops it and asks again when it loads. */
   render(): void {
     if (!this.loaded) return;
-    const screen = this.screen;
-    const body = screen.kind === "ticket" && this.openBody?.number === screen.number ? this.openBody.body : undefined;
-    const starting = [...this.pendingStarts.values()];
-    for (const load of this.bodyLoads) if (load.then.kind === "start") starting.push(load.number);
-    render(
-      0,
-      view.render({
-        tracker: this.tracker,
-        screen,
-        body,
-        agents: this.agents,
-        draft: this.draft,
-        form: this.form,
-        commentForm: this.commentForm,
-        notice: this.notice,
-        starting,
-        bodyUnreadable: screen.kind === "ticket" && this.unreadable.has(screen.number),
-      }),
-    );
+    const n = this.openNumber;
+    const message: PluginMessage = {
+      type: "state",
+      tickets: this.tracker.index.map((e) => this.ticketView(e)),
+      agents: this.agents.map((a) => ({ id: a.id, name: a.name })),
+      open: n === undefined ? undefined : { number: n, body: this.openBodyOf(n), unreadable: this.unreadable.has(n) },
+      notice: this.notice,
+      readOnly: this.loadFailed,
+    };
+    webPost(TAB, message);
+  }
+
+  ticketView(e: Entry): TicketView {
+    // A session is running from the accepted start until it is seen idle (or gone).
+    const running = e.session_id !== undefined && (!e.seen || (e.agent_state !== undefined && e.agent_state !== "idle"));
+    const starting = this.starting(e.number);
+    return {
+      number: e.number,
+      title: e.title,
+      status: e.status,
+      priority: e.priority,
+      assignee: e.assignee,
+      branch: e.branch,
+      agentState: e.session_id === undefined ? undefined : e.agent_state,
+      error: e.error,
+      hasSession: e.session_id !== undefined,
+      canStart: !running && !starting && !closed(e.status),
+      starting,
+    };
   }
 
   /** A load failure's notice stays: it says nothing will be saved. */
@@ -155,10 +165,7 @@ export class Kanban implements Plugin {
     if (!this.loaded) return;
     // Nobody can open an archived ticket, so its body goes with it.
     const archived = indexChanged ? this.tracker.archive() : [];
-    if (this.screen.kind === "ticket" && !this.tracker.entry(this.screen.number)) {
-      this.screen = view.boardScreen();
-      this.openBody = undefined;
-    }
+    if (this.openNumber !== undefined && !this.tracker.entry(this.openNumber)) this.openNumber = this.openBody = undefined;
     const bodies: [number, Body][] = openBody && this.openBody ? [[this.openBody.number, this.openBody.body]] : [];
     this.save(store.writes(this.tracker, bodies, [...deleted, ...archived], indexChanged));
     this.render();
@@ -215,10 +222,11 @@ export class Kanban implements Plugin {
     if (!this.sync()) this.render();
   }
 
-  navigate(screen: view.Screen): void {
-    this.screen = screen;
+  /** Opens ticket `n` in the side panel, or closes the panel (`undefined`). */
+  navigate(n: number | undefined): void {
+    this.openNumber = n;
     this.openBody = undefined;
-    // A failed load or save stays until it no longer holds; other notices go with the screen.
+    // A failed load or save stays until it no longer holds; other notices go with the panel.
     if (!this.loadFailed && !isSaveFailure(this.notice)) this.notice = undefined;
     this.render();
   }
@@ -226,32 +234,32 @@ export class Kanban implements Plugin {
   open(n: number): void {
     if (!this.tracker.entry(n)) return;
     this.bodyLoads = this.bodyLoads.filter((load) => load.then.kind !== "open");
-    // Agents may have been installed since the last screen.
+    // Agents may have been installed since the last ticket was opened.
     this.agentRequest = agentList();
     if (this.unreadable.has(n)) {
-      this.screen = { kind: "ticket", number: n };
+      this.openNumber = n;
       this.openBody = undefined;
       return this.unreadableNotice(n, "read earlier");
     }
     this.bodyLoads.push({ id: storageGet(store.bodyKey(n)), number: n, then: { kind: "open" } });
-    this.navigate({ kind: "ticket", number: n });
+    this.navigate(n);
   }
 
-  create(text: string): void {
+  /** Without a title, the description's first line is the title. */
+  create(rawTitle: string, text: string, priority: Priority, assignee?: string): void {
     const trimmed = text.trim();
     const description = takeChars(trimmed, MAX_DESCRIPTION_CHARS);
     const cut = description.length < trimmed.length;
-    const title = this.draft.title === "" ? firstLine(description) : this.draft.title;
+    const given = takeChars(rawTitle.trim(), MAX_TITLE_CHARS);
+    const title = given === "" ? firstLine(description) : given;
     if (title.trim() === "") return;
-    const n = this.tracker.create(title, this.draft.priority, this.draft.assignee);
+    const n = this.tracker.create(title, priority, assignee);
     if (n === undefined) {
       if (!this.loadFailed) this.setNotice(TRACKER_FULL);
       return;
     }
     if (this.notice === TRACKER_FULL) this.notice = undefined;
     if (cut) this.note(DESCRIPTION_CUT);
-    this.draft = view.emptyDraft();
-    this.form++;
     const bodies: [number, Body][] = description === "" ? [] : [[n, { ...emptyBody(), description }]];
     this.save(store.writes(this.tracker, bodies, [], true));
     this.render();
@@ -329,7 +337,7 @@ export class Kanban implements Plugin {
     }
     switch (then.kind) {
       case "open":
-        if (this.screen.kind === "ticket" && this.screen.number === n && !this.openBody) {
+        if (this.openNumber === n && !this.openBody) {
           this.openBody = { number: n, body };
           this.render();
         }
@@ -368,82 +376,60 @@ export class Kanban implements Plugin {
     else this.setNotice(`KAN-${n}: the agent finished without a message.`);
   }
 
-  viewEvent(id: string, value = ""): void {
+  pageMessage(m: PageMessage): void {
+    if (m.type === "ready") return this.render();
     if (!this.loaded) return;
-    // `<prefix><n>`, and for fields `<prefix><n>-<form>`: the form generation ends a field id.
-    const number = (prefix: string): number | undefined => (id.startsWith(prefix) ? digits(id.slice(prefix.length)) : undefined);
-    const field = (prefix: string): number | undefined => {
-      if (!id.startsWith(prefix)) return undefined;
-      const rest = id.slice(prefix.length);
-      const dash = rest.indexOf("-");
-      return dash < 0 ? undefined : digits(rest.slice(0, dash));
-    };
-    let n: number | undefined;
-
-    if (id === "back") {
-      this.navigate(view.boardScreen());
-    } else if (id === "show-cancelled") {
-      if (this.screen.kind === "board") this.screen = { kind: "board", showCancelled: !this.screen.showCancelled };
-      this.render();
-    } else if (id.startsWith("new-title-")) {
-      // Kept for Create; the field keeps showing what was typed.
-      this.draft.title = takeChars(value.trim(), MAX_TITLE_CHARS);
-    } else if (id.startsWith("new-description-")) {
-      this.create(value);
-    } else if (id.startsWith("new-priority-")) {
-      if (isPriority(value)) {
-        this.draft.priority = value;
-        this.render();
+    switch (m.type) {
+      case "create":
+        return this.create(m.title, m.description, m.priority, m.assignee);
+      case "open":
+        return this.open(m.number);
+      case "close":
+        return this.navigate(undefined);
+      case "move":
+        if (!this.tracker.entry(m.number)) return;
+        this.tracker.move(m.number, m.status, m.before);
+        return this.commit(true, false, []);
+      case "priority": {
+        const e = this.tracker.entry(m.number);
+        if (!e || e.priority === m.priority) return;
+        e.priority = m.priority;
+        return this.commit(true, false, []);
       }
-    } else if (id.startsWith("new-assignee-")) {
-      this.draft.assignee = value === view.UNASSIGNED ? undefined : value;
-      this.render();
-    } else if ((n = number("ticket-")) !== undefined) {
-      this.open(n);
-    } else if ((n = number("status-")) !== undefined) {
-      if (!isStatus(value)) return;
-      this.tracker.setStatus(n, value);
-      this.commit(true, false, []);
-    } else if ((n = number("cancel-")) !== undefined) {
-      this.tracker.setStatus(n, "cancelled");
-      this.commit(true, false, []);
-    } else if ((n = number("priority-")) !== undefined) {
-      const e = this.tracker.entry(n);
-      if (!isPriority(value) || !e) return;
-      e.priority = value;
-      this.commit(true, false, []);
-    } else if ((n = number("assign-")) !== undefined) {
-      const e = this.tracker.entry(n);
-      if (!e) return;
-      e.assignee = value === view.UNASSIGNED ? undefined : value;
-      this.commit(true, false, []);
-    } else if ((n = number("start-")) !== undefined) {
-      this.start(n);
-    } else if ((n = number("open-")) !== undefined) {
-      const session = this.tracker.entry(n)?.session_id;
-      if (session !== undefined) this.focusRequest = sessionFocus(session);
-    } else if ((n = number("delete-")) !== undefined) {
-      if (this.tracker.entry(n)) {
-        this.tracker.delete(n);
-        this.commit(true, false, [n]);
+      case "assign": {
+        const e = this.tracker.entry(m.number);
+        if (!e || e.assignee === m.assignee) return;
+        e.assignee = m.assignee;
+        return this.commit(true, false, []);
       }
-    } else if ((n = field("description-")) !== undefined) {
-      // Before the body arrives there is nothing to edit, and saving would overwrite it.
-      const body = this.openBodyOf(n);
-      if (!body) return;
-      const trimmed = value.trim();
-      const description = takeChars(trimmed, MAX_DESCRIPTION_CHARS);
-      if (body.description !== description) {
+      case "start":
+        return this.start(m.number);
+      case "focus": {
+        const session = this.tracker.entry(m.number)?.session_id;
+        if (session !== undefined) this.focusRequest = sessionFocus(session);
+        return;
+      }
+      case "delete":
+        if (!this.tracker.entry(m.number)) return;
+        this.tracker.delete(m.number);
+        return this.commit(true, false, [m.number]);
+      case "describe": {
+        // Before the body arrives there is nothing to edit, and saving would overwrite it.
+        const body = this.openBodyOf(m.number);
+        if (!body) return;
+        const trimmed = m.text.trim();
+        const description = takeChars(trimmed, MAX_DESCRIPTION_CHARS);
+        if (body.description === description) return;
         body.description = description;
         if (description.length < trimmed.length) this.note(DESCRIPTION_CUT);
-        this.commit(false, true, []);
+        return this.commit(false, true, []);
       }
-    } else if ((n = field("comment-")) !== undefined) {
-      const body = this.openBodyOf(n);
-      if (!body || value.trim() === "") return;
-      addComment(body, "you", value);
-      this.commentForm++;
-      this.commit(false, true, []);
+      case "comment": {
+        const body = this.openBodyOf(m.number);
+        if (!body || m.text.trim() === "") return;
+        addComment(body, "you", m.text);
+        return this.commit(false, true, []);
+      }
     }
   }
 
@@ -466,8 +452,11 @@ export class Kanban implements Plugin {
       case "snapshot":
       case "workspaceChanged":
         return this.apply(event.snapshot);
-      case "viewEvent":
-        return this.viewEvent(event.id, event.value);
+      case "webMessage": {
+        const message = parsePageMessage(event.message);
+        if (message) this.pageMessage(message);
+        return;
+      }
       case "taskFailed":
         if (this.tracker.taskFailed(event.sessionId, event.reason)) this.commit(true, false, []);
         return;
@@ -523,9 +512,4 @@ export class Kanban implements Plugin {
     }
     if (error) log("warn", `request failed: ${error.code} ${error.message}`);
   }
-}
-
-/** A ticket number in an id: ASCII digits only, so `ticket-1-title` is not ticket 1. */
-function digits(s: string): number | undefined {
-  return /^\d+$/.test(s) ? Number(s) : undefined;
 }
