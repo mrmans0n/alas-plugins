@@ -21,6 +21,9 @@ jobs:
         run: npm test
       - name: Build every plugin.js
         run: npm run build
+      # A web page (API 12) needs WebKit to run, so its bundle is only syntax-checked here.
+      - name: Syntax-check every ui.js
+        run: for page in plugins/*/dist/ui.js; do [ -e "$page" ] || continue; echo "$page"; node --check "$page"; done
 
   # Node tests run with globals Alas does not have; this activates every built bundle in a bare
   # JavaScriptCore context, exactly as Alas runs it, so a stray `Buffer` or `console` fails here.

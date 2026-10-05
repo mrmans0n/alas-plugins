@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 # Prints the hash Alas approves a plugin by (PluginTrust.hash in mrmans0n/alas).
-# Usage: scripts/trust-hash plugin.json plugin.js
+# Usage: scripts/trust-hash plugin.json plugin.js [ui.js]
+# Without a page it is v1: the manifest and the entry separated by one NUL. With one (API 12 `web`) it is v2,
+# which frames each file as `<name>\0<byte count>\0<bytes>`, so bytes can't move between the two scripts.
 set -euo pipefail
-{ printf 'alas-plugin-trust-v1\0'; cat "$1"; printf '\0'; cat "$2"; } | shasum -a 256 | cut -d' ' -f1
+if [ $# -eq 2 ]; then
+  { printf 'alas-plugin-trust-v1\0'; cat "$1"; printf '\0'; cat "$2"; } | shasum -a 256 | cut -d' ' -f1
+else
+  {
+    printf 'alas-plugin-trust-v2\0'
+    for pair in "manifest:$1" "entry:$2" "web:$3"; do
+      file="${pair#*:}"
+      printf '%s\0%d\0' "${pair%%:*}" "$(wc -c < "$file")"
+      cat "$file"
+    done
+  } | shasum -a 256 | cut -d' ' -f1
+fi

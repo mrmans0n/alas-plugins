@@ -5,8 +5,10 @@ Usage: update-index.py <folder> <tag> <plugin.json> <hash>
 
 Only the released version's entry is written. Other versions are kept as they are, including
 WebAssembly-era entries (api 1 to 3, a "wasm" URL and no "entry"), which Alas skips.
+A manifest with a page (API 12 `web`) also gets the release's page asset as `web`, named like the file.
 """
 import json
+import os
 import sys
 
 REPO = "https://github.com/mrmans0n/alas-plugins"
@@ -30,8 +32,10 @@ version = {
     "capabilities": manifest.get("capabilities", []),
     "manifest": f"{download}/plugin.json",
     "entry": f"{download}/plugin.js",
-    "hash": digest,
 }
+if "web" in manifest:
+    version["web"] = f"{download}/{os.path.basename(manifest['web'])}"
+version["hash"] = digest
 versions = [v for v in plugin["versions"] if v["version"] != version["version"]] + [version]
 versions.sort(key=lambda v: [int(part) for part in v["version"].split(".")], reverse=True)
 plugin["versions"] = versions

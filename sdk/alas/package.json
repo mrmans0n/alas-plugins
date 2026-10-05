@@ -1,11 +1,12 @@
 {
   "name": "@alas/plugin",
-  "version": "0.11.0",
-  "description": "SDK for Alas plugins (API 4 to 11: JavaScript in JavaScriptCore).",
+  "version": "0.12.0",
+  "description": "SDK for Alas plugins (API 4 to 12: JavaScript in JavaScriptCore, plus web tab pages).",
   "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./page": "./src/page.ts",
     "./test": "./src/test.ts"
   },
   "files": ["src", "!src/**/*.test.ts"],

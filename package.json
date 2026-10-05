@@ -9,8 +9,8 @@
     "plugins/*"
   ],
   "scripts": {
-    "typecheck": "npm run gen --workspaces --if-present && tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "test": "npm test --workspaces",
+    "typecheck": "npm run gen --workspaces --if-present && tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p tsconfig.page.json",
+    "test": "npm test --workspaces && node --test scripts/*.test.mjs",
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {

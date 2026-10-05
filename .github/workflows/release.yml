@@ -29,8 +29,11 @@ jobs:
             echo "::error::tag says $version but $dir/plugin.json says $manifest_version"
             exit 1
           fi
+          # API 12: a page script, published as a third asset and hashed with the framed v2 trust hash.
+          web="$(jq -r '.web // empty' "$dir/plugin.json")"
           echo "folder=$folder" >> "$GITHUB_OUTPUT"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "web=${web:+dist/$(basename "$web")}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -42,13 +45,15 @@ jobs:
           mkdir -p dist
           cp "${{ steps.plugin.outputs.dir }}/plugin.json" dist/plugin.json
           cp "${{ steps.plugin.outputs.dir }}/dist/plugin.js" dist/plugin.js
+          web="${{ steps.plugin.outputs.web }}"
+          if [ -n "$web" ]; then cp "${{ steps.plugin.outputs.dir }}/$web" "$web"; fi
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/plugin.json dist/plugin.js --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/plugin.json dist/plugin.js ${{ steps.plugin.outputs.web }} --title "$GITHUB_REF_NAME" --generate-notes
       - name: Update index.json
         run: |
-          hash="$(scripts/trust-hash dist/plugin.json dist/plugin.js)"
+          hash="$(scripts/trust-hash dist/plugin.json dist/plugin.js ${{ steps.plugin.outputs.web }})"
           git fetch --quiet origin main
           git checkout --quiet -B main origin/main
           scripts/update-index.py "${{ steps.plugin.outputs.folder }}" "$GITHUB_REF_NAME" dist/plugin.json "$hash"

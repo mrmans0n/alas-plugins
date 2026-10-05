@@ -1,5 +1,5 @@
 /**
- * SDK for Alas plugins, API 4 to 11: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 12: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
@@ -7,7 +7,10 @@
  * API 8 ones (commands that open a tab, `progress` and `link` view nodes) `"api": 8`; API 9 ones
  * (configure panels, plugin-scoped storage, runtime prompts, tab visibility, `markdown` view nodes)
  * `"api": 9`. API 10 tells the plugin which SSH host a remote project runs on (`host` on `activate`); API 11's
- * `remote: true` lets `file/*` and `process.*` run there, through the Alas helper on the host.
+ * `remote: true` lets `file/*` and `process.*` run there, through the Alas helper on the host. API 12
+ * adds web tabs (a page the plugin ships as `web`, talking to it through `webPost` and `webMessage`)
+ * and the usage history (`usageTurns`, `usageLimits`, `turnFinished`). For the page's side, see
+ * `@alas/plugin/page`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -28,7 +31,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 11. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 12. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -38,9 +41,14 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   /** The script, relative to the plugin folder. */
   entry: string;
+  /**
+   * API 12: the page script web tabs show, relative to the plugin folder (at most 8 MiB, not the entry).
+   * Needed by, and only allowed with, a tab of kind `web`.
+   */
+  web?: string;
   capabilities?: Capability[];
   /** API 5: each needs its capability (see `ManifestEvent`). */
   events?: ManifestEvent[];
@@ -74,19 +82,27 @@ export type Capability =
   /** API 6. */
   | "session.write" | "runs.read" | "runs.start" | "review.read" | "review.write" | "process.exec" | "files.read" | "files.write"
   /** API 7. */
-  | "session.context";
+  | "session.context"
+  /** API 12: the usage history, in every project with `scope: "all"`. */
+  | "usage.read";
 
-/** `session.*` need `session.read`, `run.*` `runs.read`, `review.changed` `review.read`, the rest `workspace.read`. */
+/**
+ * `session.*` need `session.read`, `run.*` `runs.read`, `review.changed` `review.read`, `turn.finished` `usage.read`,
+ * the rest `workspace.read`.
+ */
 export type ManifestEvent =
   /** API 5. */
   | "session.state" | "session.finished"
   /** API 6. */
-  | "worktree.created" | "worktree.removed" | "git.changed" | "focus.changed" | "run.started" | "run.finished" | "review.changed";
+  | "worktree.created" | "worktree.removed" | "git.changed" | "focus.changed" | "run.started" | "run.finished" | "review.changed"
+  /** API 12. */
+  | "turn.finished";
 
 export interface TabDecl {
   id: string;
   title: string;
-  kind?: "canvas" | "view";
+  /** `web` (API 12) shows the manifest's `web` page. */
+  kind?: "canvas" | "view" | "web";
 }
 
 export type CommandSlot =
@@ -358,6 +374,10 @@ export type Event =
   | { type: "storageChanged"; scope: "plugin"; key: string }
   /** API 9: view or canvas tab `tab` got its first view in this project (`true`) or lost its last one. */
   | { type: "tabVisible"; tab: number; visible: boolean }
+  /** API 12: a page of web tab `tab` called `alas.post(message)`. */
+  | { type: "webMessage"; tab: number; message: unknown }
+  /** API 12, event `turn.finished`: a turn of this project was recorded. */
+  | { type: "turnFinished"; session: string; worktree: string; turn: UsageTurn }
   /** Any other reply without a callback: `result` on success, `error` on failure. */
   | { type: "reply"; id: number; result?: unknown; error?: RpcError };
 
@@ -575,6 +595,136 @@ export interface RuntimePrompt {
  */
 export function promptsSet(prompts: RuntimePrompt[], callback?: (reply: Reply) => void): number {
   return request("prompts/set", { prompts }, callback);
+}
+
+/**
+ * API 12: delivers `message` (any JSON value; the whole message at most 1 MiB) to every live page of web tab `tab`.
+ * Dropped when the tab has no live page; a tab that is not a web tab stops the plugin.
+ */
+export function webPost(tab: number, message: unknown): void {
+  sendNotification("web/post", { tab, message });
+}
+
+/** API 12: one recorded agent turn. Times are epoch milliseconds. */
+export interface UsageTurn {
+  /** Grows with each recorded turn. */
+  id: number;
+  session: string;
+  /** Absent for sessions of a multi-project workspace. */
+  project?: string;
+  worktree?: string;
+  agent: string;
+  model?: string;
+  startedAt: number;
+  endedAt: number;
+  result: "completed" | "failed" | "cancelled" | "limited";
+  /** As the agent reported them; absent when it reported none. */
+  tokens?: UsageTokens;
+  /** What the turn added to the session's cost; absent when unknown. */
+  cost?: { amount: number; currency: string };
+}
+
+/** Missing counts are 0. */
+export interface UsageTokens {
+  total: number;
+  input: number;
+  cachedInput: number;
+  cachedWrite: number;
+  output: number;
+  reasoningOutput: number;
+}
+
+/** API 12: one usage-limit episode, from its first detection. */
+export interface UsageLimit {
+  session: string;
+  project?: string;
+  worktree?: string;
+  agent: string;
+  detectedAt: number;
+  /** Absent when the reset time is not known. */
+  resetsAt?: number;
+  resetSource: "structured" | "parsed" | "unknown";
+}
+
+/** Where the next page starts; pass it back as `cursor` as is. */
+export type UsageCursor = { before: number; beforeId: number };
+
+export interface UsageQuery {
+  /** Epoch ms: `endedAt` (turns) or `detectedAt` (limits) at or after it. */
+  since: number;
+  /** Epoch ms, exclusive; absent for no end. */
+  until?: number;
+  /** 1 to 1000, 200 when absent. */
+  limit?: number;
+  /** `project` (the default) or every project. */
+  scope?: "project" | "all";
+  /** A previous page's `next`, with the same other params. */
+  cursor?: UsageCursor;
+}
+
+/** A page, newest first. `next` is set when older entries in the window were left out. */
+export interface UsagePage<T> {
+  items: T[];
+  next?: UsageCursor;
+}
+
+/** API 12, capability `usage.read`: recorded turns, newest first. Malformed turns are skipped. */
+export function usageTurns(query: UsageQuery, callback: (outcome: Outcome<UsagePage<UsageTurn>>) => void): number {
+  return requestDecoded("usage/turns", query, (r) => usagePage(r.turns, r, parseUsageTurn), callback);
+}
+
+/** API 12, capability `usage.read`: usage-limit episodes, newest first. Malformed entries are skipped. */
+export function usageLimits(query: UsageQuery, callback: (outcome: Outcome<UsagePage<UsageLimit>>) => void): number {
+  return requestDecoded("usage/limits", query, (r) => usagePage(r.limits, r, parseUsageLimit), callback);
+}
+
+function usagePage<T>(list: unknown, r: Record<string, any>, parse: (value: unknown) => T | undefined): UsagePage<T> | undefined {
+  if (!Array.isArray(list)) return undefined;
+  const items: T[] = [];
+  for (const value of list) {
+    const item = parse(value);
+    if (item) items.push(item);
+  }
+  const n = r.next;
+  return r.truncated === true && isObject(n) && typeof n.before === "number" && typeof n.beforeId === "number"
+    ? { items, next: { before: n.before, beforeId: n.beforeId } }
+    : { items };
+}
+
+const turnResults = ["completed", "failed", "cancelled", "limited"];
+const resetSources = ["structured", "parsed", "unknown"];
+
+function optionalStrings(v: Record<string, any>, keys: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of keys) if (typeof v[key] === "string") out[key] = v[key];
+  return out;
+}
+
+/** A turn as `usage/turns` and `turn/finished` carry it, or `undefined` when malformed. */
+function parseUsageTurn(v: unknown): UsageTurn | undefined {
+  if (!isObject(v) || typeof v.id !== "number" || typeof v.session !== "string" || typeof v.agent !== "string"
+    || typeof v.startedAt !== "number" || typeof v.endedAt !== "number" || !turnResults.includes(v.result)) return undefined;
+  const turn: UsageTurn = {
+    id: v.id, session: v.session, ...optionalStrings(v, ["project", "worktree", "model"]), agent: v.agent,
+    startedAt: v.startedAt, endedAt: v.endedAt, result: v.result,
+  };
+  const t = v.tokens;
+  if (isObject(t)) {
+    const n = (key: string) => (typeof t[key] === "number" ? t[key] : 0);
+    turn.tokens = { total: n("total"), input: n("input"), cachedInput: n("cachedInput"), cachedWrite: n("cachedWrite"), output: n("output"), reasoningOutput: n("reasoningOutput") };
+  }
+  const c = v.cost;
+  if (isObject(c) && typeof c.amount === "number" && typeof c.currency === "string") turn.cost = { amount: c.amount, currency: c.currency };
+  return turn;
+}
+
+function parseUsageLimit(v: unknown): UsageLimit | undefined {
+  if (!isObject(v) || typeof v.session !== "string" || typeof v.agent !== "string" || typeof v.detectedAt !== "number") return undefined;
+  return {
+    session: v.session, ...optionalStrings(v, ["project", "worktree"]), agent: v.agent, detectedAt: v.detectedAt,
+    ...(typeof v.resetsAt === "number" ? { resetsAt: v.resetsAt } : {}),
+    resetSource: resetSources.includes(v.resetSource) ? v.resetSource : "unknown",
+  };
 }
 
 /** `{message: "..."}` gives the text; `null` or a missing key gives `undefined`. */
@@ -834,6 +984,14 @@ export function dispatch(plugin: Plugin, json: string): void {
     case "tab/visible":
       if (typeof params?.tab !== "number" || typeof params.visible !== "boolean") return;
       return plugin.handle({ type: "tabVisible", tab: params.tab, visible: params.visible });
+    case "web/message":
+      if (typeof params?.tab !== "number" || !Object.hasOwn(params, "message")) return;
+      return plugin.handle({ type: "webMessage", tab: params.tab, message: params.message });
+    case "turn/finished": {
+      const turn = parseUsageTurn(params?.turn);
+      if (typeof params?.session !== "string" || typeof params.worktree !== "string" || !turn) return;
+      return plugin.handle({ type: "turnFinished", session: params.session, worktree: params.worktree, turn });
+    }
     case "task/failed":
       if (typeof params?.sessionId !== "string" || typeof params.reason !== "string") return;
       return plugin.handle({ type: "taskFailed", sessionId: params.sessionId, reason: params.reason });

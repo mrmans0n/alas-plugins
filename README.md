@@ -17,6 +17,7 @@ Plugins are experimental, and the API may still change.
 | [Notion Context](plugins/notion-context) | 7 | Adds a Notion page's content to every prompt sent to the project's agents. |
 | [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 9 | The repository's open pull requests by what they need, with squash-merge for the ready ones, through `gh`. |
 | [Worktree Setup](plugins/worktree-setup) | 11 | Copies files like `.env` from the main worktree into each new worktree and runs your setup command there, locally or on an SSH host. |
+| [Agent Usage](plugins/agent-usage) | 12 | A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree. |
 
 ## How a plugin runs
 
@@ -61,8 +62,19 @@ handle(event: Event) {
 ```
 
 The manifest has a type too: `Manifest` (with `TabDecl`, `CommandDecl`, `PanelDecl`,
-`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 11, and
+`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 12, and
 the SDK's tests check every `plugins/*/plugin.json` against it.
+
+## Web tabs (API 12)
+
+A tab with `"kind": "web"` shows a page the plugin ships as `web` (say `ui.js`): one script,
+bundled like `plugin.js`, that Alas runs in a sandboxed web view with no network. The page and
+the plugin only exchange messages: the page posts with `alas.post`, which reaches the plugin
+as a `webMessage` event, and the plugin answers with `webPost(tab, message)`. The page is
+thrown away whenever its tab is hidden, so have it post a "ready" message on start.
+`@alas/plugin/page` types the page's `alas` and has `connect` and `themeColor` helpers;
+page sources live in a plugin's `page/` folder and typecheck with the DOM. See
+[Agent Usage](plugins/agent-usage) for a whole one.
 
 ## Building one locally
 
@@ -81,7 +93,7 @@ plugins/kanban/build.sh
 ```bash
 npm run typecheck   # plugin sources are checked without DOM or Node globals
 npm test            # node --test in every workspace
-npm run build       # esbuild, one dist/plugin.js per plugin
+npm run build       # esbuild, one dist/plugin.js per plugin (and dist/ui.js for web tabs)
 ```
 
 Unit tests run the plugin in Node against `@alas/plugin/test`, a fake host that records
@@ -120,10 +132,12 @@ the latest request the plugin sent with that method. `--png <file>` saves the la
    commands, panels, settings, network, timers and events; 6 for the Changes, Run and session
    slots, badges, runs, reviews, processes and files; 7 for slash prompts and prompt context;
    8 for commands that open a tab and the `progress` and `link` view nodes; 9 for a configure
-   panel, plugin-scoped storage, runtime prompts, tab visibility and the `markdown` view node),
+   panel, plugin-scoped storage, runtime prompts, tab visibility and the `markdown` view node;
+   10 and 11 for remote projects; 12 for web tabs and the usage history),
    `"entry": "plugin.js"`, and only the capabilities it uses. Rename the package in its
    `package.json` and run `npm install` at the root.
-2. Open a pull request. CI typechecks, tests and builds every workspace. Review is the
+2. Open a pull request. CI typechecks, tests and builds every workspace, runs every
+   `plugin.js` in bare JavaScriptCore, and syntax-checks every `ui.js`. Review is the
    curation step: a plugin in this repo is one people can install from inside Alas.
 
 ## Releasing
@@ -135,8 +149,8 @@ Bump `version` in the plugin's `plugin.json`, merge, then push a tag named
 git tag kanban-v0.3.0 && git push origin kanban-v0.3.0
 ```
 
-The release workflow builds the plugin, publishes `plugin.json` and `plugin.js` as a
-GitHub release, and adds the version to `index.json`:
+The release workflow builds the plugin, publishes `plugin.json` and `plugin.js` (and the
+`web` page, for a plugin with one) as a GitHub release, and adds the version to `index.json`:
 
 ```json
 {
@@ -149,11 +163,13 @@ GitHub release, and adds the version to `index.json`:
 }
 ```
 
-`entry` is the URL of the release's `plugin.js`. `hash` is what Alas approves the plugin by
-(`scripts/trust-hash`, over the manifest and `plugin.js`), so Alas verifies the download
-before the user is asked to approve it. Versions released for the WebAssembly runtime stay in
+`entry` is the URL of the release's `plugin.js`, and `web` that of its page, when it has one.
+`hash` is what Alas approves the plugin by (`scripts/trust-hash`, over the manifest,
+`plugin.js` and the page), so Alas verifies the download before the user is asked to approve
+it. Without a page it is the v1 hash; with one it is v2, which frames each file with its
+name and length. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (4 to 11 today).
+an `api` it does not support (4 to 11 today, 12 once Alas ships it).
 
 ## License
 

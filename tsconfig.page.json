@@ -1,0 +1,7 @@
+{
+  // Web tab pages (API 12): they run in a WebKit view, so they get the DOM, but still no Node.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "lib": ["es2023", "dom"] },
+  "include": ["plugins/*/page/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
+}
