@@ -2,6 +2,26 @@
   "format": 1,
   "plugins": [
     {
+      "id": "io.nlopez.agent-usage",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 12,
+          "capabilities": [
+            "usage.read",
+            "workspace.read"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.1.0/plugin.js",
+          "web": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.1.0/ui.js",
+          "hash": "96635da2668ece0cf8edb7a212db0a4f79fe2831a0cf0633daa971ff14d16676"
+        }
+      ],
+      "name": "Agent Usage",
+      "summary": "A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/agent-usage"
+    },
+    {
       "id": "io.nlopez.kanban",
       "versions": [
         {
