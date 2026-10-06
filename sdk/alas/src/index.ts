@@ -1,5 +1,5 @@
 /**
- * SDK for Alas plugins, API 4 to 12: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 13: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
@@ -9,8 +9,8 @@
  * `"api": 9`. API 10 tells the plugin which SSH host a remote project runs on (`host` on `activate`); API 11's
  * `remote: true` lets `file/*` and `process.*` run there, through the Alas helper on the host. API 12
  * adds web tabs (a page the plugin ships as `web`, talking to it through `webPost` and `webMessage`)
- * and the usage history (`usageTurns`, `usageLimits`, `turnFinished`). For the page's side, see
- * `@alas/plugin/page`.
+ * and the usage history (`usageTurns`, `usageLimits`, `turnFinished`). API 13 draws a `button`'s `tone` and
+ * adds the `success` tone. For the page's side, see `@alas/plugin/page`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -31,7 +31,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 12. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 13. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -41,7 +41,7 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
   /** The script, relative to the plugin folder. */
   entry: string;
   /**
@@ -751,7 +751,8 @@ export function setRegions(tab: number, regions: Region[]): void {
   sendNotification("canvas/regions", { tab, regions });
 }
 
-export type Tone = "normal" | "dim" | "accent" | "warn" | "danger";
+/** `success` needs API 13. */
+export type Tone = "normal" | "dim" | "accent" | "warn" | "danger" | "success";
 export type TextStyle = "body" | "caption" | "title" | "monospaced";
 export type ButtonStyle = "normal" | "primary" | "plain";
 
@@ -768,7 +769,8 @@ export type Node =
   | { kind: "scroll"; id: string; axis: "vertical" | "horizontal"; child: Node }
   | { kind: "text"; id: string; text: string; style?: TextStyle; tone?: Tone }
   | { kind: "badge"; id: string; text: string; tone?: Tone }
-  | { kind: "button"; id: string; label: string; icon?: string; style?: ButtonStyle; disabled?: boolean }
+  /** API 13: `tone` fills a `primary` button, and colors the label of the others. */
+  | { kind: "button"; id: string; label: string; icon?: string; style?: ButtonStyle; tone?: Tone; disabled?: boolean }
   | { kind: "textField"; id: string; value: string; placeholder?: string; multiline?: boolean }
   | { kind: "menu"; id: string; label: string; items: MenuItem[] }
   | { kind: "card"; id: string; children: Node[]; tone?: Tone; clickable?: boolean; width?: number }

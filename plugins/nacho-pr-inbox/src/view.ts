@@ -55,9 +55,9 @@ function badges(p: Pull): Node[] {
 }
 
 /** Green checks make merging the obvious action, running ones a neutral one, red ones a warning. */
-function mergeLook(p: Pull): { label: string; icon?: string; style: ButtonStyle } {
-  if (isReady(p)) return { label: "Squash & merge", icon: "checkmark", style: "primary" };
-  if (p.ci === "FAILURE" || p.ci === "ERROR") return { label: "Merge anyway", icon: "exclamationmark.triangle", style: "normal" };
+function mergeLook(p: Pull): { label: string; icon?: string; style: ButtonStyle; tone?: Tone } {
+  if (isReady(p)) return { label: "Squash & merge", icon: "checkmark", style: "primary", tone: "success" };
+  if (p.ci === "FAILURE" || p.ci === "ERROR") return { label: "Merge anyway", icon: "exclamationmark.triangle", style: "normal", tone: "warn" };
   return { label: "Squash & merge", style: "normal" };
 }
 

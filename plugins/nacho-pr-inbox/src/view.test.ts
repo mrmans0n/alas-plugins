@@ -67,13 +67,13 @@ test("the Codex badge shows 👍, else 👀 while it reviews, else nothing", () 
 test("a Codex 👍 gets a merge button that looks as safe as the checks are", () => {
   const button = (fields: Partial<Pull>) => {
     const b = nodes(view({ inbox: { repo: "o/r", pulls: [pull(1, fields)] } })).get(mergeButtonId(1)) as any;
-    return b && `${b.style} ${b.icon ?? "-"} ${b.label}`;
+    return b && `${b.style} ${b.tone ?? "-"} ${b.icon ?? "-"} ${b.label}`;
   };
-  assert.equal(button({}), "primary checkmark Squash & merge");
-  assert.equal(button({ ci: "PENDING" }), "normal - Squash & merge");
-  assert.equal(button({ ci: null }), "normal - Squash & merge");
-  assert.equal(button({ ci: "FAILURE" }), "normal exclamationmark.triangle Merge anyway");
-  assert.equal(button({ ci: "ERROR" }), "normal exclamationmark.triangle Merge anyway");
+  assert.equal(button({}), "primary success checkmark Squash & merge");
+  assert.equal(button({ ci: "PENDING" }), "normal - - Squash & merge");
+  assert.equal(button({ ci: null }), "normal - - Squash & merge");
+  assert.equal(button({ ci: "FAILURE" }), "normal warn exclamationmark.triangle Merge anyway");
+  assert.equal(button({ ci: "ERROR" }), "normal warn exclamationmark.triangle Merge anyway");
   assert.equal(button({ codexThumbsUp: false }), undefined);
   assert.equal(button({ mergeable: "CONFLICTING" }), undefined);
   assert.equal(button({ isDraft: true }), undefined);
