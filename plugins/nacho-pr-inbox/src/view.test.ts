@@ -7,7 +7,7 @@ import { inboxView, mergeButtonId, mergeTarget, type ViewState } from "./view.ts
 const pull = (number: number, fields: Partial<Pull> = {}): Pull => ({
   number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, isDraft: false, author: "nacho",
   branch: `nacho/pr-${number}`, updatedAt: `2026-09-${String(number).padStart(2, "0")}T00:00:00Z`, reviewDecision: null,
-  mergeable: "MERGEABLE", ci: "SUCCESS", codexThumbsUp: true, ...fields,
+  mergeable: "MERGEABLE", ci: "SUCCESS", codexThumbsUp: true, codexReviewing: false, ...fields,
 });
 const NOW = 1_000_000_000;
 const view = (fields: Partial<ViewState>) => inboxView({ refreshing: false, mergeErrors: {}, ...fields }, NOW);
@@ -35,7 +35,7 @@ test("buckets show in order with their counts, skipping empty ones", () => {
   const ids = nodes(tree);
   assert.equal((ids.get("bucket-failing-count") as any).tone, "danger");
   assert.ok(ids.has(mergeButtonId(3)));
-  assert.ok(!ids.has(mergeButtonId(2)), "only ready rows merge");
+  assert.ok(!ids.has(mergeButtonId(1)), "drafts do not merge");
   assert.equal((ids.get("pr-2-open") as any).url, "https://github.com/o/r/pull/2");
 });
 
@@ -55,6 +55,28 @@ test("placeholders: loading before the first list, clear with nothing open, the 
   assert.ok(!texts(failed).includes("Loading pull requests…"));
   const refreshing = nodes(view({ inbox: { repo: "o/r", pulls: [] }, refreshing: true }));
   assert.ok(refreshing.has("refreshing") && !refreshing.has("refresh"));
+});
+
+test("the Codex badge shows 👍, else 👀 while it reviews, else nothing", () => {
+  const codex = (fields: Partial<Pull>) => (nodes(view({ inbox: { repo: "o/r", pulls: [pull(1, fields)] } })).get("pr-1-codex") as any)?.text;
+  assert.equal(codex({ codexReviewing: true }), "Codex 👍");
+  assert.equal(codex({ codexThumbsUp: false, codexReviewing: true }), "Codex 👀");
+  assert.equal(codex({ codexThumbsUp: false }), undefined);
+});
+
+test("a Codex 👍 gets a merge button that looks as safe as the checks are", () => {
+  const button = (fields: Partial<Pull>) => {
+    const b = nodes(view({ inbox: { repo: "o/r", pulls: [pull(1, fields)] } })).get(mergeButtonId(1)) as any;
+    return b && `${b.style} ${b.icon ?? "-"} ${b.label}`;
+  };
+  assert.equal(button({}), "primary checkmark Squash & merge");
+  assert.equal(button({ ci: "PENDING" }), "normal - Squash & merge");
+  assert.equal(button({ ci: null }), "normal - Squash & merge");
+  assert.equal(button({ ci: "FAILURE" }), "normal exclamationmark.triangle Merge anyway");
+  assert.equal(button({ ci: "ERROR" }), "normal exclamationmark.triangle Merge anyway");
+  assert.equal(button({ codexThumbsUp: false }), undefined);
+  assert.equal(button({ mergeable: "CONFLICTING" }), undefined);
+  assert.equal(button({ isDraft: true }), undefined);
 });
 
 test("merge button ids name a pull request number and nothing else", () => {

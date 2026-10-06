@@ -1,5 +1,5 @@
-import type { Node, Tone } from "@alas/plugin";
-import { BUCKETS, classify, isReady, updatedLabel, type Bucket, type Inbox, type Pull } from "./inbox.ts";
+import type { ButtonStyle, Node, Tone } from "@alas/plugin";
+import { BUCKETS, canMerge, classify, isReady, updatedLabel, type Bucket, type Inbox, type Pull } from "./inbox.ts";
 
 export interface ViewState {
   inbox?: Inbox;
@@ -48,20 +48,26 @@ function badges(p: Pull): Node[] {
   if (p.reviewDecision === "APPROVED") out.push({ kind: "badge", id: id("review"), text: "✓ Approved", tone: "accent" });
   else if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ kind: "badge", id: id("review"), text: "Changes requested", tone: "warn" });
   else if (p.reviewDecision === "REVIEW_REQUIRED") out.push({ kind: "badge", id: id("review"), text: "Review needed", tone: "dim" });
-  out.push(p.codexThumbsUp
-    ? { kind: "badge", id: id("codex"), text: "Codex 👍", tone: "accent" }
-    : { kind: "badge", id: id("codex"), text: "No Codex 👍", tone: "dim" });
+  if (p.codexThumbsUp) out.push({ kind: "badge", id: id("codex"), text: "Codex 👍", tone: "accent" });
+  else if (p.codexReviewing) out.push({ kind: "badge", id: id("codex"), text: "Codex 👀", tone: "dim" });
   if (p.mergeable === "CONFLICTING") out.push({ kind: "badge", id: id("conflicts"), text: "Conflicts", tone: "warn" });
   return out;
+}
+
+/** Green checks make merging the obvious action, running ones a neutral one, red ones a warning. */
+function mergeLook(p: Pull): { label: string; icon?: string; style: ButtonStyle } {
+  if (isReady(p)) return { label: "Squash & merge", icon: "checkmark", style: "primary" };
+  if (p.ci === "FAILURE" || p.ci === "ERROR") return { label: "Merge anyway", icon: "exclamationmark.triangle", style: "normal" };
+  return { label: "Squash & merge", style: "normal" };
 }
 
 function row(p: Pull, state: ViewState): Node {
   const id = (name: string) => `pr-${p.number}-${name}`;
   const mergeError = state.mergeErrors[p.number];
   const actions: Node[] = [{ kind: "link", id: id("open"), label: "Open", url: p.url }];
-  if (isReady(p)) {
+  if (canMerge(p)) {
     if (state.merging === p.number) actions.push({ kind: "progress", id: id("merging"), text: "Merging…" });
-    actions.push({ kind: "button", id: mergeButtonId(p.number), label: "Squash & merge", style: "primary", disabled: state.merging !== undefined });
+    actions.push({ kind: "button", id: mergeButtonId(p.number), ...mergeLook(p), disabled: state.merging !== undefined });
   }
   return {
     kind: "hstack", id: id("row"), spacing: 10, children: [

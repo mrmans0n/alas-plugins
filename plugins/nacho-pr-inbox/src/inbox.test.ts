@@ -32,7 +32,7 @@ test("parses the query's reply, skipping malformed and repeated pull requests an
   assert.deepEqual(inbox?.pulls.map((p) => p.number), [1, 2]);
   assert.deepEqual(inbox?.pulls[0], {
     number: 1, title: "PR 1", url: "https://github.com/o/r/pull/1", isDraft: false, author: "nacho", branch: "nacho/pr-1",
-    updatedAt: "2026-09-30T21:14:36Z", reviewDecision: null, mergeable: "MERGEABLE", ci: "SUCCESS", codexThumbsUp: true,
+    updatedAt: "2026-09-30T21:14:36Z", reviewDecision: null, mergeable: "MERGEABLE", ci: "SUCCESS", codexThumbsUp: true, codexReviewing: false,
   });
   assert.equal(inbox?.pulls[1].author, "ghost");
   assert.equal(inbox?.pulls[1].ci, null);
@@ -71,6 +71,13 @@ test("the Codex 👍 counts from either of its logins", () => {
     assert.equal(parseInbox(reply([node(1, { reactions: { nodes: [{ user: { login } }] } })]))!.pulls[0].codexThumbsUp, true);
   }
   assert.equal(parseInbox(reply([node(1, { reactions: { nodes: [{ user: { login: "nacho" } }] } })]))!.pulls[0].codexThumbsUp, false);
+});
+
+test("Codex's 👀 marks its review in progress", () => {
+  const reviewing = (eyes: unknown) => parseInbox(reply([node(1, { eyes })]))!.pulls[0].codexReviewing;
+  assert.equal(reviewing({ nodes: [{ user: { login: "chatgpt-codex-connector[bot]" } }] }), true);
+  assert.equal(reviewing({ nodes: [{ user: { login: "nacho" } }] }), false);
+  assert.equal(reviewing(undefined), false);
 });
 
 test("buckets list the most recently updated pull request first", () => {
