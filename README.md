@@ -62,7 +62,7 @@ handle(event: Event) {
 ```
 
 The manifest has a type too: `Manifest` (with `TabDecl`, `CommandDecl`, `PanelDecl`,
-`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 12, and
+`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 13, and
 the SDK's tests check every `plugins/*/plugin.json` against it.
 
 ## Web tabs (API 12)
@@ -169,7 +169,7 @@ The release workflow builds the plugin, publishes `plugin.json` and `plugin.js` 
 it. Without a page it is the v1 hash; with one it is v2, which frames each file with its
 name and length. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (4 to 11 today, 12 once Alas ships it).
+an `api` it does not support (4 to 12 today, 13 once Alas ships it).
 
 ## License
 
