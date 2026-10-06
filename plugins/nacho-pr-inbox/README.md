@@ -34,10 +34,12 @@ most recently updated first within each group:
 | Waiting | Every other open pull request |
 | Drafts | Drafts |
 
-Each row shows the branch and badges for checks, review, the Codex 👍 and
-conflicts, and opens the pull request in the browser. Ready rows get
-**Squash & merge**, which runs `gh pr merge --squash --delete-branch <number>`;
-a failure shows under the title. The list refreshes when the tab is shown and
+Each row shows the branch and badges for checks, review, Codex (👍 once it
+approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. Every row with the Codex 👍 that is
+not a draft and has no conflicts gets a merge button, which runs
+`gh pr merge --squash --delete-branch <number>`: prominent with a checkmark when
+checks passed, plain while they run, and **Merge anyway** with a warning icon
+when they failed. A failure shows under the title. The list refreshes when the tab is shown and
 its data is over a minute old, after a merge, on **Refresh**, and every minute
 while the tab is shown. Nothing runs while it is hidden.
 

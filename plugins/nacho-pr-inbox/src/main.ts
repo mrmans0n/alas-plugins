@@ -1,5 +1,5 @@
 import { cancelTimer, definePlugin, notify, processRun, render, requestSnapshot, setTimer, type Event, type Snapshot } from "@alas/plugin";
-import { isReady, parseInbox, processError } from "./inbox.ts";
+import { canMerge, parseInbox, processError } from "./inbox.ts";
 import { inboxView, mergeTarget, type ViewState } from "./view.ts";
 
 const TAB = 0;
@@ -44,7 +44,7 @@ function refresh(): void {
 
 function merge(number: number): void {
   const pull = state.inbox?.pulls.find((p) => p.number === number);
-  if (!worktree || state.merging !== undefined || !pull || !isReady(pull)) return;
+  if (!worktree || state.merging !== undefined || !pull || !canMerge(pull)) return;
   state.merging = number;
   delete state.mergeErrors[number];
   draw();

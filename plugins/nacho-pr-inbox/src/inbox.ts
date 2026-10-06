@@ -16,6 +16,8 @@ export interface Pull {
   /** The head commit's check rollup: `SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`, or `null` without checks. */
   ci: string | null;
   codexThumbsUp: boolean;
+  /** Codex left 👀 on the description: its review is in progress. */
+  codexReviewing: boolean;
 }
 
 export interface Inbox {
@@ -44,7 +46,7 @@ function pull(node: unknown): Pull | undefined {
   if (!Number.isInteger(number) || number <= 0 || typeof title !== "string" || typeof url !== "string" || !url.startsWith("https://")) return undefined;
   if (typeof isDraft !== "boolean" || typeof headRefName !== "string" || typeof updatedAt !== "string") return undefined;
   const commit = node.commits?.nodes?.[0]?.commit;
-  const reactions = Array.isArray(node.reactions?.nodes) ? node.reactions.nodes : [];
+  const byCodex = (reactions: any) => Array.isArray(reactions?.nodes) && reactions.nodes.some((r: any) => CODEX.has(r?.user?.login));
   return {
     number,
     title,
@@ -56,7 +58,8 @@ function pull(node: unknown): Pull | undefined {
     reviewDecision: str(node.reviewDecision),
     mergeable: str(node.mergeable) ?? "UNKNOWN",
     ci: isObject(commit) ? str(commit.statusCheckRollup?.state) : null,
-    codexThumbsUp: reactions.some((r: any) => CODEX.has(r?.user?.login)),
+    codexThumbsUp: byCodex(node.reactions),
+    codexReviewing: byCodex(node.eyes),
   };
 }
 
@@ -77,9 +80,14 @@ export function parseInbox(stdout: string): Inbox | undefined {
   return { repo: repository.nameWithOwner, pulls: [...pulls.values()] };
 }
 
-export function isReady(p: Pull): boolean {
+/** Codex approved and nothing stops gh from merging; checks may still be running or red. */
+export function canMerge(p: Pull): boolean {
   // Review state is shown, never required: the Codex 👍 is the approval that counts.
-  return !p.isDraft && p.ci === "SUCCESS" && p.codexThumbsUp && p.mergeable !== "CONFLICTING";
+  return !p.isDraft && p.codexThumbsUp && p.mergeable !== "CONFLICTING";
+}
+
+export function isReady(p: Pull): boolean {
+  return canMerge(p) && p.ci === "SUCCESS";
 }
 
 export function bucketOf(p: Pull): Bucket {
