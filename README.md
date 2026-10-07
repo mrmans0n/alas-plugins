@@ -62,7 +62,7 @@ handle(event: Event) {
 ```
 
 The manifest has a type too: `Manifest` (with `TabDecl`, `CommandDecl`, `PanelDecl`,
-`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 13, and
+`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 14, and
 the SDK's tests check every `plugins/*/plugin.json` against it.
 
 ## Web tabs (API 12)

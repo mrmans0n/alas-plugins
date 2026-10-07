@@ -3,8 +3,8 @@
 A personal tool for Nacho's merge workflow: a tab listing the repository's open
 pull requests, sorted by what they need, with a button that squash-merges the
 ones that are ready. Anyone who uses the GitHub CLI can install it; it reuses
-your `gh` login and asks for no token. It uses plugin API 13 (a command that
-opens its tab, progress and link view nodes, tab visibility, the main
+your `gh` login and asks for no token. It uses plugin API 14 (a command that
+opens its tab, progress, progress bar and link view nodes, tab visibility, the main
 worktree flag and button tones) and runs `gh` through `process.exec`.
 
 ## Build and install
@@ -35,7 +35,10 @@ most recently updated first within each group:
 | Drafts | Drafts |
 
 Each row shows the branch and badges for checks, review, Codex (👍 once it
-approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. Every row with the Codex 👍 that is
+approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. While checks run, a
+bar beside the checks badge fills with the finished ones in green (red once
+one failed), the running ones in yellow, and the rest gray, captioned
+`done/total`. Every row with the Codex 👍 that is
 not a draft and has no conflicts gets a merge button, which runs
 `gh pr merge --squash --delete-branch <number>`: green with a checkmark when
 checks passed, plain while they run, and **Merge anyway** in the warning color

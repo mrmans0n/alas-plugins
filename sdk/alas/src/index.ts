@@ -1,5 +1,5 @@
 /**
- * SDK for Alas plugins, API 4 to 13: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 14: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
@@ -10,7 +10,7 @@
  * `remote: true` lets `file/*` and `process.*` run there, through the Alas helper on the host. API 12
  * adds web tabs (a page the plugin ships as `web`, talking to it through `webPost` and `webMessage`)
  * and the usage history (`usageTurns`, `usageLimits`, `turnFinished`). API 13 draws a `button`'s `tone` and
- * adds the `success` tone. For the page's side, see `@alas/plugin/page`.
+ * adds the `success` tone. API 14 adds the `progressBar` view node and an `hstack`'s `align`. For the page's side, see `@alas/plugin/page`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -31,7 +31,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 13. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 14. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -41,7 +41,7 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
   /** The script, relative to the plugin folder. */
   entry: string;
   /**
@@ -765,7 +765,8 @@ export interface MenuItem {
 export type Node =
   /** `spacing` is 0 to 32 points, `width` 40 to 1000. */
   | { kind: "vstack"; id: string; children: Node[]; spacing?: number; width?: number }
-  | { kind: "hstack"; id: string; children: Node[]; spacing?: number }
+  /** `align` (API 14; older Alas versions ignore it, so any API may send it) centers the items vertically instead of on their first text baseline. */
+  | { kind: "hstack"; id: string; children: Node[]; spacing?: number; align?: "baseline" | "center" }
   | { kind: "scroll"; id: string; axis: "vertical" | "horizontal"; child: Node }
   | { kind: "text"; id: string; text: string; style?: TextStyle; tone?: Tone }
   | { kind: "badge"; id: string; text: string; tone?: Tone }
@@ -778,6 +779,11 @@ export type Node =
   | { kind: "spacer"; id: string }
   /** API 8: a small indeterminate spinner with an optional dim caption. */
   | { kind: "progress"; id: string; text?: string }
+  /**
+   * API 14: a short bar of `done` steps in `tone` (`success` by default), `running` ones in the warning color and
+   * the rest dim, with an optional dim caption. `total` is 1 to 10,000; `done + running` is at most `total`.
+   */
+  | { kind: "progressBar"; id: string; done?: number; running?: number; total: number; text?: string; tone?: Tone }
   /** API 8: link-styled text; Alas opens the https `url` in the browser on click, without an event. */
   | { kind: "link"; id: string; label: string; url: string }
   /**

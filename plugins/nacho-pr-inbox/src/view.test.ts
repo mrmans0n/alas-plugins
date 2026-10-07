@@ -7,7 +7,7 @@ import { inboxView, mergeButtonId, mergeTarget, type ViewState } from "./view.ts
 const pull = (number: number, fields: Partial<Pull> = {}): Pull => ({
   number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, isDraft: false, author: "nacho",
   branch: `nacho/pr-${number}`, updatedAt: `2026-09-${String(number).padStart(2, "0")}T00:00:00Z`, reviewDecision: null,
-  mergeable: "MERGEABLE", ci: "SUCCESS", codexThumbsUp: true, codexReviewing: false, ...fields,
+  mergeable: "MERGEABLE", ci: "SUCCESS", checks: null, codexThumbsUp: true, codexReviewing: false, ...fields,
 });
 const NOW = 1_000_000_000;
 const view = (fields: Partial<ViewState>) => inboxView({ refreshing: false, mergeErrors: {}, ...fields }, NOW);
@@ -77,6 +77,15 @@ test("a Codex 👍 gets a merge button that looks as safe as the checks are", ()
   assert.equal(button({ codexThumbsUp: false }), undefined);
   assert.equal(button({ mergeable: "CONFLICTING" }), undefined);
   assert.equal(button({ isDraft: true }), undefined);
+});
+
+test("checks still running show a bar of done, running and left, red once one failed", () => {
+  const bar = (fields: Partial<Pull>) => nodes(view({ inbox: { repo: "o/r", pulls: [pull(1, fields)] } })).get("pr-1-checks") as any;
+  assert.deepEqual(bar({ ci: "PENDING", checks: { done: 3, running: 2, total: 10 } }),
+    { kind: "progressBar", id: "pr-1-checks", done: 3, running: 2, total: 10, text: "3/10", tone: "success" });
+  assert.equal(bar({ ci: "FAILURE", checks: { done: 3, running: 2, total: 10 } }).tone, "danger");
+  assert.equal(bar({ checks: { done: 10, running: 0, total: 10 } }), undefined);
+  assert.equal(bar({ ci: null }), undefined);
 });
 
 test("merge button ids name a pull request number and nothing else", () => {

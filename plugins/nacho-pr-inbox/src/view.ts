@@ -45,6 +45,12 @@ function badges(p: Pull): Node[] {
   if (p.ci === "SUCCESS") out.push({ kind: "badge", id: id("ci"), text: "CI ✓", tone: "accent" });
   else if (p.ci === "FAILURE" || p.ci === "ERROR") out.push({ kind: "badge", id: id("ci"), text: "CI ✗", tone: "danger" });
   else if (p.ci !== null) out.push({ kind: "badge", id: id("ci"), text: "CI …", tone: "dim" });
+  // Checks still to finish: how far along they are, red once one failed.
+  const c = p.checks;
+  if (c && c.done < c.total) {
+    const tone: Tone = p.ci === "FAILURE" || p.ci === "ERROR" ? "danger" : "success";
+    out.push({ kind: "progressBar", id: id("checks"), done: c.done, running: c.running, total: c.total, text: `${c.done}/${c.total}`, tone });
+  }
   if (p.reviewDecision === "APPROVED") out.push({ kind: "badge", id: id("review"), text: "✓ Approved", tone: "accent" });
   else if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ kind: "badge", id: id("review"), text: "Changes requested", tone: "warn" });
   else if (p.reviewDecision === "REVIEW_REQUIRED") out.push({ kind: "badge", id: id("review"), text: "Review needed", tone: "dim" });
@@ -69,14 +75,19 @@ function row(p: Pull, state: ViewState): Node {
     if (state.merging === p.number) actions.push({ kind: "progress", id: id("merging"), text: "Merging…" });
     actions.push({ kind: "button", id: mergeButtonId(p.number), ...mergeLook(p), disabled: state.merging !== undefined });
   }
+  // The number sits level with the title; the actions center on the whole row.
   return {
-    kind: "hstack", id: id("row"), spacing: 10, children: [
-      text(id("number"), `#${p.number}`, "monospaced", "dim"),
+    kind: "hstack", id: id("row"), spacing: 10, align: "center", children: [
       {
-        kind: "vstack", id: id("main"), spacing: 4, children: [
-          text(id("title"), p.title, "body"),
-          { kind: "hstack", id: id("meta"), spacing: 6, children: [text(id("branch"), p.branch, "monospaced", "dim"), ...badges(p)] },
-          ...(mergeError === undefined ? [] : [text(id("error"), mergeError, "caption", "warn")]),
+        kind: "hstack", id: id("info"), spacing: 10, children: [
+          text(id("number"), `#${p.number}`, "monospaced", "dim"),
+          {
+            kind: "vstack", id: id("main"), spacing: 4, children: [
+              text(id("title"), p.title, "body"),
+              { kind: "hstack", id: id("meta"), spacing: 6, children: [text(id("branch"), p.branch, "monospaced", "dim"), ...badges(p)] },
+              ...(mergeError === undefined ? [] : [text(id("error"), mergeError, "caption", "warn")]),
+            ],
+          },
         ],
       },
       { kind: "spacer", id: id("spacer") },

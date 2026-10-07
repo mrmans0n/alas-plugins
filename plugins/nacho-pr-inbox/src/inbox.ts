@@ -15,9 +15,17 @@ export interface Pull {
   mergeable: string;
   /** The head commit's check rollup: `SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`, or `null` without checks. */
   ci: string | null;
+  /** The head commit's checks by progress, or `null` without checks. */
+  checks: Checks | null;
   codexThumbsUp: boolean;
   /** Codex left 👀 on the description: its review is in progress. */
   codexReviewing: boolean;
+}
+
+export interface Checks {
+  done: number;
+  running: number;
+  total: number;
 }
 
 export interface Inbox {
@@ -40,6 +48,21 @@ function isObject(value: unknown): value is Record<string, any> {
 
 const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
+/** The sum of the `{state, count}` entries whose state is in `states`. */
+function countOf(entries: unknown, states: string[]): number {
+  if (!Array.isArray(entries)) return 0;
+  return entries.reduce((sum, e) => sum + (states.includes(e?.state) && Number.isInteger(e.count) && e.count > 0 ? e.count : 0), 0);
+}
+
+/** Check runs in progress and pending commit statuses run; queued and expected ones wait; the rest are done. */
+function checks(contexts: any): Checks | null {
+  const total = contexts?.totalCount;
+  if (!Number.isInteger(total) || total <= 0) return null;
+  const running = Math.min(total, countOf(contexts.checkRunCountsByState, ["IN_PROGRESS"]) + countOf(contexts.statusContextCountsByState, ["PENDING"]));
+  const waiting = countOf(contexts.checkRunCountsByState, ["QUEUED", "PENDING", "WAITING", "REQUESTED"]) + countOf(contexts.statusContextCountsByState, ["EXPECTED"]);
+  return { done: Math.max(0, total - running - waiting), running, total };
+}
+
 function pull(node: unknown): Pull | undefined {
   if (!isObject(node)) return undefined;
   const { number, title, url, isDraft, headRefName, updatedAt } = node;
@@ -58,6 +81,7 @@ function pull(node: unknown): Pull | undefined {
     reviewDecision: str(node.reviewDecision),
     mergeable: str(node.mergeable) ?? "UNKNOWN",
     ci: isObject(commit) ? str(commit.statusCheckRollup?.state) : null,
+    checks: isObject(commit) ? checks(commit.statusCheckRollup?.contexts) : null,
     codexThumbsUp: byCodex(node.reactions),
     codexReviewing: byCodex(node.eyes),
   };
