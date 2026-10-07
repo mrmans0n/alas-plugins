@@ -32,11 +32,23 @@ test("parses the query's reply, skipping malformed and repeated pull requests an
   assert.deepEqual(inbox?.pulls.map((p) => p.number), [1, 2]);
   assert.deepEqual(inbox?.pulls[0], {
     number: 1, title: "PR 1", url: "https://github.com/o/r/pull/1", isDraft: false, author: "nacho", branch: "nacho/pr-1",
-    updatedAt: "2026-09-30T21:14:36Z", reviewDecision: null, mergeable: "MERGEABLE", ci: "SUCCESS", codexThumbsUp: true, codexReviewing: false,
+    updatedAt: "2026-09-30T21:14:36Z", reviewDecision: null, mergeable: "MERGEABLE", ci: "SUCCESS", checks: null, codexThumbsUp: true, codexReviewing: false,
   });
   assert.equal(inbox?.pulls[1].author, "ghost");
   assert.equal(inbox?.pulls[1].ci, null);
   assert.equal(inbox?.pulls[1].codexThumbsUp, false);
+});
+
+test("check counts split into done, running and waiting", () => {
+  const counts = (checkRuns: object[], statuses: object[] = [], totalCount = 10) => parseInbox(reply([node(1, {
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: "PENDING", contexts: { totalCount, checkRunCountsByState: checkRuns, statusContextCountsByState: statuses } } } }] },
+  })]))!.pulls[0].checks;
+  assert.deepEqual(
+    counts([{ state: "SUCCESS", count: 4 }, { state: "FAILURE", count: 1 }, { state: "IN_PROGRESS", count: 2 }, { state: "QUEUED", count: 1 }], [{ state: "PENDING", count: 1 }, { state: "EXPECTED", count: 1 }]),
+    { done: 5, running: 3, total: 10 },
+  );
+  assert.deepEqual(counts([{ state: "IN_PROGRESS", count: 99 }, { state: "QUEUED", count: -3 }]), { done: 0, running: 10, total: 10 });
+  assert.equal(counts([], [], 0), null);
 });
 
 test("a reply that is not the query's shape parses to nothing", () => {
