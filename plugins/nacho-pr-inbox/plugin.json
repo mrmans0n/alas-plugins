@@ -2,7 +2,7 @@
   "id": "io.nlopez.nacho-pr-inbox",
   "name": "Nacho's PR Inbox",
   "summary": "The repository's open pull requests, sorted into ready to merge, failing, waiting and drafts, and the recently merged ones. Squash-merges the ready ones with gh.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "api": 14,
   "entry": "plugin.js",
   "capabilities": ["workspace.read", "process.exec", "timers", "notify"],
