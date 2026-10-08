@@ -96,6 +96,19 @@
       "id": "io.nlopez.nacho-pr-inbox",
       "versions": [
         {
+          "version": "0.6.0",
+          "api": 14,
+          "capabilities": [
+            "workspace.read",
+            "process.exec",
+            "timers",
+            "notify"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.6.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.6.0/plugin.js",
+          "hash": "c458bcd0adea38315ae14c6d1fbc6b5fb9aaccc923d5162d4f83f3ab56d1429f"
+        },
+        {
           "version": "0.5.0",
           "api": 14,
           "capabilities": [
@@ -162,7 +175,7 @@
         }
       ],
       "name": "Nacho's PR Inbox",
-      "summary": "The repository's open pull requests, sorted into ready to merge, failing, waiting and drafts. Squash-merges the ready ones with gh.",
+      "summary": "The repository's open pull requests, sorted into ready to merge, failing, waiting and drafts, and the recently merged ones. Squash-merges the ready ones with gh.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-pr-inbox"
     },
     {
