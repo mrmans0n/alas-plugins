@@ -105,8 +105,7 @@ export function mergeTarget(id: string): number | undefined {
 }
 
 /** A merged pull request: no badges or actions beyond opening it, and when it merged. */
-// ponytail: newest normal, the rest dim; a gradual fade needs node opacity in a future API.
-function mergedRow(m: Merged, now: number, newest: boolean): Node {
+function mergedRow(m: Merged, now: number): Node {
   const id = (name: string) => `merged-${m.number}-${name}`;
   const ago = agoLabel(m.mergedAt, now);
   return {
@@ -116,7 +115,7 @@ function mergedRow(m: Merged, now: number, newest: boolean): Node {
           text(id("number"), `#${m.number}`, "monospaced", "dim"),
           {
             kind: "vstack", id: id("main"), spacing: 4, children: [
-              text(id("title"), m.title, "body", newest ? undefined : "dim"),
+              text(id("title"), m.title, "body"),
               {
                 kind: "hstack", id: id("meta"), spacing: 6, children: [
                   text(id("branch"), m.branch, "monospaced", "dim"),
@@ -157,7 +156,7 @@ function content(state: ViewState, now: number): Node[] {
     : BUCKETS.filter((b) => buckets[b].length > 0).map((b) => section(b, TITLES[b], buckets[b].length, TONES[b], buckets[b].map((p) => row(p, state))));
   if (merged.length > 0) {
     const shown = recentMerged(merged, now);
-    sections.push(section("merged", "Recently merged", shown.length, "success", shown.map((m, i) => mergedRow(m, now, i === 0))));
+    sections.push(section("merged", "Recently merged", shown.length, "success", shown.map((m) => mergedRow(m, now))));
   }
   return [{ kind: "scroll", id: "scroll", axis: "vertical", child: { kind: "vstack", id: "buckets", spacing: 16, children: sections } }];
 }
