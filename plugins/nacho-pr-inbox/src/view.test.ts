@@ -99,7 +99,7 @@ const merged = (number: number, mergedAt: string): Merged => ({
 
 test("recently merged pull requests follow the open ones, in the order given, with when and who", () => {
   const at = new Date(NOW - 2 * 3600_000).toISOString();
-  const tree = view({ inbox: { repo: "o/r", pulls: [pull(1)], merged: [merged(9, at), merged(8, "2026-01-01T00:00:00Z")] } });
+  const tree = view({ inbox: { repo: "o/r", pulls: [pull(1)], merged: [merged(9, at), merged(8, new Date(NOW - 3 * 24 * 3600_000).toISOString())] } });
   const all = texts(tree);
   assert.ok(all.indexOf("RECENTLY MERGED") > all.indexOf("READY TO MERGE"));
   assert.ok(all.includes("2 PRs"));
@@ -111,14 +111,15 @@ test("recently merged pull requests follow the open ones, in the order given, wi
 });
 
 test("with nothing open, the inbox is clear above the recently merged", () => {
-  const all = texts(view({ inbox: { repo: "o/r", pulls: [], merged: [merged(9, "2026-09-01T00:00:00Z")] } }));
+  const all = texts(view({ inbox: { repo: "o/r", pulls: [], merged: [merged(9, new Date(NOW - 3600_000).toISOString())] } }));
   assert.ok(all.indexOf("Inbox is clear.") < all.indexOf("RECENTLY MERGED"));
   assert.ok(all.includes("Merged 9"));
 });
 
-test("recently merged lists 10 at first, and Show more adds up to 10 until all show", () => {
-  const all = Array.from({ length: 23 }, (_, i) => merged(100 - i, "2026-09-01T00:00:00Z"));
-  const at = (mergedShown?: number) => nodes(view({ inbox: { repo: "o/r", pulls: [], merged: all }, mergedShown }));
+test("recently merged lists the last week's, up to 10, and Show more adds up to 10 until all show", () => {
+  const day = 24 * 3600_000;
+  const all = Array.from({ length: 23 }, (_, i) => merged(100 - i, new Date(NOW - (i + 1) * day / 2).toISOString()));
+  const at = (mergedShown?: number, list = all) => nodes(view({ inbox: { repo: "o/r", pulls: [], merged: list }, mergedShown }));
   const first = at(undefined);
   assert.ok(first.has("merged-91-row") && !first.has("merged-90-row"));
   assert.equal((first.get("bucket-merged-count") as any).text, "10 PRs");
@@ -128,4 +129,13 @@ test("recently merged lists 10 at first, and Show more adds up to 10 until all s
   assert.ok(everything.has("merged-78-row"));
   assert.equal((everything.get("bucket-merged-count") as any).text, "23 PRs");
   assert.ok(!everything.has(SHOW_MORE_MERGED));
+
+  // Merged every other day: 3 within the week (days 2, 4, 6), the rest older.
+  const sparse = Array.from({ length: 6 }, (_, i) => merged(50 - i, new Date(NOW - (i + 1) * 2 * day).toISOString()));
+  const week = at(undefined, sparse);
+  assert.ok(week.has("merged-48-row") && !week.has("merged-47-row"));
+  assert.equal((week.get(SHOW_MORE_MERGED) as any).label, "Show 3 more");
+  const stale = at(undefined, [merged(9, new Date(NOW - 8 * day).toISOString())]);
+  assert.equal((stale.get("merged-none") as any).text, "Nothing merged in the last week.");
+  assert.equal((stale.get(SHOW_MORE_MERGED) as any).label, "Show 1 more");
 });

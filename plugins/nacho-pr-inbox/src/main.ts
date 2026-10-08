@@ -1,5 +1,5 @@
 import { cancelTimer, definePlugin, notify, processRun, render, requestSnapshot, setTimer, type Event, type Snapshot } from "@alas/plugin";
-import { canMerge, MERGED_PAGE, parseInbox, processError } from "./inbox.ts";
+import { canMerge, MERGED_PAGE, mergedFirstPage, parseInbox, processError } from "./inbox.ts";
 import { inboxView, mergeTarget, SHOW_MORE_MERGED, type ViewState } from "./view.ts";
 
 const TAB = 0;
@@ -92,7 +92,7 @@ definePlugin({
         if (event.tab !== TAB || event.kind !== "click") return;
         if (event.id === "refresh" || event.id === "retry") return refresh();
         if (event.id === SHOW_MORE_MERGED) {
-          state.mergedShown = (state.mergedShown ?? MERGED_PAGE) + MERGED_PAGE;
+          state.mergedShown = (state.mergedShown ?? mergedFirstPage(state.inbox?.merged ?? [], Date.now())) + MERGED_PAGE;
           return draw();
         }
         const number = mergeTarget(event.id);

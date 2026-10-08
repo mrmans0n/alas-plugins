@@ -1,5 +1,5 @@
 import type { ButtonStyle, Node, Tone } from "@alas/plugin";
-import { agoLabel, BUCKETS, MERGED_PAGE, canMerge, classify, isReady, updatedLabel, type Bucket, type Inbox, type Merged, type Pull } from "./inbox.ts";
+import { agoLabel, BUCKETS, MERGED_PAGE, canMerge, mergedFirstPage, classify, isReady, updatedLabel, type Bucket, type Inbox, type Merged, type Pull } from "./inbox.ts";
 
 export interface ViewState {
   inbox?: Inbox;
@@ -11,7 +11,7 @@ export interface ViewState {
   merging?: number;
   /** The last merge failure per pull request number. */
   mergeErrors: Record<number, string>;
-  /** How many recently merged pull requests to list; `MERGED_PAGE` when unset. */
+  /** How many recently merged pull requests to list once Show more was clicked; the last week's, up to a page, before. */
   mergedShown?: number;
 }
 
@@ -159,11 +159,12 @@ function content(state: ViewState, now: number): Node[] {
     ? [text("clear-text", "Inbox is clear.", "body", "dim")]
     : BUCKETS.filter((b) => buckets[b].length > 0).map((b) => section(b, TITLES[b], buckets[b].length, TONES[b], buckets[b].map((p) => row(p, state))));
   if (merged.length > 0) {
-    const shown = merged.slice(0, state.mergedShown ?? MERGED_PAGE);
+    const shown = merged.slice(0, state.mergedShown ?? mergedFirstPage(merged, now));
     const more: Node[] = shown.length < merged.length
       ? [{ kind: "button", id: SHOW_MORE_MERGED, label: `Show ${Math.min(MERGED_PAGE, merged.length - shown.length)} more`, icon: "chevron.down", style: "plain" }]
       : [];
-    sections.push(section("merged", "Recently merged", shown.length, "success", [...shown.map((m) => mergedRow(m, now)), ...more]));
+    const none: Node[] = shown.length === 0 ? [text("merged-none", "Nothing merged in the last week.", "caption", "dim")] : [];
+    sections.push(section("merged", "Recently merged", shown.length, "success", [...none, ...shown.map((m) => mergedRow(m, now)), ...more]));
   }
   return [{ kind: "scroll", id: "scroll", axis: "vertical", child: { kind: "vstack", id: "buckets", spacing: 16, children: sections } }];
 }

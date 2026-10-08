@@ -46,8 +46,16 @@ export interface Inbox {
   merged: Merged[];
 }
 
-/** How many recently merged pull requests the tab lists at first, and how many more each Show more adds. */
+/** How many more recently merged pull requests each Show more adds. */
 export const MERGED_PAGE = 10;
+/** The tab lists at first only pull requests merged this long ago at most. */
+export const MERGED_RECENT_MS = 7 * 24 * 3600_000;
+
+/** How many of `merged`, the most recent first, the tab lists before Show more: those of the last week, up to a page. */
+export function mergedFirstPage(merged: Merged[], now: number): number {
+  const older = merged.findIndex((m) => !(now - Date.parse(m.mergedAt) <= MERGED_RECENT_MS));
+  return Math.min(MERGED_PAGE, older === -1 ? merged.length : older);
+}
 
 export type Bucket = "ready" | "failing" | "waiting" | "drafts";
 export const BUCKETS: Bucket[] = ["ready", "failing", "waiting", "drafts"];
