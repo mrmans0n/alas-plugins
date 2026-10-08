@@ -46,8 +46,8 @@ export interface Inbox {
   merged: Merged[];
 }
 
-/** How many recently merged pull requests the tab lists. */
-export const MERGED_SHOWN = 10;
+/** How many recently merged pull requests the tab lists at first, and how many more each Show more adds. */
+export const MERGED_PAGE = 10;
 
 export type Bucket = "ready" | "failing" | "waiting" | "drafts";
 export const BUCKETS: Bucket[] = ["ready", "failing", "waiting", "drafts"];
@@ -110,12 +110,12 @@ function merged(node: unknown): Merged | undefined {
   return { number, title, url, author: str(node.author?.login) ?? "ghost", branch: headRefName, mergedAt };
 }
 
-/** The last `MERGED_SHOWN` merged pull requests, the most recent first. GitHub cannot order by merge time, so the query fetches the recently updated ones and this sorts them. */
+/** The merged pull requests, the most recent first. GitHub cannot order by merge time, so the query fetches the recently updated ones and this sorts them. */
 function recentlyMerged(nodes: unknown): Merged[] {
   if (!Array.isArray(nodes)) return [];
   const out = new Map<number, Merged>();
   for (const m of nodes.map(merged)) if (m && !out.has(m.number)) out.set(m.number, m);
-  return [...out.values()].sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : 0)).slice(0, MERGED_SHOWN);
+  return [...out.values()].sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : 0));
 }
 
 /** The list process's stdout, or `undefined` when it is not the reply the query asks for. Malformed and repeated pull requests are skipped, as view ids must be unique. */

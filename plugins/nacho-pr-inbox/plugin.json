@@ -9,7 +9,7 @@
   "processes": [
     {
       "id": "list",
-      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login} headRefName updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:20,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login} headRefName mergedAt}}}}"]
+      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login} headRefName updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login} headRefName mergedAt}}}}"]
     },
     { "id": "merge", "command": ["gh", "pr", "merge", "--squash", "--delete-branch"], "appendArgs": true }
   ],

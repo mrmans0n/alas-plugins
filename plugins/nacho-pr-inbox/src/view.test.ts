@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Node } from "@alas/plugin";
 import type { Merged, Pull } from "./inbox.ts";
-import { inboxView, mergeButtonId, mergeTarget, type ViewState } from "./view.ts";
+import { inboxView, mergeButtonId, mergeTarget, SHOW_MORE_MERGED, type ViewState } from "./view.ts";
 
 const pull = (number: number, fields: Partial<Pull> = {}): Pull => ({
   number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, isDraft: false, author: "nacho",
@@ -114,4 +114,18 @@ test("with nothing open, the inbox is clear above the recently merged", () => {
   const all = texts(view({ inbox: { repo: "o/r", pulls: [], merged: [merged(9, "2026-09-01T00:00:00Z")] } }));
   assert.ok(all.indexOf("Inbox is clear.") < all.indexOf("RECENTLY MERGED"));
   assert.ok(all.includes("Merged 9"));
+});
+
+test("recently merged lists 10 at first, and Show more adds up to 10 until all show", () => {
+  const all = Array.from({ length: 23 }, (_, i) => merged(100 - i, "2026-09-01T00:00:00Z"));
+  const at = (mergedShown?: number) => nodes(view({ inbox: { repo: "o/r", pulls: [], merged: all }, mergedShown }));
+  const first = at(undefined);
+  assert.ok(first.has("merged-91-row") && !first.has("merged-90-row"));
+  assert.equal((first.get("bucket-merged-count") as any).text, "10 PRs");
+  assert.equal((first.get(SHOW_MORE_MERGED) as any).label, "Show 10 more");
+  assert.equal((at(20).get(SHOW_MORE_MERGED) as any).label, "Show 3 more");
+  const everything = at(30);
+  assert.ok(everything.has("merged-78-row"));
+  assert.equal((everything.get("bucket-merged-count") as any).text, "23 PRs");
+  assert.ok(!everything.has(SHOW_MORE_MERGED));
 });

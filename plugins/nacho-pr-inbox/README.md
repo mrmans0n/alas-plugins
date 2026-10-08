@@ -46,9 +46,9 @@ when they failed. A failure shows under the title.
 
 Below the open ones, **Recently merged** lists the last 10 merged pull
 requests, the most recently merged first, each with its branch, when it
-merged and who wrote it, and a link to open it. GitHub cannot sort by merge
-time, so the query fetches the 20 most recently updated merged pull requests
-and the tab sorts those by merge time. The list refreshes when the tab is shown and
+merged and who wrote it, and a link to open it. **Show more** adds 10 more at
+a time. GitHub cannot sort by merge time, so the query fetches the 50 most
+recently updated merged pull requests and the tab sorts those by merge time. The list refreshes when the tab is shown and
 its data is over a minute old, after a merge, on **Refresh**, and every minute
 while the tab is shown. Nothing runs while it is hidden.
 

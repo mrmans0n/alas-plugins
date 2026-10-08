@@ -1,5 +1,5 @@
 import type { ButtonStyle, Node, Tone } from "@alas/plugin";
-import { agoLabel, BUCKETS, canMerge, classify, isReady, updatedLabel, type Bucket, type Inbox, type Merged, type Pull } from "./inbox.ts";
+import { agoLabel, BUCKETS, MERGED_PAGE, canMerge, classify, isReady, updatedLabel, type Bucket, type Inbox, type Merged, type Pull } from "./inbox.ts";
 
 export interface ViewState {
   inbox?: Inbox;
@@ -11,7 +11,11 @@ export interface ViewState {
   merging?: number;
   /** The last merge failure per pull request number. */
   mergeErrors: Record<number, string>;
+  /** How many recently merged pull requests to list; `MERGED_PAGE` when unset. */
+  mergedShown?: number;
 }
+
+export const SHOW_MORE_MERGED = "merged-more";
 
 const TITLES: Record<Bucket, string> = { ready: "Ready to merge", failing: "Failing", waiting: "Waiting", drafts: "Drafts" };
 const TONES: Record<Bucket, Tone> = { ready: "accent", failing: "danger", waiting: "warn", drafts: "dim" };
@@ -154,7 +158,13 @@ function content(state: ViewState, now: number): Node[] {
   const sections: Node[] = pulls.length === 0
     ? [text("clear-text", "Inbox is clear.", "body", "dim")]
     : BUCKETS.filter((b) => buckets[b].length > 0).map((b) => section(b, TITLES[b], buckets[b].length, TONES[b], buckets[b].map((p) => row(p, state))));
-  if (merged.length > 0) sections.push(section("merged", "Recently merged", merged.length, "success", merged.map((m) => mergedRow(m, now))));
+  if (merged.length > 0) {
+    const shown = merged.slice(0, state.mergedShown ?? MERGED_PAGE);
+    const more: Node[] = shown.length < merged.length
+      ? [{ kind: "button", id: SHOW_MORE_MERGED, label: `Show ${Math.min(MERGED_PAGE, merged.length - shown.length)} more`, icon: "chevron.down", style: "plain" }]
+      : [];
+    sections.push(section("merged", "Recently merged", shown.length, "success", [...shown.map((m) => mergedRow(m, now)), ...more]));
+  }
   return [{ kind: "scroll", id: "scroll", axis: "vertical", child: { kind: "vstack", id: "buckets", spacing: 16, children: sections } }];
 }
 

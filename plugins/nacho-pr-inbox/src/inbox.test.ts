@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agoLabel, bucketOf, classify, MERGED_SHOWN, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
+import { agoLabel, bucketOf, classify, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
 
 /** One node as `gh api graphql` returns it for the manifest's query. */
 const node = (number: number, fields: object = {}) => ({
@@ -126,7 +126,7 @@ test("gh failures become messages the user can act on", () => {
   assert.equal(processError(run({ exit: 143, timedOut: true })), "gh timed out.");
 });
 
-test("recently merged pull requests sort by merge time, skipping malformed and repeated ones, and keep the last few", () => {
+test("recently merged pull requests sort by merge time, skipping malformed and repeated ones", () => {
   const inbox = parseInbox(reply([], [
     mergedNode(1, "2026-09-01T00:00:00Z"),
     mergedNode(2, "2026-09-03T00:00:00Z", { author: null }),
@@ -137,9 +137,6 @@ test("recently merged pull requests sort by merge time, skipping malformed and r
   ]));
   assert.deepEqual(inbox?.merged.map((m) => m.number), [2, 3, 1]);
   assert.deepEqual(inbox?.merged[0], { number: 2, title: "PR 2", url: "https://github.com/o/r/pull/2", author: "ghost", branch: "nacho/pr-2", mergedAt: "2026-09-03T00:00:00Z" });
-  const many = parseInbox(reply([], Array.from({ length: 20 }, (_, i) => mergedNode(i + 1, `2026-09-${String(i + 1).padStart(2, "0")}T00:00:00Z`))));
-  assert.equal(many?.merged.length, MERGED_SHOWN);
-  assert.equal(many?.merged[0].number, 20);
   assert.deepEqual(parseInbox(reply([node(1)]))?.merged, []);
 });
 
