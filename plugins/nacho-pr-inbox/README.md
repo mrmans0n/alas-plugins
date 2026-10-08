@@ -42,7 +42,13 @@ one failed), the running ones in yellow, and the rest gray, captioned
 not a draft and has no conflicts gets a merge button, which runs
 `gh pr merge --squash --delete-branch <number>`: green with a checkmark when
 checks passed, plain while they run, and **Merge anyway** in the warning color
-when they failed. A failure shows under the title. The list refreshes when the tab is shown and
+when they failed. A failure shows under the title.
+
+Below the open ones, **Recently merged** lists the last 10 merged pull
+requests, the most recently merged first, each with its branch, when it
+merged and who wrote it, and a link to open it. GitHub cannot sort by merge
+time, so the query fetches the 20 most recently updated merged pull requests
+and the tab sorts those by merge time. The list refreshes when the tab is shown and
 its data is over a minute old, after a merge, on **Refresh**, and every minute
 while the tab is shown. Nothing runs while it is hidden.
 
@@ -54,7 +60,7 @@ repository from its git remote.
 
 | Id | Command |
 |---|---|
-| `list` | `gh api graphql -F owner={owner} -F name={repo} -f query=…`, a fixed query for the open pull requests |
+| `list` | `gh api graphql -F owner={owner} -F name={repo} -f query=…`, a fixed query for the open pull requests and the recently merged ones |
 | `merge` | `gh pr merge --squash --delete-branch`, plus the pull request number |
 
 ## Limits

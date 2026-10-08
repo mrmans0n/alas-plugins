@@ -28,11 +28,26 @@ export interface Checks {
   total: number;
 }
 
+export interface Merged {
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  branch: string;
+  /** ISO 8601, so it sorts as text. */
+  mergedAt: string;
+}
+
 export interface Inbox {
   /** `owner/name`. */
   repo: string;
   pulls: Pull[];
+  /** The most recently merged first. */
+  merged: Merged[];
 }
+
+/** How many recently merged pull requests the tab lists. */
+export const MERGED_SHOWN = 10;
 
 export type Bucket = "ready" | "failing" | "waiting" | "drafts";
 export const BUCKETS: Bucket[] = ["ready", "failing", "waiting", "drafts"];
@@ -87,6 +102,22 @@ function pull(node: unknown): Pull | undefined {
   };
 }
 
+function merged(node: unknown): Merged | undefined {
+  if (!isObject(node)) return undefined;
+  const { number, title, url, headRefName, mergedAt } = node;
+  if (!Number.isInteger(number) || number <= 0 || typeof title !== "string" || typeof url !== "string" || !url.startsWith("https://")) return undefined;
+  if (typeof headRefName !== "string" || typeof mergedAt !== "string") return undefined;
+  return { number, title, url, author: str(node.author?.login) ?? "ghost", branch: headRefName, mergedAt };
+}
+
+/** The last `MERGED_SHOWN` merged pull requests, the most recent first. GitHub cannot order by merge time, so the query fetches the recently updated ones and this sorts them. */
+function recentlyMerged(nodes: unknown): Merged[] {
+  if (!Array.isArray(nodes)) return [];
+  const out = new Map<number, Merged>();
+  for (const m of nodes.map(merged)) if (m && !out.has(m.number)) out.set(m.number, m);
+  return [...out.values()].sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : 0)).slice(0, MERGED_SHOWN);
+}
+
 /** The list process's stdout, or `undefined` when it is not the reply the query asks for. Malformed and repeated pull requests are skipped, as view ids must be unique. */
 export function parseInbox(stdout: string): Inbox | undefined {
   let json: unknown;
@@ -101,7 +132,7 @@ export function parseInbox(stdout: string): Inbox | undefined {
   if (!Array.isArray(nodes)) return undefined;
   const pulls = new Map<number, Pull>();
   for (const p of nodes.map(pull)) if (p && !pulls.has(p.number)) pulls.set(p.number, p);
-  return { repo: repository.nameWithOwner, pulls: [...pulls.values()] };
+  return { repo: repository.nameWithOwner, pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
 }
 
 /** Codex approved and nothing stops gh from merging; checks may still be running or red. */
@@ -136,6 +167,17 @@ export function updatedLabel(fetchedAt: number | undefined, now: number): string
   if (seconds < 60) return "Updated just now";
   if (seconds < 3600) return `Updated ${Math.floor(seconds / 60)}m ago`;
   return `Updated ${Math.floor(seconds / 3600)}h ago`;
+}
+
+/** How long ago `iso` was: "just now", "5m ago", "2h ago", "3d ago"; `undefined` for an unreadable time. */
+export function agoLabel(iso: string, now: number): string | undefined {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return undefined;
+  const seconds = Math.max(0, (now - at) / 1000);
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 /** The first non-empty line of `text`, cut to 300 characters. */

@@ -1,15 +1,15 @@
 {
   "id": "io.nlopez.nacho-pr-inbox",
   "name": "Nacho's PR Inbox",
-  "summary": "The repository's open pull requests, sorted into ready to merge, failing, waiting and drafts. Squash-merges the ready ones with gh.",
-  "version": "0.5.0",
+  "summary": "The repository's open pull requests, sorted into ready to merge, failing, waiting and drafts, and the recently merged ones. Squash-merges the ready ones with gh.",
+  "version": "0.6.0",
   "api": 14,
   "entry": "plugin.js",
   "capabilities": ["workspace.read", "process.exec", "timers", "notify"],
   "processes": [
     {
       "id": "list",
-      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login} headRefName updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}}}}"]
+      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login} headRefName updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:20,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login} headRefName mergedAt}}}}"]
     },
     { "id": "merge", "command": ["gh", "pr", "merge", "--squash", "--delete-branch"], "appendArgs": true }
   ],
