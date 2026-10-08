@@ -29,7 +29,7 @@ most recently updated first within each group:
 
 | Group | When |
 |---|---|
-| Ready to merge | Checks passed, a 👍 from the Codex bot on the description, not a draft, no conflicts. Review state shows as a badge but never blocks |
+| Ready to merge | Checks passed, a 👍 from the Codex bot on the description (Renovate's need none), not a draft, no conflicts. Review state shows as a badge but never blocks |
 | Failing | Checks failed or errored |
 | Waiting | Every other open pull request |
 | Drafts | Drafts |
@@ -38,7 +38,7 @@ Each row shows the branch and badges for checks, review, Codex (👍 once it
 approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. While checks run, a
 bar beside the checks badge fills with the finished ones in green (red once
 one failed), the running ones in yellow, and the rest gray, captioned
-`done/total`. Every row with the Codex 👍 that is
+`done/total`. Every row with the Codex 👍 (or by Renovate) that is
 not a draft and has no conflicts gets a merge button, which runs
 `gh pr merge --squash --delete-branch <number>`: green with a checkmark when
 checks passed, plain while they run, and **Merge anyway** in the warning color
