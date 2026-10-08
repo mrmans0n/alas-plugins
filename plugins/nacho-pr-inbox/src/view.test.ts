@@ -110,7 +110,7 @@ test("recently merged pull requests follow the open ones, in the order given, wi
   assert.equal((ids.get("merged-9-open") as any).url, "https://github.com/o/r/pull/9");
   assert.ok(!ids.has(mergeButtonId(9)));
   assert.equal((ids.get("merged-9-title") as any).tone, undefined);
-  assert.equal((ids.get("merged-8-title") as any).tone, "dim");
+  assert.equal((ids.get("merged-8-title") as any).tone, undefined);
 });
 
 test("with nothing open, the inbox is clear above the recently merged", () => {
