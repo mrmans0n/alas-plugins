@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucketOf, classify, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
+import { agoLabel, bucketOf, classify, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
 
 /** One node as `gh api graphql` returns it for the manifest's query. */
 const node = (number: number, fields: object = {}) => ({
@@ -17,7 +17,11 @@ const node = (number: number, fields: object = {}) => ({
   reactions: { nodes: [{ user: { login: "chatgpt-codex-connector[bot]" } }] },
   ...fields,
 });
-const reply = (nodes: unknown[]) => JSON.stringify({ data: { repository: { nameWithOwner: "o/r", pullRequests: { nodes } } } });
+const reply = (nodes: unknown[], merged?: unknown[]) =>
+  JSON.stringify({ data: { repository: { nameWithOwner: "o/r", pullRequests: { nodes }, ...(merged && { merged: { nodes: merged } }) } } });
+const mergedNode = (number: number, mergedAt: string, fields: object = {}) => ({
+  number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, author: { login: "nacho" }, headRefName: `nacho/pr-${number}`, mergedAt, ...fields,
+});
 
 test("parses the query's reply, skipping malformed and repeated pull requests and tolerating missing optional parts", () => {
   const inbox = parseInbox(reply([
@@ -120,4 +124,28 @@ test("gh failures become messages the user can act on", () => {
   assert.equal(processError(run({ stderr: "\n  GraphQL: Pull request is not mergeable  \nmore" })), "GraphQL: Pull request is not mergeable");
   assert.equal(processError(run({ exit: 2 })), "gh exited with 2.");
   assert.equal(processError(run({ exit: 143, timedOut: true })), "gh timed out.");
+});
+
+test("recently merged pull requests sort by merge time, skipping malformed and repeated ones", () => {
+  const inbox = parseInbox(reply([], [
+    mergedNode(1, "2026-09-01T00:00:00Z"),
+    mergedNode(2, "2026-09-03T00:00:00Z", { author: null }),
+    mergedNode(3, "2026-09-02T00:00:00Z"),
+    mergedNode(4, "2026-09-04T00:00:00Z", { url: "javascript:alert(1)" }),
+    mergedNode(5, null as any),
+    mergedNode(2, "2026-09-05T00:00:00Z"),
+  ]));
+  assert.deepEqual(inbox?.merged.map((m) => m.number), [2, 3, 1]);
+  assert.deepEqual(inbox?.merged[0], { number: 2, title: "PR 2", url: "https://github.com/o/r/pull/2", author: "ghost", branch: "nacho/pr-2", mergedAt: "2026-09-03T00:00:00Z" });
+  assert.deepEqual(parseInbox(reply([node(1)]))?.merged, []);
+});
+
+test("the ago label counts minutes, hours, then days", () => {
+  const now = Date.parse("2026-10-08T12:00:00Z");
+  assert.equal(agoLabel("2026-10-08T11:59:30Z", now), "just now");
+  assert.equal(agoLabel("2026-10-08T12:00:30Z", now), "just now");
+  assert.equal(agoLabel("2026-10-08T11:55:00Z", now), "5m ago");
+  assert.equal(agoLabel("2026-10-08T09:00:00Z", now), "3h ago");
+  assert.equal(agoLabel("2026-10-05T11:00:00Z", now), "3d ago");
+  assert.equal(agoLabel("yesterday", now), undefined);
 });
