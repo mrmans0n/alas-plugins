@@ -75,6 +75,7 @@ test("a Codex 👍 gets a merge button that looks as safe as the checks are", ()
   assert.equal(button({ ci: "FAILURE" }), "normal warn exclamationmark.triangle Merge anyway");
   assert.equal(button({ ci: "ERROR" }), "normal warn exclamationmark.triangle Merge anyway");
   assert.equal(button({ codexThumbsUp: false }), undefined);
+  assert.equal(button({ codexThumbsUp: false, author: "renovate" }), "primary success checkmark Squash & merge");
   assert.equal(button({ mergeable: "CONFLICTING" }), undefined);
   assert.equal(button({ isDraft: true }), undefined);
 });

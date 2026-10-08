@@ -64,6 +64,8 @@ export const SIGN_IN = "Sign in with `gh auth login` in a terminal, then Refresh
 export const NO_REMOTE = "This repository has no GitHub remote.";
 
 const CODEX = new Set(["chatgpt-codex-connector[bot]", "chatgpt-codex-connector"]);
+/** Bots whose pull requests need no Codex 👍. */
+const TRUSTED = new Set(["renovate[bot]", "renovate"]);
 
 function isObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -143,10 +145,10 @@ export function parseInbox(stdout: string): Inbox | undefined {
   return { repo: repository.nameWithOwner, pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
 }
 
-/** Codex approved and nothing stops gh from merging; checks may still be running or red. */
+/** Codex approved (or Renovate wrote it) and nothing stops gh from merging; checks may still be running or red. */
 export function canMerge(p: Pull): boolean {
   // Review state is shown, never required: the Codex 👍 is the approval that counts.
-  return !p.isDraft && p.codexThumbsUp && p.mergeable !== "CONFLICTING";
+  return !p.isDraft && (p.codexThumbsUp || TRUSTED.has(p.author)) && p.mergeable !== "CONFLICTING";
 }
 
 export function isReady(p: Pull): boolean {
