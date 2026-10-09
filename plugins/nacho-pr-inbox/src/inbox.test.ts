@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agoLabel, bucketOf, classify, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
+import { agoLabel, bucketOf, classify, inboxBadge, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
 
 /** One node as `gh api graphql` returns it for the manifest's query. */
 const node = (number: number, fields: object = {}) => ({
@@ -150,4 +150,15 @@ test("the ago label counts minutes, hours, then days", () => {
   assert.equal(agoLabel("2026-10-08T09:00:00Z", now), "3h ago");
   assert.equal(agoLabel("2026-10-05T11:00:00Z", now), "3d ago");
   assert.equal(agoLabel("yesterday", now), undefined);
+});
+
+test("the rail badge counts failing pull requests in red, else ready ones in green", () => {
+  const inbox = parseInbox(reply([]))!;
+  const ready = pull({ number: 1 });
+  const failing = pull({ number: 2, ci: "FAILURE" });
+  const draft = pull({ number: 3, isDraft: true });
+  assert.equal(inboxBadge(undefined), null);
+  assert.deepEqual(inboxBadge({ ...inbox, pulls: [draft] }), null);
+  assert.deepEqual(inboxBadge({ ...inbox, pulls: [ready, draft] }), { count: 1, tone: "success" });
+  assert.deepEqual(inboxBadge({ ...inbox, pulls: [ready, failing, { ...failing, number: 4 }] }), { count: 2, tone: "danger" });
 });
