@@ -2,14 +2,15 @@
   "id": "io.nlopez.agent-usage",
   "name": "Agent Usage",
   "summary": "A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree.",
-  "version": "0.1.0",
-  "api": 12,
+  "version": "0.2.0",
+  "api": 15,
   "entry": "plugin.js",
   "web": "ui.js",
   "capabilities": ["usage.read", "workspace.read"],
   "events": ["turn.finished"],
   "contributes": {
     "tabs": [{ "id": "usage", "title": "Agent Usage", "kind": "web" }],
+    "panels": [{ "id": "rail", "title": "Agent Usage", "icon": "chart.bar.xaxis", "location": "right", "kind": "web" }],
     "commands": [{ "id": "open", "title": "Agent Usage", "icon": "chart.bar.xaxis", "slots": ["palette"], "opens": "usage" }]
   }
 }

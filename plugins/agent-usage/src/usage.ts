@@ -213,3 +213,10 @@ export function summarize(agg: Aggregate, now: number, where: (project?: string,
     omitted,
   };
 }
+
+/** Usage-limit hits detected since local midnight of `now`. */
+export function limitsToday(agg: Aggregate, now: number): number {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  return agg.limits.filter((l) => l.detectedAt >= midnight.getTime()).length;
+}

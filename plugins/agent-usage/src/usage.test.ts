@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { UsageTurn } from "@alas/plugin";
-import { addLimit, addTurn, newAggregate, summarize } from "./usage.ts";
+import { addLimit, addTurn, limitsToday, newAggregate, summarize } from "./usage.ts";
 
 /** Local time, so bucketing is checked in whatever zone the tests run in. */
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
@@ -68,4 +68,13 @@ test("worktrees named alike share a row, and limits are newest first with their 
     { agent: "claude", where: "feature", detectedAt: at(1, 9) },
   ]);
   assert.equal(s.limitHits, 2);
+});
+
+test("limit hits today count from local midnight", () => {
+  const agg = newAggregate(7, "project", NOW);
+  const limit = (detectedAt: number) => ({ session: "s", agent: "claude", detectedAt, resetSource: "unknown" as const });
+  addLimit(agg, limit(at(3, 23, 59)));
+  addLimit(agg, limit(at(4, 0, 0)));
+  addLimit(agg, limit(at(4, 11)));
+  assert.equal(limitsToday(agg, NOW), 2);
 });

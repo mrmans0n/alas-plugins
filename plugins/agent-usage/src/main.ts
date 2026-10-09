@@ -2,10 +2,11 @@
 // into aggregates (src/usage.ts) and posts those to the web tab. `turnFinished` keeps them current.
 // The page (page/main.ts) only draws: it has no network and never sees a raw turn.
 
-import { definePlugin, requestSnapshot, usageLimits, usageTurns, webPost, type Snapshot, type UsageCursor, type UsageTurn } from "@alas/plugin";
-import { addLimit, addTurn, newAggregate, RANGES, summarize, windowStart, type Aggregate, type PageMessage, type PluginMessage, type Range, type Scope } from "./usage.ts";
+import { definePlugin, requestSnapshot, setPanelBadge, usageLimits, usageTurns, webPost, type Snapshot, type UsageCursor, type UsageTurn } from "@alas/plugin";
+import { addLimit, addTurn, limitsToday, newAggregate, RANGES, summarize, windowStart, type Aggregate, type PageMessage, type PluginMessage, type Range, type Scope } from "./usage.ts";
 
 const TAB = 0;
+const PANEL = "rail";
 const PAGE = 1000;
 
 let projectId = "";
@@ -21,7 +22,9 @@ let pending: UsageTurn[] = [];
 let visible = false;
 
 function post(message: PluginMessage): void {
+  // A surface with no live page drops it.
   webPost(TAB, message);
+  webPost(PANEL, message);
 }
 
 function where(project?: string, worktree?: string): string {
@@ -30,7 +33,13 @@ function where(project?: string, worktree?: string): string {
   return (worktree && branches.get(worktree)) ?? "Removed worktree";
 }
 
+function badge(): void {
+  const hits = agg ? limitsToday(agg, Date.now()) : 0;
+  setPanelBadge(PANEL, hits ? { count: hits, tone: "danger" } : null);
+}
+
 function postSummary(): void {
+  badge();
   if (agg) post({ type: "usage", ...summarize(agg, Date.now(), where) });
 }
 
@@ -101,6 +110,7 @@ definePlugin({
       case "activate":
         projectId = event.projectId;
         requestSnapshot();
+        load();
         break;
       case "snapshot":
       case "workspaceChanged":
@@ -121,6 +131,8 @@ definePlugin({
         visible = event.visible;
         break;
       case "turnFinished":
+        // Limit hits arrive only through `usageLimits`.
+        if (event.turn.result === "limited" && !loading) load();
         if (!agg) break;
         if (loading) pending.push(event.turn);
         else if (event.turn.id > agg.maxId) {
