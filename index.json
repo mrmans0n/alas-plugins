@@ -5,6 +5,18 @@
       "id": "io.nlopez.agent-usage",
       "versions": [
         {
+          "version": "0.2.0",
+          "api": 15,
+          "capabilities": [
+            "usage.read",
+            "workspace.read"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.2.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.2.0/plugin.js",
+          "web": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.2.0/ui.js",
+          "hash": "d68aabd699f07f89bc81aab6e7d4b46982bfa2170724d151dc0309c6821a0769"
+        },
+        {
           "version": "0.1.0",
           "api": 12,
           "capabilities": [
