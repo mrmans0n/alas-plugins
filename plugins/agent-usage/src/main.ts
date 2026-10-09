@@ -19,7 +19,8 @@ let generation = 0;
 let loading = false;
 /** Turns finished while loading: folded in after, unless the pages had them. */
 let pending: UsageTurn[] = [];
-let visible = false;
+let tabShown = false;
+let panelShown = false;
 /** A limited turn finished during the load: the limits may already have been read, so load once more after. */
 let limitedWhileLoading = false;
 
@@ -128,7 +129,10 @@ definePlugin({
         break;
       }
       case "tabVisible":
-        visible = event.visible;
+        if (event.tab === TAB) tabShown = event.visible;
+        break;
+      case "panelVisible":
+        if (event.panel === PANEL) panelShown = event.visible;
         break;
       case "turnFinished":
         // Limit hits arrive only through `usageLimits`.
@@ -140,7 +144,7 @@ definePlugin({
         if (loading) pending.push(event.turn);
         else if (event.turn.id > agg.maxId) {
           addTurn(agg, event.turn);
-          if (visible) postSummary();
+          if (tabShown || panelShown) postSummary();
         }
         break;
     }
