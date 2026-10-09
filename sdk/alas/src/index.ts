@@ -48,7 +48,7 @@ export interface Manifest {
   entry: string;
   /**
    * API 12: the page script web tabs show, relative to the plugin folder (at most 8 MiB, not the entry).
-   * Needed by, and only allowed with, a tab of kind `web`.
+   * Needed by, and only allowed with, a tab or panel of kind `web`.
    */
   web?: string;
   capabilities?: Capability[];
@@ -491,7 +491,6 @@ export function cancelTimer(id: string): number {
   return request("timer/cancel", { id });
 }
 
-/** Sends a request whose reply `decode` turns into `T`; a malformed reply is a -32603 error. */
 /** `{ tab }` or `{ panel }` from a message, or undefined. */
 function targetOf(params: any): { tab: number } | { panel: string } | undefined {
   if (typeof params?.tab === "number") return { tab: params.tab };
@@ -499,6 +498,7 @@ function targetOf(params: any): { tab: number } | { panel: string } | undefined 
   return undefined;
 }
 
+/** Sends a request whose reply `decode` turns into `T`; a malformed reply is a -32603 error. */
 function requestDecoded<T>(method: string, params: unknown, decode: (r: Record<string, any>) => T | undefined, callback: (outcome: Outcome<T>) => void): number {
   return request(method, params, ({ result, error }) => {
     if (error) return callback({ error });
