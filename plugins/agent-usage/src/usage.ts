@@ -1,7 +1,7 @@
 // Turns and usage-limit episodes folded into the aggregates the page draws. Pure: the plugin feeds
 // it pages of `usage/turns` and `usage/limits` and posts `summarize`'s result, never raw turns.
 
-import type { UsageLimit, UsageTurn } from "@alas/plugin";
+import type { PanelBadge, UsageLimit, UsageTurn } from "@alas/plugin";
 
 export type Range = 7 | 30 | 90;
 export type Scope = "project" | "all";
@@ -219,4 +219,14 @@ export function limitsToday(agg: Aggregate, now: number): number {
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
   return agg.limits.filter((l) => l.detectedAt >= midnight.getTime()).length;
+}
+
+/**
+ * The rail badge for a finished load: today's hits in this project, or null to clear it. `undefined` leaves it
+ * as it was, for an aggregate that is not the project's.
+ */
+export function badgeFor(agg: Aggregate, now: number): PanelBadge | null | undefined {
+  if (agg.scope !== "project") return undefined;
+  const hits = limitsToday(agg, now);
+  return hits ? { count: Math.min(hits, 9999), tone: "danger" } : null;
 }

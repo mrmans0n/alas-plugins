@@ -3,7 +3,7 @@
 // The page (page/main.ts) only draws: it has no network and never sees a raw turn.
 
 import { definePlugin, requestSnapshot, setPanelBadge, usageLimits, usageTurns, webPost, type Snapshot, type UsageCursor, type UsageTurn } from "@alas/plugin";
-import { addLimit, addTurn, limitsToday, newAggregate, RANGES, summarize, windowStart, type Aggregate, type PageMessage, type PluginMessage, type Range, type Scope } from "./usage.ts";
+import { addLimit, addTurn, badgeFor, newAggregate, RANGES, summarize, windowStart, type Aggregate, type PageMessage, type PluginMessage, type Range, type Scope } from "./usage.ts";
 
 const TAB = 0;
 const PANEL = "rail";
@@ -20,6 +20,8 @@ let loading = false;
 /** Turns finished while loading: folded in after, unless the pages had them. */
 let pending: UsageTurn[] = [];
 let visible = false;
+/** A limited turn finished during the load: the limits may already have been read, so load once more after. */
+let limitedWhileLoading = false;
 
 function post(message: PluginMessage): void {
   // A surface with no live page drops it.
@@ -33,13 +35,7 @@ function where(project?: string, worktree?: string): string {
   return (worktree && branches.get(worktree)) ?? "Removed worktree";
 }
 
-function badge(): void {
-  const hits = agg ? limitsToday(agg, Date.now()) : 0;
-  setPanelBadge(PANEL, hits ? { count: hits, tone: "danger" } : null);
-}
-
 function postSummary(): void {
-  badge();
   if (agg) post({ type: "usage", ...summarize(agg, Date.now(), where) });
 }
 
@@ -53,6 +49,7 @@ function load(): void {
   const gen = ++generation;
   agg = newAggregate(range, scope, Date.now());
   loading = true;
+  limitedWhileLoading = false;
   pending = [];
   post({ type: "loading", range, scope });
   const current = agg;
@@ -74,6 +71,9 @@ function load(): void {
       const loadedMax = current.maxId;
       for (const turn of pending) if (turn.id > loadedMax) addTurn(current, turn);
       pending = [];
+      if (limitedWhileLoading) return load();
+      const badge = badgeFor(current, Date.now());
+      if (badge !== undefined) setPanelBadge(PANEL, badge);
       postSummary();
     });
   };
@@ -132,7 +132,10 @@ definePlugin({
         break;
       case "turnFinished":
         // Limit hits arrive only through `usageLimits`.
-        if (event.turn.result === "limited" && !loading) load();
+        if (event.turn.result === "limited") {
+          if (loading) limitedWhileLoading = true;
+          else load();
+        }
         if (!agg) break;
         if (loading) pending.push(event.turn);
         else if (event.turn.id > agg.maxId) {
