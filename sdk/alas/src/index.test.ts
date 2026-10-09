@@ -22,6 +22,8 @@ import {
   runStart,
   sessionSend,
   setDecorations,
+  setPanelBadge,
+  setRegions,
   setTimer,
   parseAgents,
   parseLastMessage,
@@ -345,18 +347,38 @@ test("web pages and recorded turns arrive as events, and posts go to the tab", (
   testHost.notify("web/message", { tab: 0, message: { ready: true } });
   testHost.notify("web/message", { tab: 0, message: null });
   testHost.notify("web/message", { tab: 0 });
+  testHost.notify("web/message", { panel: "usage", message: 1 });
+  testHost.notify("canvas/click", { panel: "office", region: "r" });
   testHost.notify("turn/finished", { session: "s", worktree: "w", turn });
   testHost.notify("turn/finished", { session: "s", worktree: "w", turn: { ...turn, result: "exploded" } });
   webPost(0, { points: [3] });
   assert.deepEqual(events, [
     { type: "webMessage", tab: 0, message: { ready: true } },
     { type: "webMessage", tab: 0, message: null },
+    { type: "webMessage", panel: "usage", message: 1 },
+    { type: "click", panel: "office", region: "r" },
     {
       type: "turnFinished", session: "s", worktree: "w",
       turn: { ...turn, tokens: { total: 5, input: 5, cachedInput: 0, cachedWrite: 0, output: 0, reasoningOutput: 0 } },
     },
   ]);
   assert.deepEqual(testHost.takeSent(), [{ jsonrpc: "2.0", method: "web/post", params: { tab: 0, message: { points: [3] } } }]);
+});
+
+test("API 15 helpers target panels and set rail badges", () => {
+  testHost.takeSent();
+  webPost("usage", { n: 1 });
+  webPost(0, { n: 2 });
+  setRegions("office", []);
+  setPanelBadge("inbox", { count: 2, tone: "danger" });
+  setPanelBadge("inbox", null);
+  assert.deepEqual(testHost.takeSent().map((m) => [m.method, m.params]), [
+    ["web/post", { panel: "usage", message: { n: 1 } }],
+    ["web/post", { tab: 0, message: { n: 2 } }],
+    ["canvas/regions", { panel: "office", regions: [] }],
+    ["panel/badge", { panel: "inbox", count: 2, tone: "danger" }],
+    ["panel/badge", { panel: "inbox" }],
+  ]);
 });
 
 test("usage pages decode their entries and cursor, skipping malformed entries", () => {

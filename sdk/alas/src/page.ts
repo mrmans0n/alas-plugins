@@ -8,8 +8,10 @@
  */
 
 export interface PageContext {
-  /** The web tab's index in the manifest's tabs. */
-  tab: number;
+  /** A web tab's index in the manifest's tabs. */
+  tab?: number;
+  /** API 15: a web panel's id. */
+  panel?: string;
   theme: "light" | "dark";
 }
 

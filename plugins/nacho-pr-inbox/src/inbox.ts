@@ -1,4 +1,4 @@
-import type { Outcome, ProcessResult } from "@alas/plugin";
+import type { Outcome, PanelBadge, ProcessResult } from "@alas/plugin";
 
 export interface Pull {
   number: number;
@@ -168,6 +168,15 @@ export function classify(pulls: Pull[]): Record<Bucket, Pull[]> {
   const sorted = pulls.slice().sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
   for (const p of sorted) out[bucketOf(p)].push(p);
   return out;
+}
+
+/** The rail badge: failing pull requests in red, else ready ones in green, else none. */
+export function inboxBadge(inbox: Inbox | undefined): PanelBadge | null {
+  if (!inbox) return null;
+  const { failing, ready } = classify(inbox.pulls);
+  if (failing.length) return { count: failing.length, tone: "danger" };
+  if (ready.length) return { count: ready.length, tone: "success" };
+  return null;
 }
 
 /** Mirrors Alas's gg inbox: "Updated just now", "Updated 5m ago", "Updated 2h ago". */
