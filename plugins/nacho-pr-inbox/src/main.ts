@@ -1,5 +1,5 @@
-import { definePlugin, notify, processRun, render, renderPanel, requestSnapshot, setPanelBadge, setTimer, type Event, type Snapshot } from "@alas/plugin";
-import { canMerge, inboxBadge, parseInbox, processError } from "./inbox.ts";
+import { definePlugin, notify, processRun, render, renderPanel, requestSnapshot, setTimer, type Event, type Snapshot } from "@alas/plugin";
+import { canMerge, parseInbox, processError } from "./inbox.ts";
 import { inboxView, mergeTarget, type ViewState } from "./view.ts";
 
 const TAB = 0;
@@ -19,7 +19,6 @@ const draw = () => {
   const tree = inboxView(state, Date.now());
   render(TAB, tree);
   renderPanel(PANEL, tree);
-  setPanelBadge(PANEL, inboxBadge(state.inbox));
 };
 
 function refresh(): void {
@@ -65,7 +64,7 @@ function merge(number: number): void {
   });
 }
 
-/** Refreshes every minute while the tab or the panel is shown, and every 5 minutes otherwise to keep the badge current. */
+/** Refreshes every minute while the tab or the panel is shown, and every 5 minutes otherwise to keep the data current. */
 function setShown(tab: boolean, panel: boolean): void {
   const was = tabShown || panelShown;
   tabShown = tab;
