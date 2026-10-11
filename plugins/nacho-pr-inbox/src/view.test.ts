@@ -134,3 +134,16 @@ test("recently merged lists the last day's, or the last 5 when fewer", () => {
 
   assert.equal((at([merged(9, new Date(NOW - 100 * hour).toISOString())]).get("bucket-merged-count") as any).text, "1 PR");
 });
+
+test("the compact rail view stacks each row and drops the branch, repo and updated time", () => {
+  const state: ViewState = { refreshing: false, mergeErrors: {}, inbox: { repo: "o/r", pulls: [pull(1)], merged: [{ number: 2, title: "Old", url: "u", author: "nacho", branch: "nacho/old", mergedAt: new Date(NOW - 5 * 60_000).toISOString() }] }, fetchedAt: NOW };
+  const tree = inboxView(state, NOW, true);
+  const ids = nodes(tree);
+  const all = texts(tree);
+  assert.equal(ids.get("pr-1-row")!.kind, "vstack");
+  assert.ok(!all.includes("nacho/pr-1") && !all.includes("nacho/old"));
+  assert.ok(all.includes("PR Inbox") && !all.includes("Updated just now"));
+  assert.equal((ids.get(mergeButtonId(1)) as any).label, "Merge");
+  assert.ok(ids.has("pr-1-open") && ids.has("merged-2-open"));
+  assert.ok(all.includes("5m ago by nacho"));
+});

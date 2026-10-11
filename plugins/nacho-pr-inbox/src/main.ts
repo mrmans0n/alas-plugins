@@ -16,9 +16,8 @@ let tabShown = false;
 let panelShown = false;
 
 const draw = () => {
-  const tree = inboxView(state, Date.now());
-  render(TAB, tree);
-  renderPanel(PANEL, tree);
+  render(TAB, inboxView(state, Date.now()));
+  renderPanel(PANEL, inboxView(state, Date.now(), true));
 };
 
 function refresh(): void {
