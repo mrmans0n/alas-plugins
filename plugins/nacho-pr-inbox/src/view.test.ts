@@ -27,9 +27,9 @@ function nodes(root: Node): Map<string, Node> {
 const texts = (root: Node) => [...nodes(root).values()].flatMap((n) => ("text" in n && n.text ? [n.text] : []));
 
 test("buckets show in order with their counts, skipping empty ones", () => {
-  const tree = view({ inbox: { repo: "o/r", pulls: [pull(1, { isDraft: true }), pull(2, { ci: "FAILURE" }), pull(3), pull(4, { ci: "ERROR" })], merged: [] }, fetchedAt: NOW });
+  const tree = view({ inbox: { repo: "o/r", pulls: [pull(1, { isDraft: true }), pull(2, { ci: "FAILURE" }), pull(3), pull(4, { ci: "ERROR" }), pull(5, { ci: "PENDING" })], merged: [] }, fetchedAt: NOW });
   const all = texts(tree);
-  assert.deepEqual(all.filter((t) => /^[A-Z ]+$/.test(t) || / PRs?$/.test(t)), ["READY TO MERGE", "1 PR", "FAILING", "2 PRs", "DRAFTS", "1 PR"]);
+  assert.deepEqual(all.filter((t) => /^[A-Z ]+$/.test(t) || / PRs?$/.test(t)), ["READY TO MERGE", "1 PR", "WAITING", "1 PR", "FAILING", "2 PRs", "DRAFTS", "1 PR"]);
   assert.ok(all.includes("PR Inbox — o/r"));
   assert.ok(all.includes("Updated just now"));
   const ids = nodes(tree);

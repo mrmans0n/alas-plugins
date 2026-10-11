@@ -58,7 +58,7 @@ export function recentMerged(merged: Merged[], now: number): Merged[] {
 }
 
 export type Bucket = "ready" | "failing" | "waiting" | "drafts";
-export const BUCKETS: Bucket[] = ["ready", "failing", "waiting", "drafts"];
+export const BUCKETS: Bucket[] = ["ready", "waiting", "failing", "drafts"];
 
 export const SIGN_IN = "Sign in with `gh auth login` in a terminal, then Refresh.";
 export const NO_REMOTE = "This repository has no GitHub remote.";

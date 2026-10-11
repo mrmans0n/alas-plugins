@@ -30,8 +30,8 @@ most recently updated first within each group:
 | Group | When |
 |---|---|
 | Ready to merge | Checks passed, a 👍 from the Codex bot on the description (Renovate's need none), not a draft, no conflicts. Review state shows as a badge but never blocks |
-| Failing | Checks failed or errored |
 | Waiting | Every other open pull request |
+| Failing | Checks failed or errored |
 | Drafts | Drafts |
 
 Each row shows the branch and badges for checks, review, Codex (👍 once it
