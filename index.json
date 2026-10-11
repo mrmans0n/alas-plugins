@@ -108,6 +108,19 @@
       "id": "io.nlopez.nacho-pr-inbox",
       "versions": [
         {
+          "version": "0.9.1",
+          "api": 15,
+          "capabilities": [
+            "workspace.read",
+            "process.exec",
+            "timers",
+            "notify"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.9.1/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.9.1/plugin.js",
+          "hash": "2d86bf974d94802f218fedf11235e1ee1fdf879ee1b653eef22cb3ced215bd64"
+        },
+        {
           "version": "0.9.0",
           "api": 15,
           "capabilities": [
