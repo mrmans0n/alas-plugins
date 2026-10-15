@@ -31,25 +31,24 @@ most recently updated first within each group:
 
 | Group | When |
 |---|---|
-| Ready to merge | Checks passed, a 👍 from the Codex bot on the description, not a draft, no conflicts. Review state shows as a badge but never blocks |
-| Failing | Checks failed or errored |
+| Ready to merge | Checks passed, a 👍 from the Codex bot on the description (Renovate's need none), not a draft, no conflicts. Review state shows as a badge but never blocks |
 | Waiting | Every other open pull request |
+| Failing | Checks failed or errored |
 | Drafts | Drafts |
 
 Each row shows the branch and badges for checks, review, Codex (👍 once it
 approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. While checks run, a
 bar beside the checks badge fills with the finished ones in green (red once
 one failed), the running ones in yellow, and the rest gray, captioned
-`done/total`. Every row with the Codex 👍 that is
+`done/total`. Every row with the Codex 👍 (or by Renovate) that is
 not a draft and has no conflicts gets a merge button, which runs
 `gh pr merge --squash --delete-branch <number>`: green with a checkmark when
 checks passed, plain while they run, and **Merge anyway** in the warning color
 when they failed. A failure shows under the title.
 
 Below the open ones, **Recently merged** lists the pull requests merged in the
-last week, up to 10, the most recently merged first, each with its branch,
-when it merged and who wrote it, and a link to open it. **Show more** adds 10
-more at a time, older ones included. GitHub cannot sort by merge time, so the query fetches the 50 most
+last 24 hours, or the last 5 when fewer, the most recently merged first, each
+with its branch, when it merged and who wrote it, and a link to open it. GitHub cannot sort by merge time, so the query fetches the 50 most
 recently updated merged pull requests and the tab sorts those by merge time. The list refreshes when the tab is shown and
 its data is over a minute old, after a merge, on **Refresh**, and every minute
 while the tab is shown. Nothing runs while it is hidden.

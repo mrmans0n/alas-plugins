@@ -8,7 +8,8 @@
  */
 
 export interface Frame {
-  tab: number;
+  /** Canvas tab index, or canvas panel id (API 15). */
+  tab: number | string;
   width: number;
   pixels: Uint8Array;
 }

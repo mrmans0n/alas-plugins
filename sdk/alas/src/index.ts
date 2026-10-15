@@ -1,5 +1,5 @@
 /**
- * SDK for Alas plugins, API 4 to 14: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 15: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
@@ -10,7 +10,9 @@
  * `remote: true` lets `file/*` and `process.*` run there, through the Alas helper on the host. API 12
  * adds web tabs (a page the plugin ships as `web`, talking to it through `webPost` and `webMessage`)
  * and the usage history (`usageTurns`, `usageLimits`, `turnFinished`). API 13 draws a `button`'s `tone` and
- * adds the `success` tone. API 14 adds the `progressBar` view node and an `hstack`'s `align`. For the page's side, see `@alas/plugin/page`.
+ * adds the `success` tone. API 14 adds the `progressBar` view node and an `hstack`'s `align`. API 15 lets `right` panels be `canvas` or `web` (`present`, `setRegions` and
+ * `webPost` take a panel id), adds `setPanelBadge` and commands that open a panel, and lets pages load `https` images from
+ * `network` hosts. For the page's side, see `@alas/plugin/page`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -21,8 +23,8 @@
 export interface Host {
   /** Queues one JSON-RPC message: at most 1 MiB, and 64 per call. */
   send(json: string): void;
-  /** One RGBA8 frame (non-premultiplied, row-major) for canvas tab `tab`. */
-  present(tab: number, pixels: Uint8Array, width: number): void;
+  /** One RGBA8 frame (non-premultiplied, row-major) for canvas tab index, or canvas panel id (API 15). */
+  present(target: number | string, pixels: Uint8Array, width: number): void;
 }
 
 declare global {
@@ -31,7 +33,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 14. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 15. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -41,12 +43,12 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
   /** The script, relative to the plugin folder. */
   entry: string;
   /**
    * API 12: the page script web tabs show, relative to the plugin folder (at most 8 MiB, not the entry).
-   * Needed by, and only allowed with, a tab of kind `web`.
+   * Needed by, and only allowed with, a tab or panel of kind `web`.
    */
   web?: string;
   capabilities?: Capability[];
@@ -121,7 +123,7 @@ export interface CommandDecl {
   /** An SF Symbol name. */
   icon?: string;
   slots: CommandSlot[];
-  /** API 8: one of the manifest's tab ids, opened before `command/run`. */
+  /** API 8: one of the manifest's tab ids, or from API 15 a `right` panel id, opened before `command/run`. */
   opens?: string;
 }
 
@@ -136,6 +138,8 @@ export interface PanelDecl {
   title: string;
   icon?: string;
   location?: PanelLocation;
+  /** API 15: `canvas` or `web` (needs `web`), only at `right`. */
+  kind?: "view" | "canvas" | "web";
 }
 
 export interface PromptDecl {
@@ -323,7 +327,8 @@ export type Event =
   /** The reply to `requestSnapshot`. */
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "tick"; dt: number }
-  | { type: "click"; tab: number; region: string }
+  /** A region of canvas tab `tab` or panel `panel` (API 15) was clicked. */
+  | { type: "click"; tab?: number; panel?: string; region: string }
   /** A control in a view tab was used: `kind` is `click` (button, card), `submit` (text field) or `select` (menu). */
   | { type: "viewEvent"; tab: number; id: string; kind: string; value?: string }
   /** A task started with `taskStart` failed to launch in the background. */
@@ -374,8 +379,8 @@ export type Event =
   | { type: "storageChanged"; scope: "plugin"; key: string }
   /** API 9: view or canvas tab `tab` got its first view in this project (`true`) or lost its last one. */
   | { type: "tabVisible"; tab: number; visible: boolean }
-  /** API 12: a page of web tab `tab` called `alas.post(message)`. */
-  | { type: "webMessage"; tab: number; message: unknown }
+  /** API 12: a page of web tab `tab` or web panel `panel` (API 15) called `alas.post(message)`. */
+  | { type: "webMessage"; tab?: number; panel?: string; message: unknown }
   /** API 12, event `turn.finished`: a turn of this project was recorded. */
   | { type: "turnFinished"; session: string; worktree: string; turn: UsageTurn }
   /** Any other reply without a callback: `result` on success, `error` on failure. */
@@ -484,6 +489,13 @@ export function setTimer(id: string, seconds: number, repeat = false): number {
 
 export function cancelTimer(id: string): number {
   return request("timer/cancel", { id });
+}
+
+/** `{ tab }` or `{ panel }` from a message, or undefined. */
+function targetOf(params: any): { tab: number } | { panel: string } | undefined {
+  if (typeof params?.tab === "number") return { tab: params.tab };
+  if (typeof params?.panel === "string") return { panel: params.panel };
+  return undefined;
 }
 
 /** Sends a request whose reply `decode` turns into `T`; a malformed reply is a -32603 error. */
@@ -597,12 +609,27 @@ export function promptsSet(prompts: RuntimePrompt[], callback?: (reply: Reply) =
   return request("prompts/set", { prompts }, callback);
 }
 
+/** A tab index or, from API 15, a panel id, as message params. */
+const targetParams = (target: number | string) => (typeof target === "string" ? { panel: target } : { tab: target });
+
 /**
- * API 12: delivers `message` (any JSON value; the whole message at most 1 MiB) to every live page of web tab `tab`.
- * Dropped when the tab has no live page; a tab that is not a web tab stops the plugin.
+ * API 12: delivers `message` (any JSON value; the whole message at most 1 MiB) to every live page of web tab
+ * `target`, or web panel `target` (API 15). Dropped without a live page; a target that isn't web stops the plugin.
  */
-export function webPost(tab: number, message: unknown): void {
-  sendNotification("web/post", { tab, message });
+export function webPost(target: number | string, message: unknown): void {
+  sendNotification("web/post", { ...targetParams(target), message });
+}
+
+/** API 15: a `right` panel's rail badge: a `count` (1 to 9,999) or a `dot`, in `tone`. */
+export interface PanelBadge {
+  count?: number;
+  dot?: boolean;
+  tone?: Tone;
+}
+
+/** API 15: sets `panel`'s rail badge, or clears it with `null`. It clears when the plugin stops, so set it on activation. */
+export function setPanelBadge(panel: string, badge: PanelBadge | null): void {
+  sendNotification("panel/badge", { panel, ...badge });
 }
 
 /** API 12: one recorded agent turn. Times are epoch milliseconds. */
@@ -742,13 +769,13 @@ export function parseAgents(result: unknown): Agent[] {
   return agents.map((a) => ({ id: a.id, name: a.name }));
 }
 
-/** Hands Alas one RGBA8 frame for canvas tab `tab`. Alas copies it during this call. */
-export function present(tab: number, pixels: Uint8Array, width: number): void {
-  globalThis.alas.present(tab, pixels, width);
+/** Hands Alas one RGBA8 frame for canvas tab `target`, or canvas panel `target` (API 15). Alas copies it during this call. */
+export function present(target: number | string, pixels: Uint8Array, width: number): void {
+  globalThis.alas.present(target, pixels, width);
 }
 
-export function setRegions(tab: number, regions: Region[]): void {
-  sendNotification("canvas/regions", { tab, regions });
+export function setRegions(target: number | string, regions: Region[]): void {
+  sendNotification("canvas/regions", { ...targetParams(target), regions });
 }
 
 /** `success` needs API 13. */
@@ -920,9 +947,11 @@ export function dispatch(plugin: Plugin, json: string): void {
     }
     case "tick":
       return typeof params?.dt === "number" ? plugin.handle({ type: "tick", dt: params.dt }) : undefined;
-    case "canvas/click":
-      if (typeof params?.tab !== "number" || typeof params.region !== "string") return;
-      return plugin.handle({ type: "click", tab: params.tab, region: params.region });
+    case "canvas/click": {
+      const target = targetOf(params);
+      if (!params || !target || typeof params.region !== "string") return;
+      return plugin.handle({ type: "click", ...target, region: params.region });
+    }
     case "view/event": {
       if (typeof params?.id !== "string" || typeof params.kind !== "string") return;
       const value = typeof params.value === "string" ? params.value : undefined;
@@ -992,9 +1021,11 @@ export function dispatch(plugin: Plugin, json: string): void {
     case "tab/visible":
       if (typeof params?.tab !== "number" || typeof params.visible !== "boolean") return;
       return plugin.handle({ type: "tabVisible", tab: params.tab, visible: params.visible });
-    case "web/message":
-      if (typeof params?.tab !== "number" || !Object.hasOwn(params, "message")) return;
-      return plugin.handle({ type: "webMessage", tab: params.tab, message: params.message });
+    case "web/message": {
+      const target = targetOf(params);
+      if (!params || !target || !Object.hasOwn(params, "message")) return;
+      return plugin.handle({ type: "webMessage", ...target, message: params.message });
+    }
     case "turn/finished": {
       const turn = parseUsageTurn(params?.turn);
       if (typeof params?.session !== "string" || typeof params.worktree !== "string" || !turn) return;

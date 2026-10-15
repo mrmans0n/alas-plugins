@@ -46,24 +46,26 @@ export interface Inbox {
   merged: Merged[];
 }
 
-/** How many more recently merged pull requests each Show more adds. */
-export const MERGED_PAGE = 10;
-/** The tab lists at first only pull requests merged this long ago at most. */
-export const MERGED_RECENT_MS = 7 * 24 * 3600_000;
+/** The tab lists the pull requests merged this long ago at most… */
+export const MERGED_RECENT_MS = 24 * 3600_000;
+/** …or, when fewer, this many of the most recent. */
+export const MERGED_MIN = 5;
 
-/** How many of `merged`, the most recent first, the tab lists before Show more: those of the last week, up to a page. */
-export function mergedFirstPage(merged: Merged[], now: number): number {
+/** The part of `merged`, the most recent first, the tab lists: those of the last day, or the last few when fewer. */
+export function recentMerged(merged: Merged[], now: number): Merged[] {
   const older = merged.findIndex((m) => !(now - Date.parse(m.mergedAt) <= MERGED_RECENT_MS));
-  return Math.min(MERGED_PAGE, older === -1 ? merged.length : older);
+  return merged.slice(0, Math.max(MERGED_MIN, older === -1 ? merged.length : older));
 }
 
 export type Bucket = "ready" | "failing" | "waiting" | "drafts";
-export const BUCKETS: Bucket[] = ["ready", "failing", "waiting", "drafts"];
+export const BUCKETS: Bucket[] = ["ready", "waiting", "failing", "drafts"];
 
 export const SIGN_IN = "Sign in with `gh auth login` in a terminal, then Refresh.";
 export const NO_REMOTE = "This repository has no GitHub remote.";
 
 const CODEX = new Set(["chatgpt-codex-connector[bot]", "chatgpt-codex-connector"]);
+/** Bots whose pull requests need no Codex 👍. */
+const TRUSTED = new Set(["renovate[bot]", "renovate"]);
 
 function isObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -143,10 +145,10 @@ export function parseInbox(stdout: string): Inbox | undefined {
   return { repo: repository.nameWithOwner, pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
 }
 
-/** Codex approved and nothing stops gh from merging; checks may still be running or red. */
+/** Codex approved (or Renovate wrote it) and nothing stops gh from merging; checks may still be running or red. */
 export function canMerge(p: Pull): boolean {
   // Review state is shown, never required: the Codex 👍 is the approval that counts.
-  return !p.isDraft && p.codexThumbsUp && p.mergeable !== "CONFLICTING";
+  return !p.isDraft && (p.codexThumbsUp || TRUSTED.has(p.author)) && p.mergeable !== "CONFLICTING";
 }
 
 export function isReady(p: Pull): boolean {

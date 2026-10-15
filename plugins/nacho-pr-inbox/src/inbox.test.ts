@@ -68,6 +68,8 @@ const cases: [string, Partial<Pull>, string][] = [
   ["green, no review required, Codex 👍", {}, "ready"],
   ["merge state not computed yet", { mergeable: "UNKNOWN" }, "ready"],
   ["without Codex 👍", { codexThumbsUp: false }, "waiting"],
+  ["by Renovate, without Codex 👍", { codexThumbsUp: false, author: "renovate" }, "ready"],
+  ["by Renovate[bot], without Codex 👍", { codexThumbsUp: false, author: "renovate[bot]" }, "ready"],
   ["review required does not block", { reviewDecision: "REVIEW_REQUIRED" }, "ready"],
   ["changes requested does not block", { reviewDecision: "CHANGES_REQUESTED" }, "ready"],
   ["conflicting", { mergeable: "CONFLICTING" }, "waiting"],

@@ -5,6 +5,9 @@
 import { connect, pageHost, type PageContext } from "@alas/plugin/page";
 import type { Day, LimitRow, PageMessage, PluginMessage, Range, Row, Scope, Summary, Tally, Tokens } from "../src/usage.ts";
 
+/** In the right rail the page is narrow: just the cards and the token chart. */
+const rail = pageHost().context.panel !== undefined;
+
 type Metric = keyof Tokens;
 type State =
   | { kind: "waiting" }
@@ -24,6 +27,7 @@ const OTHER = "Other";
 
 const SVG = "http://www.w3.org/2000/svg";
 const app = document.createElement("main");
+if (rail) app.classList.add("compact");
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -269,6 +273,7 @@ function body(): Node[] {
       if (!s.totals.turns && !s.limitHits) {
         return [el("p", "dim center", "No turns recorded yet — usage history starts from the Alas version with plugin API 12.")];
       }
+      if (rail) return [cards(s), tokenChart(s)];
       return [
         cards(s),
         tokenChart(s),
@@ -283,7 +288,7 @@ function body(): Node[] {
 }
 
 function render(): void {
-  app.replaceChildren(header(), ...body());
+  app.replaceChildren(...(rail ? [] : [header()]), ...body());
 }
 
 function applyTheme(context: PageContext): void {
@@ -325,6 +330,9 @@ th { text-align: left; color: var(--alas-dim); font-weight: 500; font-size: 11px
 th, td { padding: 5px 8px; border-bottom: 1px solid var(--alas-line); }
 .num { text-align: right; white-space: nowrap; }
 td { overflow-wrap: anywhere; }
+main.compact { padding: 10px; gap: 10px; }
+main.compact .cards { grid-template-columns: 1fr 1fr; }
+main.compact .value { font-size: 15px; }
 `;
 document.head.append(style);
 document.body.append(app);
