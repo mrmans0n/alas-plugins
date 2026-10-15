@@ -6,6 +6,8 @@ ones that are ready. Anyone who uses the GitHub CLI can install it; it reuses
 your `gh` login and asks for no token. It uses plugin API 14 (a command that
 opens its tab, progress, progress bar and link view nodes, tab visibility, the main
 worktree flag and button tones) and runs `gh` through `process.exec`.
+On an SSH project it runs `gh` on the host (`remote`, API 11), so `gh` must be
+installed and logged in there.
 
 ## Build and install
 
