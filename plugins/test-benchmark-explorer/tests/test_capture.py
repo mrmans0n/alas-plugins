@@ -22,6 +22,9 @@ class CaptureTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q", str(root)], check=True)
         subprocess.run(["git", "-C", str(root), "config", "user.name", "Fixture"], check=True)
         subprocess.run(["git", "-C", str(root), "config", "user.email", "fixture@example.invalid"], check=True)
+        # Copies must not race detached maintenance changing the template's .git files.
+        subprocess.run(["git", "-C", str(root), "config", "maintenance.auto", "false"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "gc.auto", "0"], check=True)
         root.joinpath("source.txt").write_text("original\n")
         root.joinpath(".gitignore").write_text("ignored/\n")
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
