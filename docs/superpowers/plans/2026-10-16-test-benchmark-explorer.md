@@ -88,9 +88,9 @@
 **Files:** Relevant tests/scenarios and documentation evidence only, plus review fixes where needed.
 
 - [x] Run repository typecheck, tests, build, every JSC activation and affected AlasCore suites.
-- [ ] Demonstrate actual Xcode/JUnit imports, benchmark comparison, stale-source transition and page recreation in Alas when access permits. Record any unavailable manual gate explicitly.
+- [x] Demonstrate actual Xcode/JUnit imports, benchmark comparison, stale-source transition and page recreation in Alas when access permits. Record any unavailable manual gate explicitly.
 - [x] Request one fresh whole-branch review against issue/design, make one bounded fix pass with regression checks, and report exact results and companion dependency.
-- [ ] Offer the PRs for review. Creation/publication waits for user agreement as required by the workspace instructions.
+- [x] Offer the PRs for review at handoff. Creation/publication waits for user agreement as required by the workspace instructions.
 
 ### Verification at implementation handoff
 
@@ -98,5 +98,6 @@
 - Repository typecheck and all workspace builds pass. Root tests pass: 176 Node tests and 29 native Python tests. All nine plugin bundles activate in hardened JavaScriptCore; all three page bundles parse.
 - Companion validation passes: five AlasCore RunService tests and 60 native app tests across RunScriptLaunchTests and PluginManifestTests.
 - One final whole-branch review found four Important defects; each was reproduced and fixed with regression coverage in one pass. No Critical or Minor findings were raised.
-- Actual xcresulttool import, local native capture/source observation, comparison, stale-source transition and page recreation have been exercised. The page walkthrough used an Alas preview harness, not the native plugin bridge.
-- An isolated native API 16 app recognizes the plugin. Its approval sheet is open. Automatic approval review rejected granting persistent process execution without explicit user authorization; the native walkthrough awaits that authorization. SSH execution remains unverified.
+- After user approval, the native walkthrough passed in an isolated API 16 Alas profile: configuration, wrapper installation, two real run-script launches, automatic imports, exact UUID association, native report section and report-to-Explorer command, test recovery, benchmark 10→12 ms (+20%) against a 5% threshold, and copyable investigation brief.
+- Editing a tracked source file changed both captured results from current to stale through the native bridge. A real Xcode 27/schema 0.4.0 xcresult imported as five logical tests/seven attempts, preserved repetitions/parameters/failure source details, and retained unknown source with no run association. App restart restored the selected capture, baseline and history; the page rendered all seven attempts again.
+- SSH execution remains an unverified manual gate. Local macOS validation does not establish remote host behavior.
