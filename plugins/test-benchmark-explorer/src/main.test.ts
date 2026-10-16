@@ -98,3 +98,35 @@ test("run completion waits for configuration and worktree restoration", () => {
   assert.equal(posted.params.message.state.runs[0].command.outcome, "unknown");
   assert.equal(posted.params.message.state.runs[0].complete, false);
 });
+
+for (const mode of ["manual", "report"]) {
+  test(`late ${mode} imports retain evidence without overriding a newer selection`, () => {
+    testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 16, project: { id: "p", name: "P", host: "remote-host" }, grants: [] } });
+    const initial = testHost.takeSent();
+    const a = capture("a".repeat(32), "one");
+    testHost.reply(initial.find(m => m.method === "storage/get").id, { value: { schema: 1, config: { profiles: [] }, runs: [a] } });
+    testHost.takeSent();
+    testHost.reply(initial.find(m => m.method === "workspace/snapshot").id, { snapshot: { worktrees: [{ id: "one", branch: "one", current: true, sessions: [] }] } });
+    answer(request(testHost.takeSent(), "list"), { summaries: [] });
+    testHost.takeSent();
+    if (mode === "manual") page({ type: "manual", worktree: "one", path: "report.xml", format: "junit", directory: false });
+    else testHost.notify("command/run", { command: "open", target: { kind: "runReport", worktree: "one", run: "report-run" } });
+    const call = request(testHost.takeSent(), mode === "manual" ? "manual" : "importRun");
+    assert.ok(call, mode);
+    page({ type: "select", id: a.id, worktree: "one" });
+    testHost.takeSent();
+    const b = capture("b".repeat(32), "one", mode === "report" ? "report-run" : undefined);
+    answer(call, { summary: b });
+    const sent = testHost.takeSent();
+    const state = sent.filter(m => m.method === "web/post" && m.params.message.type === "state").at(-1).params.message.state;
+    assert.equal(state.selected.id, a.id, mode);
+    assert.ok(state.runs.some((r: any) => r.id === b.id), mode);
+    answer(request(sent, "detail"), { summary: a, page: { rows: [], total: 0, next: null }, evidence: [] });
+    testHost.takeSent();
+    if (mode === "manual") page({ type: "manual", worktree: "one", path: "report.xml", format: "junit", directory: false });
+    else testHost.notify("command/run", { command: "open", target: { kind: "runReport", worktree: "one", run: "report-run" } });
+    answer(request(testHost.takeSent(), mode === "manual" ? "manual" : "importRun"), { summary: b });
+    const selected = testHost.takeSent().find(m => m.method === "web/post" && m.params.message.type === "state");
+    assert.equal(selected.params.message.state.selected.id, b.id, "an unchanged import intent still opens its capture");
+  });
+}

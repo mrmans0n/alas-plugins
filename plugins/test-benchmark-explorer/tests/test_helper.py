@@ -119,6 +119,14 @@ class HelperTests(unittest.TestCase):
         current["complete"] = False
         changes = {r["id"]: r for r in compare(base, current)["tests"]}
         self.assertEqual(changes["removed"]["change"], "unknown")
+        self.assertEqual(changes["retry[x]"]["change"], "unknown")
+        self.assertEqual(changes["regression"]["change"], "unknown")
+        self.assertNotIn("durationDelta", changes["regression"])
+        current["complete"], base["complete"] = True, False
+        changes = {r["id"]: r for r in compare(base, current)["tests"]}
+        self.assertEqual(changes["retry[x]"]["change"], "unknown")
+        self.assertEqual(changes["regression"]["change"], "unknown")
+        self.assertNotIn("durationDelta", changes["regression"])
 
     def test_artifact_import_deduplicates_paths_and_reports_missing_without_green(self):
         importer = self.function("import_artifacts")

@@ -116,20 +116,22 @@ function loadSelected(): void {
 }
 
 function imported(worktree: string, run: string, script?: string, outcome?: string, exit?: number, select = false): void {
+  const intent = select ? ++generation : undefined;
   enqueue(worktree, { operation: "importRun", run, ...(script ? { script } : {}), ...(outcome ? { outcome } : {}) }, result => {
     if (!object(result.summary) || result.summary.run !== run) throw new Error("Capture belongs to another run.");
     const summary = accept(result.summary, worktree);
     reportErrors.delete(run);
     if (outcome && (outcome === "stopped" || outcome === "unknown")) { summary.command.outcome = outcome; summary.complete = false; summary.counts.state = "incomplete"; }
-    if (select) { state.selected = { id: summary.id, worktree }; query.offset = 0; }
+    const selectNow = select && intent === generation;
+    if (selectNow) { state.selected = { id: summary.id, worktree }; query.offset = 0; }
     save(); publish();
-    if (select) loadSelected();
+    if (selectNow) loadSelected();
   }, { fail: message => {
     reportErrors.set(run, message);
     if (outcome && /^[a-f0-9-]{36}$/i.test(run)) accept({ schema: 1, id: run.replace(/-/g, "").toLowerCase(), project, worktree, hostKey, host: hostKey,
-      run, script, capturedAt: Date.now() / 1000, complete: false, detail: "unavailable", counts: {}, source: { state: "unknown" },
+      run, script, capturedAt: Date.now() / 1000, complete: false, detail: "unavailable", counts: { tests: 0, attempts: 0, benchmarks: 0, passed: 0, failed: 0, error: 0, skipped: 0, unknown: 0 }, source: { state: "unknown" },
       command: { outcome, exit, argv: [] }, issues: [{ message }] }, worktree);
-    save(); publish(); if (select) fail(message);
+    save(); publish(); if (select && intent === generation) fail(message);
   } });
 }
 
@@ -177,9 +179,15 @@ function handlePage(value: unknown): void {
     return;
   }
   if (message.type === "install") return enqueue(message.worktree, { operation: "install", config: state.config }, () => { status = "Capture wrapper installed on the owning host. Add the shown invocation to your run script."; publish(); });
-  if (message.type === "manual") return enqueue(message.worktree, { operation: "manual", specs: [{ path: message.path, format: message.format, directory: message.directory }] }, result => {
-    const summary = accept(result.summary, message.worktree); state.selected = { id: summary.id, worktree: message.worktree }; save(); publish(); loadSelected();
-  });
+  if (message.type === "manual") {
+    const intent = ++generation;
+    return enqueue(message.worktree, { operation: "manual", specs: [{ path: message.path, format: message.format, directory: message.directory }] }, result => {
+      const summary = accept(result.summary, message.worktree);
+      const selectNow = intent === generation;
+      if (selectNow) { state.selected = { id: summary.id, worktree: message.worktree }; query.offset = 0; }
+      save(); publish(); if (selectNow) loadSelected();
+    });
+  }
   if (message.type === "query") { query = { kind: message.kind, search: message.search, status: message.status, offset: message.offset, compare: message.compare }; if (query.compare && !state.baseline) return fail("Choose a baseline first."); loadSelected(); return; }
   if (message.type === "evidence" && state.selected) {
     const selected = state.selected, gen = generation;

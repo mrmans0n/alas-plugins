@@ -38,13 +38,15 @@ def compare_results(base, current):
             change = "added" if base.get("complete") else "unknown"
         elif c is None:
             change = "removed" if current.get("complete") else "unknown"
+        elif not base.get("complete") or not current.get("complete"):
+            change = "unknown"
         elif failed(b) and c["status"] == "passed":
             change = "recovered"
         elif b["status"] == "passed" and failed(c):
             change = "newly failing"
         row = {"id": key, "name": (c or b)["name"], "change": change,
                "baseline": b, "current": c}
-        if b and c and finite(b.get("duration")) and finite(c.get("duration")):
+        if base.get("complete") and current.get("complete") and b and c and finite(b.get("duration")) and finite(c.get("duration")):
             row["durationDelta"] = c["duration"] - b["duration"]
         tests.append(row)
     bg, cg = {}, {}

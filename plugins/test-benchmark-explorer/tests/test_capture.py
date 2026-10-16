@@ -69,6 +69,33 @@ class CaptureTests(unittest.TestCase):
         self.root.joinpath("ignored/file").write_text("build cache")
         self.assertEqual(fingerprint(self.root)["digest"], before["digest"])
 
+    def test_linked_worktree_observes_reverted_index_and_head_changes(self):
+        main = self.root
+        self.root = Path(self.temp.name) / "linked"
+        subprocess.run(["git", "-C", str(main), "worktree", "add", "-qb", "linked", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(main), "branch", "alternate"], check=True)
+        original = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "HEAD:source.txt"], text=True).strip()
+        alternate = subprocess.check_output(["git", "-C", str(main), "hash-object", "-w", "--stdin"], input="alternate\n", text=True).strip()
+        common = str((main / ".git").resolve())
+        git_dir = subprocess.check_output(["git", "-C", str(self.root), "rev-parse", "--absolute-git-dir"], text=True).strip()
+        relevant = self.function("event_relevant")
+        for field in ("HEAD", "index"):
+            self.assertTrue(relevant(self.root, str(Path(git_dir) / field), sorted([common, git_dir])), field)
+        self.install()
+        for field, commands in (
+            ("index", [["update-index", "--cacheinfo", "100644," + blob + ",source.txt"] for blob in (alternate, original)]),
+            ("HEAD", [["symbolic-ref", "HEAD", "refs/heads/" + branch] for branch in ("alternate", "linked")]),
+        ):
+            with self.subTest(field=field):
+                code = "import subprocess,time;" + ";".join("subprocess.run(" + repr(["git"] + args) + ",check=True);time.sleep(.05)" for args in commands)
+                run, _ = self.capture(code + ";" + self.REPORT)
+                captured = self.load_run(run)
+                self.assertEqual(captured["source"]["before"]["digest"], captured["source"]["after"]["digest"])
+                observation = captured["source"]["observation"]
+                if sys.platform == "darwin":
+                    self.assertTrue(observation["supported"], observation)
+                self.assertEqual(captured["source"]["state"], "changed during run" if observation["supported"] else "unknown")
+
     @unittest.skipUnless(sys.platform == "darwin", "macOS native observation")
     def test_local_mac_source_observer_establishes_real_coverage(self):
         observer = self.function("source_observer")(self.root)

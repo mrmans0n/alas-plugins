@@ -36,7 +36,11 @@ export function parseConfig(value: unknown): Config {
 export function parseSummary(v: unknown, project: string, worktree: string, hostKey: string): Summary {
   if (!object(v) || v.schema !== 1 || !captureID(v.id) || v.project !== project || v.worktree !== worktree || v.hostKey !== hostKey || !object(v.counts) || !object(v.source) || !object(v.command) || typeof v.capturedAt !== "number" || !Number.isFinite(v.capturedAt)) throw new Error("Structured result identity or model did not validate.");
   const counts: Record<string, number | string> = {};
-  for (const key of ["tests", "attempts", "benchmarks", "passed", "failed", "error", "skipped", "unknown"]) counts[key] = typeof v.counts[key] === "number" && Number.isFinite(v.counts[key]) && v.counts[key] >= 0 ? v.counts[key] : 0;
+  for (const key of ["tests", "attempts", "benchmarks", "passed", "failed", "error", "skipped", "unknown"]) {
+    if (!Number.isSafeInteger(v.counts[key]) || v.counts[key] < 0) throw new Error("Structured result counts did not validate.");
+    counts[key] = v.counts[key];
+  }
+  if (["passed", "failed", "error", "skipped", "unknown"].reduce((total, key) => total + (counts[key] as number), 0) !== counts.tests || (counts.attempts as number) < (counts.tests as number)) throw new Error("Structured result counts are inconsistent.");
   counts.state = v.complete !== true ? "incomplete" : (counts.failed as number) + (counts.error as number) > 0 ? "failed" : (counts.unknown as number) > 0 ? "unknown" : (counts.passed as number) > 0 ? "passed" : "no tests";
   const states = ["current", "stale", "changed during run", "unknown"];
   const source = { state: states.includes(v.source.state) ? v.source.state : "unknown", head: text(v.source.head, 128) || undefined,

@@ -92,7 +92,7 @@ def source_freshness(root, source, current=None):
 
 def event_relevant(root, path, git_dirs):
     absolute = os.path.abspath(path)
-    for directory in git_dirs:
+    for directory in sorted(git_dirs, key=len, reverse=True):
         if absolute == directory or absolute.startswith(directory + os.sep):
             relative = os.path.relpath(absolute, directory)
             return relative in ("HEAD", "index", "packed-refs", "config") or relative.startswith("refs/")

@@ -28,3 +28,17 @@ test("run identity is checked before persistence and history stays within the by
   assert.ok(state.runs.length <= 40);
   assert.ok(Buffer.byteLength(serializeState(state)) <= 512 * 1024);
 });
+
+test("malformed or inconsistent summary counts cannot become passing results", () => {
+  const a = summary("e".repeat(32));
+  for (const counts of [
+    { ...a.counts, failed: "1" }, { ...a.counts, error: undefined },
+    { ...a.counts, unknown: -1 }, { ...a.counts, passed: 0.5 },
+    { ...a.counts, benchmarks: Infinity }, { ...a.counts, tests: 2 },
+    { ...a.counts, attempts: 0 },
+  ]) {
+    const state = emptyState();
+    assert.throws(() => remember(state, { ...a, counts }, "p", "wt", "local"));
+    assert.equal(state.runs.length, 0);
+  }
+});
