@@ -397,6 +397,28 @@
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library"
     },
     {
+      "id": "io.nlopez.test-benchmark-explorer",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 16,
+          "capabilities": [
+            "workspace.read",
+            "runs.read",
+            "process.exec",
+            "timers"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/test-benchmark-explorer-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/test-benchmark-explorer-v0.1.0/plugin.js",
+          "web": "https://github.com/mrmans0n/alas-plugins/releases/download/test-benchmark-explorer-v0.1.0/ui.js",
+          "hash": "2b7e76382b65c758bf144b4c8f0ad16403194fdc7dcca9441873f9677de3c645"
+        }
+      ],
+      "name": "Test & Benchmark Explorer",
+      "summary": "Browse local test and benchmark evidence, compare results and check source freshness.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/test-benchmark-explorer"
+    },
+    {
       "id": "io.nlopez.worktree-setup",
       "versions": [
         {
