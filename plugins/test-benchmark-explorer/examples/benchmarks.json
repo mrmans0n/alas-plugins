@@ -1,0 +1,14 @@
+{
+  "format": "alas-benchmarks",
+  "version": 1,
+  "measurements": [{
+    "id": "sort",
+    "parameters": { "size": 1000 },
+    "metric": "wall-time",
+    "value": 1.2,
+    "unit": "ms",
+    "direction": "lower",
+    "statistic": "median",
+    "samples": [1.1, 1.2, 1.3]
+  }]
+}

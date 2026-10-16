@@ -1,0 +1,170 @@
+{
+  "arguments": [
+    {
+      "value": "\"first\""
+    },
+    {
+      "value": "\"second\""
+    }
+  ],
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "fixture-device",
+      "deviceName": "My Mac",
+      "modelName": "MacBook Pro",
+      "osBuildNumber": "26A428",
+      "osVersion": "27.0",
+      "platform": "macOS"
+    }
+  ],
+  "duration": "Average duration 0,00012 seconds",
+  "durationInSeconds": 0.00012000401814778645,
+  "hasMediaAttachments": false,
+  "hasPerformanceMetrics": false,
+  "testDescription": "Test case with 3 runs",
+  "testIdentifier": "ParameterizedFixture/parameterized(_:)",
+  "testIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)",
+  "testName": "parameterized(_:)",
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ],
+  "testResult": "Failed",
+  "testRuns": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "details": "Swift.String",
+              "name": "argument : \"first\"",
+              "nodeType": "Test Value"
+            }
+          ],
+          "name": "Arguments",
+          "nodeType": "Arguments"
+        }
+      ],
+      "duration": "0,000064s",
+      "durationInSeconds": 6.413459777832031e-05,
+      "name": "\"first\"",
+      "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)?args=de5f2cbf4c10a0d146f2a671aac363e8640fefc469ad42ac25364f19e4bc194f",
+      "nodeType": "Arguments",
+      "result": "Passed"
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "details": "Swift.String",
+              "name": "argument : \"second\"",
+              "nodeType": "Test Value"
+            }
+          ],
+          "name": "Arguments",
+          "nodeType": "Arguments"
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "details": "Swift.String",
+                      "name": "argument : \"second\"",
+                      "nodeType": "Test Value"
+                    },
+                    {
+                      "details": "Swift.String",
+                      "name": "_ : \"second\"",
+                      "nodeType": "Test Value"
+                    }
+                  ],
+                  "name": "Results",
+                  "nodeType": "Expression"
+                },
+                {
+                  "name": "",
+                  "nodeType": "Source Code Reference",
+                  "sourceLocation": {
+                    "filePath": "Sources/Tests.swift",
+                    "lineNumber": 10
+                  }
+                }
+              ],
+              "name": "Expectation failed: argument != \"second\"\nargument \u2192 \"second\"",
+              "nodeType": "Test Case Run",
+              "result": "Failed",
+              "sourceLocation": {
+                "filePath": "Sources/Tests.swift",
+                "lineNumber": 10
+              }
+            }
+          ],
+          "duration": "0,00024s",
+          "durationInSeconds": 0.00023889541625976562,
+          "name": "First Run",
+          "nodeIdentifier": "1",
+          "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)?args=38e452b56a63d9b5f397354cbd207b0e548ef8e4f49729a6f6dd8d6a9a57ab23",
+          "nodeType": "Repetition",
+          "result": "Failed"
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "details": "Swift.String",
+                      "name": "argument : \"second\"",
+                      "nodeType": "Test Value"
+                    },
+                    {
+                      "details": "Swift.String",
+                      "name": "_ : \"second\"",
+                      "nodeType": "Test Value"
+                    }
+                  ],
+                  "name": "Results",
+                  "nodeType": "Expression"
+                },
+                {
+                  "name": "",
+                  "nodeType": "Source Code Reference",
+                  "sourceLocation": {
+                    "filePath": "Sources/Tests.swift",
+                    "lineNumber": 10
+                  }
+                }
+              ],
+              "name": "Expectation failed: argument != \"second\"\nargument \u2192 \"second\"",
+              "nodeType": "Test Case Run",
+              "result": "Failed",
+              "sourceLocation": {
+                "filePath": "Sources/Tests.swift",
+                "lineNumber": 10
+              }
+            }
+          ],
+          "duration": "0,000057s",
+          "durationInSeconds": 5.698204040527344e-05,
+          "name": "Retry 1",
+          "nodeIdentifier": "2",
+          "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)?args=38e452b56a63d9b5f397354cbd207b0e548ef8e4f49729a6f6dd8d6a9a57ab23",
+          "nodeType": "Repetition",
+          "result": "Failed"
+        }
+      ],
+      "details": "Failed after 2 retries",
+      "name": "\"second\"",
+      "nodeType": "Arguments",
+      "result": "Failed"
+    }
+  ]
+}

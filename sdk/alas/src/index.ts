@@ -1,5 +1,5 @@
 /**
- * SDK for Alas plugins, API 4 to 15: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 16: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
@@ -12,7 +12,9 @@
  * and the usage history (`usageTurns`, `usageLimits`, `turnFinished`). API 13 draws a `button`'s `tone` and
  * adds the `success` tone. API 14 adds the `progressBar` view node and an `hstack`'s `align`. API 15 lets `right` panels be `canvas` or `web` (`present`, `setRegions` and
  * `webPost` take a panel id), adds `setPanelBadge` and commands that open a panel, and lets pages load `https` images from
- * `network` hosts. For the page's side, see `@alas/plugin/page`.
+ * `network` hosts. API 16 exports exact ALAS_RUN_ID, ALAS_RUN_SCRIPT_KEY, ALAS_WORKTREE_ID and
+ * ALAS_PROJECT_ID to run scripts before execution, for on-host capture wrappers.
+ * For the page's side, see `@alas/plugin/page`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
  * timers, `fetch`, `TextEncoder` or Node APIs. Every call must return within 250 ms
@@ -33,7 +35,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 15. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 16. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -43,7 +45,7 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16;
   /** The script, relative to the plugin folder. */
   entry: string;
   /**

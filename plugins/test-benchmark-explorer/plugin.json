@@ -1,0 +1,18 @@
+{
+  "id": "io.nlopez.test-benchmark-explorer",
+  "name": "Test & Benchmark Explorer",
+  "summary": "Browse local test and benchmark evidence, compare results and check source freshness.",
+  "version": "0.1.0",
+  "api": 16,
+  "entry": "plugin.js",
+  "web": "ui.js",
+  "remote": true,
+  "capabilities": ["workspace.read", "runs.read", "process.exec", "timers"],
+  "events": ["run.started", "run.finished", "git.changed"],
+  "processes": [{ "id": "helper", "command": ["python3", "-c", "import json,sys;p=json.load(sys.stdin);exec(compile(p['program'],'<test-benchmark-explorer>','exec'),{'__name__':'__main__','request':p['request'],'program':p['program']})"] }],
+  "contributes": {
+    "tabs": [{ "id": "explorer", "title": "Test & Benchmark Explorer", "kind": "web" }],
+    "panels": [{ "id": "report", "title": "Structured results", "location": "run.report.section" }],
+    "commands": [{ "id": "open", "title": "Test & Benchmark Explorer", "icon": "testtube.2", "slots": ["palette", "run.report"], "opens": "explorer" }]
+  }
+}

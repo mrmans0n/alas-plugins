@@ -1,0 +1,11 @@
+{
+  "name": "test-benchmark-explorer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "node scripts/embed-helper.mjs",
+    "build": "npm run gen && esbuild src/main.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin.js && esbuild page/main.ts --bundle --format=iife --target=es2022 --outfile=dist/ui.js",
+    "test": "npm run gen && python3 -m unittest discover -s tests -v && node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": { "@alas/plugin": "*" }
+}
