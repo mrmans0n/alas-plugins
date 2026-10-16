@@ -72,6 +72,7 @@ function row(p: Pull, state: ViewState, compact: boolean): Node {
   const id = (name: string) => `pr-${p.number}-${name}`;
   const mergeError = state.mergeErrors[p.number];
   const actions: Node[] = [{ kind: "link", id: id("open"), label: "Open", url: p.url }];
+  actions.push({ kind: "button", id: id("doctor"), label: "CI Doctor", style: "plain" });
   if (canMerge(p)) {
     if (state.merging === p.number) actions.push({ kind: "progress", id: id("merging"), text: "Merging…" });
     actions.push({ kind: "button", id: mergeButtonId(p.number), ...mergeLook(p, compact), disabled: state.merging !== undefined });

@@ -37,6 +37,7 @@ test("buckets show in order with their counts, skipping empty ones", () => {
   assert.ok(ids.has(mergeButtonId(3)));
   assert.ok(!ids.has(mergeButtonId(1)), "drafts do not merge");
   assert.equal((ids.get("pr-2-open") as any).url, "https://github.com/o/r/pull/2");
+  assert.equal((ids.get("pr-2-doctor") as any).label, "CI Doctor");
 });
 
 test("while one pull request merges, every merge button is disabled and it shows progress", () => {

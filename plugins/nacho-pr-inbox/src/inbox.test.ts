@@ -55,6 +55,11 @@ test("check counts split into done, running and waiting", () => {
   assert.equal(counts([], [], 0), null);
 });
 
+test("CI details retain PR head/base and fork repository identity separately from checks", () => {
+  const p = parseInbox(reply([node(1, { headRefOid: "a".repeat(40), headRepository: { nameWithOwner: "fork/r" }, baseRefOid: "b".repeat(40), baseRefName: "main" })]))!.pulls[0];
+  assert.deepEqual(p.identity, { sha: "a".repeat(40), repo: "fork/r", branch: "nacho/pr-1", baseSha: "b".repeat(40), baseBranch: "main" });
+});
+
 test("a reply that is not the query's shape parses to nothing", () => {
   for (const stdout of ["", "{\"data\":{\"repo", "{\"data\":{\"repository\":null}}", "[]", reply("x" as any)]) {
     assert.equal(parseInbox(stdout), undefined, stdout);
