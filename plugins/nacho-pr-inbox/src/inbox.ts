@@ -1,6 +1,8 @@
 import type { Outcome, ProcessResult } from "@alas/plugin";
+import { validRepo, validSHA, type PullIdentity } from "./doctor.ts";
 
 export interface Pull {
+  identity?: PullIdentity;
   number: number;
   title: string;
   url: string;
@@ -109,6 +111,7 @@ function pull(node: unknown): Pull | undefined {
     checks: isObject(commit) ? checks(commit.statusCheckRollup?.contexts) : null,
     codexThumbsUp: byCodex(node.reactions),
     codexReviewing: byCodex(node.eyes),
+    ...(validSHA(node.headRefOid) && validSHA(node.baseRefOid) && validRepo(node.headRepository?.nameWithOwner) && typeof node.baseRefName === "string" ? { identity: { sha: node.headRefOid, repo: node.headRepository.nameWithOwner, branch: headRefName, baseSha: node.baseRefOid, baseBranch: node.baseRefName } } : {}),
   };
 }
 
