@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="500" failures="100">
+  <testsuite name="Gradle Test Executor 1" tests="500">
+    <testsuite name="example.ExampleTest" tests="5">
+      <testcase classname="example.ExampleTest" name="parameterized[zero, unicode β]" time="0.25" file="src/Example.kt" line="12"><failure type="AssertionError" message="expected &lt;2&gt;">expected &lt;2&gt; but was &lt;1&gt;</failure></testcase>
+      <testcase classname="example.ExampleTest" name="parameterized[zero, unicode β]" time="0.1"/>
+      <testcase classname="example.ExampleTest" name="disabled"><skipped message="disabled on this host"/></testcase>
+      <testcase classname="example.ExampleTest" name="setup"><error type="IOException">fixture unavailable</error></testcase>
+      <testcase classname="example.ExampleTest" name="success" time="0"/>
+    </testsuite>
+  </testsuite>
+</testsuites>

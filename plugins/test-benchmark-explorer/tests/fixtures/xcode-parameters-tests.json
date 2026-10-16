@@ -1,0 +1,191 @@
+{
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "fixture-device",
+      "deviceName": "My Mac",
+      "modelName": "MacBook Pro",
+      "osBuildNumber": "26A428",
+      "osVersion": "27.0",
+      "platform": "macOS"
+    }
+  ],
+  "testNodes": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "name": "XCTAssertEqual failed: (\"4\") is not equal to (\"5\") - representative captured failure",
+                          "nodeType": "Failure Message",
+                          "sourceLocation": {
+                            "filePath": "Sources/Tests.swift",
+                            "lineNumber": 4
+                          }
+                        }
+                      ],
+                      "duration": "1 s",
+                      "durationInSeconds": 1.0482300519943237,
+                      "name": "First Run",
+                      "nodeIdentifier": "1",
+                      "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ExplorerFixture/testFailure",
+                      "nodeType": "Repetition",
+                      "result": "Failed"
+                    },
+                    {
+                      "children": [
+                        {
+                          "name": "XCTAssertEqual failed: (\"4\") is not equal to (\"5\") - representative captured failure",
+                          "nodeType": "Failure Message",
+                          "sourceLocation": {
+                            "filePath": "Sources/Tests.swift",
+                            "lineNumber": 4
+                          }
+                        }
+                      ],
+                      "duration": "0,0014s",
+                      "durationInSeconds": 0.001399993896484375,
+                      "name": "Retry 1",
+                      "nodeIdentifier": "2",
+                      "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ExplorerFixture/testFailure",
+                      "nodeType": "Repetition",
+                      "result": "Failed"
+                    }
+                  ],
+                  "details": "Failed after 2 retries",
+                  "duration": "0,52s",
+                  "durationInSeconds": 0.524815022945404,
+                  "name": "testFailure()",
+                  "nodeIdentifier": "ExplorerFixture/testFailure()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ExplorerFixture/testFailure",
+                  "nodeType": "Test Case",
+                  "result": "Failed"
+                },
+                {
+                  "duration": "0,00058s",
+                  "durationInSeconds": 0.0005838871002197266,
+                  "name": "testPass()",
+                  "nodeIdentifier": "ExplorerFixture/testPass()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ExplorerFixture/testPass",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "children": [
+                    {
+                      "name": "Test skipped - representative captured skip",
+                      "nodeType": "Skip Message"
+                    }
+                  ],
+                  "duration": "0,0015s",
+                  "durationInSeconds": 0.0014770030975341797,
+                  "name": "testSkipped()",
+                  "nodeIdentifier": "ExplorerFixture/testSkipped()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ExplorerFixture/testSkipped",
+                  "nodeType": "Test Case",
+                  "result": "Skipped"
+                }
+              ],
+              "name": "ExplorerFixture",
+              "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ExplorerFixture",
+              "nodeType": "Test Suite",
+              "result": "Failed"
+            },
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "duration": "0,000064s",
+                      "durationInSeconds": 6.413459777832031e-05,
+                      "name": "\"first\"",
+                      "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)?args=de5f2cbf4c10a0d146f2a671aac363e8640fefc469ad42ac25364f19e4bc194f",
+                      "nodeType": "Arguments",
+                      "result": "Passed"
+                    },
+                    {
+                      "children": [
+                        {
+                          "children": [
+                            {
+                              "name": "Expectation failed: argument != \"second\"\nargument \u2192 \"second\"",
+                              "nodeType": "Failure Message",
+                              "sourceLocation": {
+                                "filePath": "Sources/Tests.swift",
+                                "lineNumber": 10
+                              }
+                            }
+                          ],
+                          "duration": "0,00024s",
+                          "durationInSeconds": 0.00023889541625976562,
+                          "name": "First Run",
+                          "nodeIdentifier": "1",
+                          "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)?args=38e452b56a63d9b5f397354cbd207b0e548ef8e4f49729a6f6dd8d6a9a57ab23",
+                          "nodeType": "Repetition",
+                          "result": "Failed"
+                        },
+                        {
+                          "children": [
+                            {
+                              "name": "Expectation failed: argument != \"second\"\nargument \u2192 \"second\"",
+                              "nodeType": "Failure Message",
+                              "sourceLocation": {
+                                "filePath": "Sources/Tests.swift",
+                                "lineNumber": 10
+                              }
+                            }
+                          ],
+                          "duration": "0,000057s",
+                          "durationInSeconds": 5.698204040527344e-05,
+                          "name": "Retry 1",
+                          "nodeIdentifier": "2",
+                          "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)?args=38e452b56a63d9b5f397354cbd207b0e548ef8e4f49729a6f6dd8d6a9a57ab23",
+                          "nodeType": "Repetition",
+                          "result": "Failed"
+                        }
+                      ],
+                      "details": "Failed after 2 retries",
+                      "name": "\"second\"",
+                      "nodeType": "Arguments",
+                      "result": "Failed"
+                    }
+                  ],
+                  "duration": "0,00012s",
+                  "durationInSeconds": 0.00012000401814778645,
+                  "name": "parameterized(_:)",
+                  "nodeIdentifier": "ParameterizedFixture/parameterized(_:)",
+                  "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture/parameterized(_:)",
+                  "nodeType": "Test Case",
+                  "result": "Failed"
+                }
+              ],
+              "name": "ParameterizedFixture",
+              "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture/ParameterizedFixture",
+              "nodeType": "Test Suite",
+              "result": "Failed"
+            }
+          ],
+          "name": "ExplorerFixture",
+          "nodeIdentifierURL": "test://com.apple.xcode/ExplorerFixture/ExplorerFixture",
+          "nodeType": "Unit test bundle",
+          "result": "Failed"
+        }
+      ],
+      "name": "ExplorerFixture",
+      "nodeType": "Test Plan",
+      "result": "Failed"
+    }
+  ],
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ]
+}
