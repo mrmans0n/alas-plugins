@@ -18,6 +18,7 @@ Plugins are experimental, and the API may still change.
 | [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 15 | The repository's open pull requests by what they need, with squash-merge for the ready ones, and the recently merged ones, through `gh`, locally or on an SSH host. |
 | [Worktree Setup](plugins/worktree-setup) | 11 | Copies files like `.env` from the main worktree into each new worktree and runs your setup command there, locally or on an SSH host. |
 | [Agent Usage](plugins/agent-usage) | 15 | A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree. |
+| [Test & Benchmark Explorer](plugins/test-benchmark-explorer) | 16 | Structured test and benchmark artifacts, comparisons and captured source freshness. Requires the API 16 Alas companion. |
 
 ## How a plugin runs
 

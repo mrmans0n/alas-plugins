@@ -72,14 +72,19 @@ def summarize_result(result):
     summary = {key: result.get(key) for key in ("id", "schema", "project", "worktree", "hostKey", "host", "run", "script", "capturedAt", "conditions", "complete")}
     command = result.get("command", {})
     summary["command"] = {"outcome": command.get("outcome", "unknown"), "exit": command.get("exit"),
-                          "argv": [str(a)[:512] for a in command.get("argv", [])[:16]],
+                          "argv": [str(a)[:256] for a in command.get("argv", [])[:8]],
+                          "truncated": len(command.get("argv", [])) > 8 or any(len(str(a)) > 256 for a in command.get("argv", [])),
                           "startedAt": command.get("startedAt"), "endedAt": command.get("endedAt")}
+    if command.get("hostOutcome"):
+        summary["command"]["outcome"] = command["hostOutcome"]
     summary["counts"] = result_counts(result)
     summary["source"] = {"state": source.get("state", "unknown"), "reason": str(source.get("reason", ""))[:1024],
                          "head": source.get("before", {}).get("head"), "checkedAt": source.get("checkedAt")}
+    summary["sourceEvidence"] = {point: {key: source.get(point, {}).get(key) for key in ("known", "digest", "head", "reason")} for point in ("before", "after")}
+    summary["sourceEvidence"]["observation"] = {key: source.get("observation", {}).get(key) for key in ("supported", "changed", "reason")}
     summary["detail"] = "available"
     summary["issues"] = [{"message": str(i.get("message", ""))[:512], "path": str(i.get("path", ""))[:256]} for i in result.get("issues", [])[:8]]
-    summary["artifacts"] = [{k: a.get(k) for k in ("id", "path", "digest", "format")} for a in result.get("artifacts", [])[:16]]
+    summary["artifacts"] = [{k: str(a.get(k, ""))[:512] for k in ("id", "path", "digest", "format")} for a in result.get("artifacts", [])[:4]]
     summary["artifactCount"] = len(result.get("artifacts", []))
     return summary
 
@@ -107,7 +112,14 @@ def validate_result(result, identity):
 
 
 def load_result(root, identity, capture):
-    return validate_result(safe_json(root, GENERATED + "/results/" + capture_key(capture) + ".json"), identity)
+    result = validate_result(safe_json(root, GENERATED + "/results/" + capture_key(capture) + ".json"), identity)
+    try:
+        summary = safe_json(root, GENERATED + "/summaries/" + capture_key(capture) + ".json")
+        if summary.get("id") == result["id"]:
+            result.setdefault("source", {}).update(summary.get("source", {}))
+    except FileNotFoundError:
+        pass
+    return result
 
 
 def load_run(root, identity, run):
@@ -124,7 +136,8 @@ def load_run(root, identity, run):
 def manual_import(root, request):
     result = import_artifacts(root, request.get("specs", []))
     identity = {key: request[key] for key in ("project", "worktree", "hostKey")}
-    key = digest(canonical([identity, result["artifacts"], request.get("specs")]).encode("utf-8"))
+    references = sorted((a["path"], a["digest"], a["format"]) for a in result["artifacts"])
+    key = digest(canonical([identity, references, None if references else request.get("specs")]).encode("utf-8"))
     result.update(identity, id=key, capturedAt=time.time(), host=socket.gethostname(),
                   source={"state": "unknown", "reason": "Manual artifact import has no execution-boundary source capture"},
                   command={"outcome": "unknown", "argv": []}, conditions=request.get("conditions", {}))
@@ -147,6 +160,19 @@ def list_summaries(root, identity):
     return sorted(summaries, key=lambda s: s.get("capturedAt", 0), reverse=True)
 
 
+def refresh_summary_sources(root, summaries):
+    def needs_current(summary):
+        proof = summary.get("sourceEvidence", {})
+        before, after, observer = proof.get("before", {}), proof.get("after", {}), proof.get("observation", {})
+        return before.get("known") and after.get("known") and observer.get("supported") and not observer.get("reason") and not observer.get("changed") and before.get("digest") == after.get("digest")
+    current = fingerprint(root) if any(needs_current(s) for s in summaries) else {"known": False, "reason": "No stable source capture"}
+    for summary in summaries:
+        proof = summary.get("sourceEvidence", {})
+        summary["source"].update(source_freshness(root, proof, current))
+        write_json(root, GENERATED + "/summaries/" + capture_key(summary["id"]) + ".json", summary)
+    return summaries
+
+
 def remove_generated_file(root, path):
     parent, name = parent_fd(root, path)
     try:
@@ -160,6 +186,8 @@ def remove_generated_file(root, path):
 def prune_results(root, identity, pinned=None, now=None, max_bytes=128 * 1024 * 1024):
     now = time.time() if now is None else now
     pinned = set((pinned or [])[:2])
+    write_json(root, GENERATED + "/pins.json", list(pinned))
+    prune_comparisons(root, "")
     summaries = list_summaries(root, identity)
     retained, total = 0, 0
     ordered = sorted(summaries, key=lambda s: (s["id"] not in pinned, -s.get("capturedAt", 0)))
@@ -182,7 +210,27 @@ def prune_results(root, identity, pinned=None, now=None, max_bytes=128 * 1024 * 
     for summary in summaries:
         if summary not in keep:
             remove_generated_file(root, GENERATED + "/summaries/" + summary["id"] + ".json")
+            if summary.get("run"):
+                for suffix in (".json", ".claim"):
+                    remove_generated_file(root, GENERATED + "/runs/" + run_key(summary["run"]) + suffix)
     return sorted(keep, key=lambda s: s.get("capturedAt", 0), reverse=True)
+
+
+def prune_comparisons(root, keep, max_bytes=32 * 1024 * 1024):
+    try:
+        files = walk_files(root, GENERATED + "/comparisons")
+    except FileNotFoundError:
+        return
+    total = 0
+    files.sort(key=lambda path: (path.endswith("/" + keep + ".json"), os.lstat(Path(root) / path).st_mtime), reverse=True)
+    for path in files:
+        if not re.fullmatch(r"(?:[a-f0-9]{32}|[a-f0-9]{64})\.json", path.rsplit("/", 1)[-1]):
+            continue
+        metadata = os.lstat(Path(root) / path)
+        if total + metadata.st_size > max_bytes or time.time() - metadata.st_mtime > 1800:
+            remove_generated_file(root, path)
+        else:
+            total += metadata.st_size
 
 
 def check_evidence(root, result):

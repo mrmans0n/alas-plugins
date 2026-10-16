@@ -81,3 +81,20 @@ test("restart restores baseline and selection without carrying a verified-curren
   assert.deepEqual(posted.params.message.state.baseline, ref);
   assert.equal(posted.params.message.state.runs[0].source.state, "unknown");
 });
+
+test("run completion waits for configuration and worktree restoration", () => {
+  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 16, project: { id: "p", name: "P", host: "remote-host" }, grants: [] } });
+  const initial = testHost.takeSent();
+  testHost.notify("run/finished", { worktree: "one", script: "repo:test.sh", run: "early-run", outcome: "unknown" });
+  testHost.takeSent();
+  testHost.reply(initial.find(m => m.method === "workspace/snapshot").id, { snapshot: { worktrees: [{ id: "one", branch: "one", current: true, sessions: [] }] } });
+  testHost.takeSent();
+  testHost.reply(initial.find(m => m.method === "storage/get").id, { value: { schema: 1, config: { profiles: [{ id: "tests", script: "repo:test.sh", artifacts: [{ path: "a.xml", format: "junit" }] }] }, runs: [] } });
+  const call = request(testHost.takeSent(), "importRun");
+  assert.ok(call, "completion received during restoration is retained");
+  assert.equal(JSON.parse(call.params.stdin).request.run, "early-run");
+  answer(call, { summary: capture("d".repeat(32), "one", "early-run") });
+  const posted = testHost.takeSent().find(m => m.method === "web/post" && m.params.message.type === "state" && m.params.message.state.runs.length);
+  assert.equal(posted.params.message.state.runs[0].command.outcome, "unknown");
+  assert.equal(posted.params.message.state.runs[0].complete, false);
+});

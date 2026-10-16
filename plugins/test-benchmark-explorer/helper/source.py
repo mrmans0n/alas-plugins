@@ -76,7 +76,7 @@ def fingerprint(root):
         return {"known": False, "reason": str(error), "capturedAt": time.time()}
 
 
-def source_freshness(root, source):
+def source_freshness(root, source, current=None):
     checked = time.time()
     before, after = source.get("before", {}), source.get("after", {})
     observation = source.get("observation", {})
@@ -84,7 +84,7 @@ def source_freshness(root, source):
         return {"state": "unknown", "reason": source.get("reason") or observation.get("reason") or before.get("reason") or after.get("reason") or "No trustworthy source capture", "checkedAt": checked}
     if observation.get("changed") or before["digest"] != after["digest"]:
         return {"state": "changed during run", "reason": "Source changed during the enclosing capture interval", "checkedAt": checked}
-    current = fingerprint(root)
+    current = fingerprint(root) if current is None else current
     if not current.get("known"):
         return {"state": "unknown", "reason": current.get("reason"), "checkedAt": checked}
     return {"state": "current" if current["digest"] == after["digest"] else "stale", "head": before.get("head"), "checkedAt": checked}

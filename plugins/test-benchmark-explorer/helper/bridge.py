@@ -11,7 +11,9 @@ def bridge(root, request, program):
         write_json(root, GENERATED + "/configuration.json", validate_config(request["config"]))
         return {"configured": True}
     if operation == "list":
-        return {"summaries": prune_results(root, identity, request.get("pinned"))}
+        summaries = refresh_summary_sources(root, prune_results(root, identity, request.get("pinned")))
+        page = bounded_page(summaries, request.get("offset", 0), 5)
+        return {"summaries": page["rows"], "next": page["next"]}
     if operation == "manual":
         result = manual_import(root, request)
         return {"summary": summarize_result(result)}
@@ -19,6 +21,13 @@ def bridge(root, request, program):
         result = load_run(root, identity, request["run"])
         if request.get("script") and request["script"] != result.get("script"):
             raise ValueError("Capture belongs to another script")
+        if request.get("outcome") in ("succeeded", "failed", "stopped", "unknown"):
+            result["command"]["hostOutcome"] = request["outcome"]
+            if request["outcome"] in ("stopped", "unknown"):
+                result["complete"] = False
+                message = "Alas reports a stopped/unknown command outcome; capture completion cannot be verified"
+                if not any(i.get("message") == message for i in result["issues"]):
+                    result["issues"].append({"message": message})
         result["source"].update(source_freshness(root, result.get("source", {})))
         return {"summary": persist_result(root, result)}
     if operation == "stage":
@@ -34,6 +43,7 @@ def bridge(root, request, program):
         if len(data) > MAX_DETAIL:
             raise ValueError("Comparison exceeds the detail limit")
         safe_write(root, path, data)
+        prune_comparisons(root, token)
         return {"staged": True}
     result = load_result(root, identity, request["capture"])
     if operation == "export":
@@ -44,15 +54,20 @@ def bridge(root, request, program):
         return {"chunk": chunk, "offset": offset, "next": end if end < len(text) else None}
     if operation == "detail":
         summary = summarize_result(result)
-        return {"summary": summary, "page": query_result(result, request), "evidence": check_evidence(root, result)}
+        evidence = check_evidence(root, result)
+        return {"summary": summary, "page": query_result(result, request), "evidence": bounded_page(evidence)["rows"], "evidenceTotal": len(evidence)}
     if operation == "freshness":
         source = source_freshness(root, result.get("source", {}))
         result["source"].update(source)
         return {"summary": persist_result(root, result)}
     if operation == "evidence":
         rows = result.get("benchmarks" if request.get("kind") == "benchmarks" else "tests", [])
-        row = rows[int(request["rowIndex"])]
-        text = canonical(row)
+        index = int(request["rowIndex"])
+        if not 0 <= index < len(rows):
+            raise ValueError("Evidence row is outside the retained result")
+        row = rows[index]
+        artifact = next((a for a in result.get("artifacts", []) if a["id"] == row.get("evidence", {}).get("artifact")), None)
+        text = canonical({"row": row, "artifact": artifact, "capture": result["id"]})
         offset = max(0, int(request.get("offset", 0)))
         end = offset + 12000
         return {"text": text[offset:end], "next": end if end < len(text) else None}
@@ -66,10 +81,14 @@ def bridge(root, request, program):
                 raise ValueError("Foreign baseline belongs to another project/model")
         comparison = compare_results(base, result) if base else None
         if operation == "brief":
-            return {"text": investigation_brief(result, request.get("selected"), comparison)}
+            return {"text": investigation_brief(result, request.get("selected"), comparison, request.get("selectedBenchmarks"))}
         if not comparison:
             raise ValueError("Choose a baseline to compare")
-        return {"page": bounded_page(comparison["benchmarks" if request.get("kind") == "benchmarks" else "tests"], request.get("offset", 0)),
+        rows = comparison["benchmarks" if request.get("kind") == "benchmarks" else "tests"]
+        search = str(request.get("search", "")).casefold()
+        if search:
+            rows = [row for row in rows if search in canonical([row.get("name"), row.get("id"), row.get("parameters"), row.get("metric")]).casefold()]
+        return {"page": bounded_page(rows, request.get("offset", 0)),
                 "baseline": {"id": base["id"], "host": base.get("host"), "source": base.get("source")}}
     raise ValueError("Unknown helper operation")
 

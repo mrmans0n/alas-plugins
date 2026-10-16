@@ -10,7 +10,7 @@ export interface Summary {
   run?: string; script?: string; capturedAt: number; complete: boolean; detail: string;
   counts: Record<string, number | string>;
   source: { state: string; head?: string; reason?: string; checkedAt?: number };
-  command: { outcome: string; argv: string[]; exit?: number; startedAt?: number; endedAt?: number };
+  command: { outcome: string; argv: string[]; exit?: number; startedAt?: number; endedAt?: number; truncated?: boolean };
   conditions?: Record<string, unknown>; issues: { message: string; path?: string }[];
   artifacts?: Record<string, unknown>[]; artifactCount?: number;
 }
@@ -43,7 +43,7 @@ export function parseSummary(v: unknown, project: string, worktree: string, host
     reason: text(v.source.reason, 1024) || undefined, checkedAt: typeof v.source.checkedAt === "number" ? v.source.checkedAt : undefined };
   const command = { outcome: ["succeeded", "failed", "stopped", "unknown"].includes(v.command.outcome) ? v.command.outcome : "unknown",
     argv: Array.isArray(v.command.argv) ? v.command.argv.slice(0, 16).map((a: unknown) => text(a, 512)) : [],
-    exit: typeof v.command.exit === "number" ? v.command.exit : undefined, startedAt: v.command.startedAt, endedAt: v.command.endedAt };
+    exit: typeof v.command.exit === "number" ? v.command.exit : undefined, startedAt: v.command.startedAt, endedAt: v.command.endedAt, truncated: v.command.truncated === true };
   return { schema: 1, id: v.id, project, worktree, hostKey, host: text(v.host, 256), run: text(v.run, 128) || undefined,
     script: text(v.script, 1024) || undefined, capturedAt: v.capturedAt, complete: v.complete === true, detail: text(v.detail, 32), counts, source, command,
     conditions: object(v.conditions) ? Object.fromEntries(["host", "toolchain", "configuration", "target"].map(k => [k, text(v.conditions[k], 512) || null])) : {},

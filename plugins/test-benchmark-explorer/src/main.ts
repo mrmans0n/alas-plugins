@@ -5,7 +5,8 @@ import { pageMessage } from "./protocol.ts";
 
 const KEY = "explorer-v1";
 let state = emptyState();
-let project = "", hostKey = "local", epoch = 0, generation = 0, loaded = false, shown = false;
+let project = "", hostKey = "local", epoch = 0, generation = 0, loaded = false, snapshotReady = false, shown = false;
+let pendingFinished: Extract<Event, { type: "runFinished" }>[] = [];
 let loadID: number | undefined, saveID: number | undefined, dirtySave = false;
 let worktrees: Worktree[] = [];
 let error: string | undefined, status: string | undefined;
@@ -32,7 +33,7 @@ function enqueue(worktree: string, args: Record<string, unknown>, done: Job["don
 }
 
 function pump(): void {
-  if (busy || !loaded) return;
+  if (busy || !loaded || !snapshotReady) return;
   const job = jobs.shift();
   if (!job) return;
   if (job.epoch !== epoch || job.generation !== undefined && job.generation !== generation) return pump();
@@ -57,18 +58,26 @@ function pump(): void {
 }
 
 function accept(value: unknown, worktree: string): Summary { return remember(state, value, project, worktree, hostKey); }
-function refresh(): void {
-  for (const worktree of worktrees) enqueue(worktree.id, { operation: "list", pinned: [state.selected, state.baseline].filter(s => s?.worktree === worktree.id).map(s => s!.id) }, result => {
+function refreshWorktree(worktree: string, offset = 0): void {
+  if (!offset) for (const run of state.runs) if (run.worktree === worktree && run.source.state === "current") run.source = { ...run.source, state: "unknown", reason: "Verifying current source…" };
+  enqueue(worktree, { operation: "list", offset, pinned: [state.selected, state.baseline].filter(s => s?.worktree === worktree).map(s => s!.id) }, result => {
     if (!Array.isArray(result.summaries)) throw new Error("Malformed history reply");
-    for (const summary of result.summaries) accept(summary, worktree.id);
+    for (const summary of result.summaries) accept(summary, worktree);
     save(); publish();
+    if (result.next !== undefined && result.next !== null) {
+      if (!Number.isInteger(result.next) || result.next <= offset || result.next > 40) throw new Error("History pagination did not advance within its budget");
+      refreshWorktree(worktree, result.next);
+    }
   });
-  verifySource();
+}
+function refresh(): void {
+  for (const worktree of worktrees) refreshWorktree(worktree.id);
+  publish();
 }
 function verifySource(): void {
   const selected = state.selected;
   if (!selected) return;
-  enqueue(selected.worktree, { operation: "freshness", capture: selected.id }, result => { accept(result.summary, selected.worktree); save(); publish(); });
+  refreshWorktree(selected.worktree); publish();
 }
 
 let foreign: { baseline: Selection; current: Selection; token: string } | undefined;
@@ -107,7 +116,7 @@ function loadSelected(): void {
 }
 
 function imported(worktree: string, run: string, script?: string, outcome?: string, exit?: number, select = false): void {
-  enqueue(worktree, { operation: "importRun", run, ...(script ? { script } : {}) }, result => {
+  enqueue(worktree, { operation: "importRun", run, ...(script ? { script } : {}), ...(outcome ? { outcome } : {}) }, result => {
     if (!object(result.summary) || result.summary.run !== run) throw new Error("Capture belongs to another run.");
     const summary = accept(result.summary, worktree);
     reportErrors.delete(run);
@@ -122,6 +131,20 @@ function imported(worktree: string, run: string, script?: string, outcome?: stri
       command: { outcome, exit, argv: [] }, issues: [{ message }] }, worktree);
     save(); publish(); if (select) fail(message);
   } });
+}
+
+function finishRun(event: Extract<Event, { type: "runFinished" }>): void {
+  if (!loaded || !snapshotReady) {
+    if (pendingFinished.length < 100) pendingFinished.push(event);
+    else fail("Too many run completions arrived during restoration. Open a completed report to recover its capture.");
+    return;
+  }
+  if (state.config.profiles.some(p => p.script === event.script)) imported(event.worktree, event.run, event.script, event.outcome, event.exitCode);
+}
+function drainFinished(): void {
+  if (!loaded || !snapshotReady) return;
+  const events = pendingFinished; pendingFinished = [];
+  for (const event of events) finishRun(event);
 }
 
 function drawReports(): void {
@@ -164,25 +187,25 @@ function handlePage(value: unknown): void {
   }
   if (message.type === "brief" && state.selected) {
     const selected = state.selected, gen = generation;
-    return withBaseline(selected, gen, baseline => enqueue(selected.worktree, { operation: "brief", capture: selected.id, selected: message.selected, ...baseline }, result => post({ type: "brief", selection: selected, ...result }), { generation: gen }));
+    return withBaseline(selected, gen, baseline => enqueue(selected.worktree, { operation: "brief", capture: selected.id, selected: message.selected, selectedBenchmarks: message.selectedBenchmarks, ...baseline }, result => post({ type: "brief", selection: selected, ...result }), { generation: gen }));
   }
 }
 
 definePlugin({ handle(event: Event) {
   switch (event.type) {
-    case "activate": epoch++; generation++; jobs = []; busy = false; loaded = false; saveID = undefined; dirtySave = false; foreign = undefined; lastDetail = undefined; error = status = undefined; reports.clear(); reportErrors.clear(); project = event.projectId; hostKey = event.host ?? "local"; state = emptyState(); worktrees = []; loadID = storageGet(KEY); requestSnapshot(); return;
+    case "activate": epoch++; generation++; jobs = []; busy = false; loaded = snapshotReady = false; pendingFinished = []; saveID = undefined; dirtySave = false; foreign = undefined; lastDetail = undefined; error = status = undefined; reports.clear(); reportErrors.clear(); project = event.projectId; hostKey = event.host ?? "local"; state = emptyState(); worktrees = []; loadID = storageGet(KEY); requestSnapshot(); return;
     case "deactivate": epoch++; jobs = []; return;
     case "stored":
       if (event.id !== loadID) return;
       try { if (event.error) throw new Error(event.error.message); state = restoreState(event.value); } catch (e) { fail(`Could not restore explorer state: ${String(e)}`); }
-      loaded = true; publish(); pump(); if (worktrees.length) refresh(); return;
-    case "snapshot": case "workspaceChanged": worktrees = event.snapshot.worktrees; publish(); if (loaded) refresh(); return;
+      loaded = true; publish(); drainFinished(); pump(); if (snapshotReady) refresh(); return;
+    case "snapshot": case "workspaceChanged": worktrees = event.snapshot.worktrees; snapshotReady = true; publish(); drainFinished(); pump(); if (loaded) refresh(); return;
     case "reply": if (event.id === saveID) { saveID = undefined; if (event.error) { dirtySave = false; fail(`Could not save explorer state: ${event.error.message}`); } else if (dirtySave) { dirtySave = false; save(); } } return;
     case "webMessage": if (event.tab === 0) handlePage(event.message); return;
     case "tabVisible": if (event.tab === 0) { shown = event.visible; shown ? setTimer("source", 60, true) : cancelTimer("source"); if (shown && loaded) { verifySource(); publish(); } } return;
     case "timer": if (event.id === "source" && shown) verifySource(); return;
     case "gitChanged": if (shown && state.selected?.worktree === event.worktree) verifySource(); return;
-    case "runFinished": if (state.config.profiles.some(p => p.script === event.script)) imported(event.worktree, event.run, event.script, event.outcome, event.exitCode); return;
+    case "runFinished": return finishRun(event);
     case "command": if (event.target.kind === "runReport") imported(event.target.worktree, event.target.run, undefined, undefined, undefined, true); else publish(); return;
     case "panelVisible": if (event.panel === "report" && event.run) { event.visible ? reports.add(event.run) : reports.delete(event.run); drawReports(); } return;
   }

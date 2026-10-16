@@ -174,6 +174,29 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(len(rows), 4)
         self.assertEqual(len(set(r["id"] for r in rows)), 4)
 
+    def test_extreme_finite_benchmark_values_and_unicode_briefs_stay_encodable(self):
+        base = self.result(benchmarks=[self.benchmark(value=-1e308)])
+        current = self.result(benchmarks=[self.benchmark(value=1e308)])
+        compared = self.function("compare_results")(base, current)
+        json.dumps(compared, allow_nan=False)
+        result = self.result(tests=[{"id": "x", "name": "x", "status": "failed", "failure": "β" * 100000}])
+        brief = self.function("investigation_brief")(result)
+        self.assertLessEqual(len(brief.encode("utf-8")), 65536)
+
+    def test_investigation_brief_can_select_measurements(self):
+        result = self.result(benchmarks=[self.benchmark(id="unselected"), self.benchmark(id="selected")])
+        brief = self.function("investigation_brief")(result, selected_benchmarks=[1])
+        self.assertIn('"id":"selected"', brief)
+        self.assertNotIn('"id":"unselected"', brief)
+
+    def test_benchmark_page_keeps_value_and_full_sample_count(self):
+        result = self.result(benchmarks=[self.benchmark(samples=[1e308] * 10000)])
+        page = self.function("query_result")(result, {"kind": "benchmarks", "status": "failed"})
+        self.assertEqual(len(page["rows"]), 1)
+        self.assertEqual(page["rows"][0]["value"], 10)
+        self.assertEqual(page["rows"][0]["sampleCount"], 10000)
+        self.assertEqual(page["rows"][0]["rowIndex"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

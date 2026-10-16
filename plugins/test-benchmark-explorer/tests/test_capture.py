@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import uuid
 
 from test_helper import ROOT, load_helper
@@ -82,13 +83,13 @@ class CaptureTests(unittest.TestCase):
         self.function("install_helper")(self.root, identity, config, program)
         return identity
 
-    def capture(self, code, run=None, expected=0):
+    def capture(self, code, run=None, expected=0, cwd=None):
         run = run or str(uuid.uuid4())
         env = dict(os.environ, ALAS_RUN_ID=run, ALAS_RUN_SCRIPT_KEY="repo:tests.sh", ALAS_WORKTREE_ID="worktree",
                    ALAS_PROJECT_ID="project", ALAS_WORKTREE_ROOT=str(self.root))
         result = subprocess.run([sys.executable, str(self.root / ".alas/test-benchmark-explorer/capture.py"),
                                  "capture", "--profile", "tests", "--", sys.executable, "-c", code],
-                                cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+                                cwd=cwd or self.root, env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, expected, result.stderr)
         return run, result
 
@@ -138,6 +139,8 @@ class CaptureTests(unittest.TestCase):
         imported = self.function("manual_import")(self.root, request)
         again = self.function("manual_import")(self.root, request)
         self.assertEqual(imported["id"], again["id"])
+        duplicate = self.function("manual_import")(self.root, {**request, "specs": request["specs"] * 2})
+        self.assertEqual(imported["id"], duplicate["id"])
         self.assertIsNone(imported.get("run"))
         self.assertEqual(imported["source"]["state"], "unknown")
         self.assertNotIn("head", imported["source"])
@@ -158,6 +161,15 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(result["command"]["outcome"], "stopped")
         self.assertFalse(result["complete"])
 
+    def test_wrapper_preserves_run_script_working_directory(self):
+        self.install()
+        nested = self.root / "nested"
+        nested.mkdir()
+        run, _ = self.capture(self.REPORT.replace("pass", "' + pathlib.Path.cwd().name + '"), cwd=nested)
+        result = self.load_run(run)
+        self.assertEqual(result["cwd"], str(nested.resolve()))
+        self.assertEqual(result["tests"][0]["name"], "nested")
+
     def test_retention_keeps_pinned_summary_and_original_artifacts(self):
         self.install()
         self.root.joinpath("legacy.xml").write_text('<testsuite><testcase name="old"/></testsuite>')
@@ -169,6 +181,26 @@ class CaptureTests(unittest.TestCase):
         self.assertTrue(self.root.joinpath("legacy.xml").exists())
         with self.assertRaises(FileNotFoundError):
             self.function("load_result")(self.root, request, result["id"])
+
+    def test_capture_preserves_successful_child_exit_when_persistence_fails(self):
+        self.install()
+        original = os.getcwd()
+        try:
+            os.chdir(self.root)
+            with patch.dict(os.environ, {"ALAS_RUN_ID": str(uuid.uuid4()), "ALAS_RUN_SCRIPT_KEY": "repo:tests.sh",
+                            "ALAS_PROJECT_ID": "project", "ALAS_WORKTREE_ID": "worktree", "ALAS_WORKTREE_ROOT": str(self.root)}):
+                def failed_store(*args):
+                    raise OSError("disk unavailable")
+                with patch.dict(self.helper, {"persist_result": failed_store}):
+                    self.assertEqual(self.function("capture_command")(self.root, "tests", [sys.executable, "-c", self.REPORT]), 0)
+        finally:
+            os.chdir(original)
+
+    def test_staged_cross_worktree_baselines_have_a_byte_budget(self):
+        self.install()
+        self.function("safe_write")(self.root, ".alas/test-benchmark-explorer/comparisons/" + "a" * 32 + ".json", b"old cache")
+        self.function("prune_comparisons")(self.root, "b" * 32, max_bytes=0)
+        self.assertFalse(self.root.joinpath(".alas/test-benchmark-explorer/comparisons/" + "a" * 32 + ".json").exists())
 
     def test_evidence_replacement_and_pagination_keep_unknown_data_explicit(self):
         self.install()
@@ -183,6 +215,31 @@ class CaptureTests(unittest.TestCase):
         self.assertLess(len(json.dumps(page, ensure_ascii=False).encode()), 65536)
         self.assertLessEqual(len(page["rows"]), 100)
         self.assertIsNotNone(page["next"])
+
+    def test_history_refresh_rechecks_every_captured_source(self):
+        self.install()
+        first, _ = self.capture(self.REPORT)
+        second, _ = self.capture(self.REPORT)
+        if not self.load_run(first)["source"]["observation"]["supported"]:
+            return
+        self.root.joinpath("source.txt").write_text("edited after both runs")
+        request = {"operation": "list", "project": "project", "worktree": "worktree", "hostKey": "local"}
+        reply = self.function("bridge")(self.root, request, "")
+        self.assertEqual(len(reply["summaries"]), 2)
+        self.assertTrue(all(s["source"]["state"] == "stale" for s in reply["summaries"]))
+
+    def test_history_is_paged_under_the_transport_budget(self):
+        self.install()
+        identity = {"project": "project", "worktree": "worktree", "hostKey": "local"}
+        for index in range(8):
+            self.root.joinpath("legacy.xml").write_text('<testsuite><testcase name="' + str(index) + '"/></testsuite>')
+            self.function("manual_import")(self.root, {**identity, "specs": [{"path": "legacy.xml", "format": "junit"}]})
+        request = {**identity, "operation": "list"}
+        first = self.function("bridge")(self.root, request, "")
+        self.assertLessEqual(len(first["summaries"]), 5)
+        self.assertIsNotNone(first["next"])
+        second = self.function("bridge")(self.root, {**request, "offset": first["next"]}, "")
+        self.assertEqual(len(first["summaries"]) + len(second["summaries"]), 8)
 
     def test_symlink_escape_and_special_files_are_refused(self):
         self.root.joinpath("outside.xml").symlink_to(ROOT / "tests/fixtures/junit.xml")

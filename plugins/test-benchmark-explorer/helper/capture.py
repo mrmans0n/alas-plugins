@@ -1,5 +1,8 @@
 def capture_command(root, profile_id, argv):
     root = Path(root).resolve()
+    execution_directory = Path.cwd().resolve()
+    if execution_directory != root and root not in execution_directory.parents:
+        raise ValueError("Command directory is outside the owning worktree")
     installed = safe_json(root, GENERATED + "/installation.json")
     installation(root, installed)
     config = validate_config(safe_json(root, GENERATED + "/configuration.json"))
@@ -49,7 +52,7 @@ def capture_command(root, profile_id, argv):
     started = time.time()
     launch_error = None
     try:
-        child = subprocess.Popen(argv, cwd=root, env=child_env)
+        child = subprocess.Popen(argv, cwd=execution_directory, env=child_env)
         code = child.wait()
     except OSError as error:
         code, launch_error = 127, str(error)
@@ -59,7 +62,11 @@ def capture_command(root, profile_id, argv):
         observation = observer.finish()
         for s, handler in previous.items():
             signal.signal(s, handler)
-    result = import_artifacts(root / output_relative, profile["artifacts"])
+    try:
+        result = import_artifacts(root / output_relative, profile["artifacts"])
+    except (ValueError, OSError, UnicodeError, RecursionError) as error:
+        result = {"schema": SCHEMA, "complete": False, "tests": [], "benchmarks": [], "artifacts": [],
+                  "issues": [{"message": "Normalization failed: " + str(error)[:2048]}]}
     for artifact in result["artifacts"]:
         artifact["path"] = output_relative + "/" + artifact["path"]
     if stopped or code < 0 or launch_error:
@@ -69,15 +76,23 @@ def capture_command(root, profile_id, argv):
               "captureStartedAt": captured_at, "captureEndedAt": time.time(), "state": "unknown"}
     source.update(source_freshness(root, source))
     result.update({k: installed[k] for k in ("project", "worktree", "hostKey")},
-                  id=capture_id, run=run, script=profile["script"], host=socket.gethostname(), cwd=str(root),
+                  id=capture_id, run=run, script=profile["script"], host=socket.gethostname(), cwd=str(execution_directory),
                   capturedAt=captured_at, installation=installed["token"], source=source,
                   command={"argv": argv, "startedAt": started, "endedAt": ended, "exit": code,
                            "outcome": "stopped" if stopped or code < 0 else "unknown" if launch_error else "succeeded" if code == 0 else "failed"},
                   conditions={"host": socket.gethostname(), "toolchain": profile.get("toolchain"),
                               "configuration": profile.get("configuration"), "target": profile.get("target")},
                   thresholds=profile.get("thresholds", {}), helperVersion=HELPER_VERSION)
-    persist_result(root, result)
-    if run:
-        write_json(root, GENERATED + "/runs/" + run_key(run) + ".json", {"run": run, "capture": capture_id})
-    print("Structured results captured: " + capture_id, flush=True)
+    try:
+        persist_result(root, result)
+        if run:
+            write_json(root, GENERATED + "/runs/" + run_key(run) + ".json", {"run": run, "capture": capture_id})
+        try:
+            pinned = safe_json(root, GENERATED + "/pins.json")
+        except FileNotFoundError:
+            pinned = []
+        prune_results(root, installed, pinned)
+        print("Structured results captured: " + capture_id, flush=True)
+    except (OSError, ValueError) as error:
+        print("Structured results unavailable: " + str(error), file=sys.stderr, flush=True)
     return 128 - code if code < 0 else code

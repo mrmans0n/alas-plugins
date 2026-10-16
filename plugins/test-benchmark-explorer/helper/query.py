@@ -75,8 +75,12 @@ def compare_results(base, current):
                 row["reason"] = "Different or unknown execution conditions: " + ", ".join(different)
             else:
                 row["compatible"] = True
-                row["absolute"] = c["value"] - b["value"]
-                row["percent"] = row["absolute"] / abs(b["value"]) * 100 if b["value"] else None
+                absolute = c["value"] - b["value"]
+                row["absolute"] = absolute if finite(absolute) else None
+                percent = absolute / abs(b["value"]) * 100 if b["value"] else None
+                row["percent"] = percent if finite(percent) else None
+                if not finite(absolute):
+                    row["reason"] = "Difference exceeds the finite numeric range; raw measurements are preserved"
                 threshold = current.get("thresholds", {}).get(example["id"])
                 if finite(threshold) and threshold >= 0 and row["percent"] is not None:
                     row["threshold"] = threshold
@@ -92,6 +96,12 @@ def bounded_page(rows, offset=0, limit=100):
     for row in rows[offset:offset + limit]:
         # Long evidence text is available separately, not silently erased in storage.
         display = dict(row)
+        for key, count_key in (("samples", "sampleCount"), ("baselineSamples", "baselineSampleCount"), ("currentSamples", "currentSampleCount")):
+            if isinstance(display.get(key), list):
+                display[count_key] = len(display[key])
+                if len(display[key]) > 10:
+                    display[key] = display[key][:10]
+                    display["sampleDataTruncated"] = True
         for key in ("failure", "name", "id"):
             if isinstance(display.get(key), str) and len(display[key]) > 4096:
                 display[key] = display[key][:4096]
@@ -99,7 +109,10 @@ def bounded_page(rows, offset=0, limit=100):
         encoded = len(canonical(display).encode("utf-8"))
         if encoded > MAX_PAGE - 8192:
             display = {"id": str(row.get("id", ""))[:1024], "name": str(row.get("name", row.get("id", "")))[:1024],
-                       "evidenceTooLarge": True, "message": "Use the evidence text view to inspect this row"}
+                       "rowIndex": row.get("rowIndex"), "evidenceTooLarge": True, "message": "Use the evidence text view to inspect this row"}
+            for key in ("value", "unit", "direction", "statistic", "sampleCount"):
+                if key in row:
+                    display[key] = row[key] if finite(row[key]) else str(row[key])[:512]
             encoded = len(canonical(display).encode("utf-8"))
         if size + encoded > MAX_PAGE - 8192:
             break
@@ -112,32 +125,45 @@ def bounded_page(rows, offset=0, limit=100):
 def query_result(result, request):
     kind = request.get("kind", "tests")
     rows = result.get("benchmarks" if kind == "benchmarks" else "tests", [])
-    search, status = str(request.get("search", "")).casefold(), request.get("status", "all")
+    search, status = str(request.get("search", "")).casefold(), request.get("status", "all") if kind == "tests" else "all"
     filtered = [dict(row, rowIndex=index) for index, row in enumerate(rows)
                 if (not search or search in (str(row.get("name", row.get("id"))) + " " + " / ".join(row.get("suite", []))).casefold())
                 and (status == "all" or row.get("status") == status)]
     return bounded_page(filtered, request.get("offset", 0))
 
 
-def investigation_brief(result, selected=None, comparison=None):
+def investigation_brief(result, selected=None, comparison=None, selected_benchmarks=None):
     lines = ["Test & Benchmark investigation", "Capture: " + result.get("id", "unknown"),
              "Run: " + (result.get("run") or "unassociated"), "Worktree: " + result.get("worktree", "unknown"),
              "Host: " + result.get("host", "unknown"), "Captured: " + str(result.get("capturedAt", "unknown")),
              "Source: " + canonical(result.get("source", {})), "Command: " + canonical(result.get("command", {})),
              "Conditions: " + canonical(result.get("conditions", {})), "Import complete: " + str(result.get("complete", False))]
     selected = set(selected or [])
+    benchmarks = set(selected_benchmarks or [])
+    explicit = bool(selected or benchmarks)
+    evidence_ids, test_ids, benchmark_keys = set(), set(), set()
     for index, row in enumerate(result.get("tests", [])):
-        if selected and index not in selected or not selected and row["status"] not in ("failed", "error"):
+        if explicit and index not in selected or not explicit and row["status"] not in ("failed", "error"):
             continue
+        evidence_ids.add(row.get("evidence", {}).get("artifact"))
+        test_ids.add(row["id"])
         lines += ["", row["status"] + ": " + row["name"], str(row.get("failure", "")),
                   "Location: " + canonical(row.get("source")), "Evidence: " + canonical(row.get("evidence"))]
-    for row in result.get("benchmarks", []):
+    for index, row in enumerate(result.get("benchmarks", [])):
+        if explicit and index not in benchmarks:
+            continue
+        evidence_ids.add(row.get("evidence", {}).get("artifact"))
+        benchmark_keys.add(measurement_key(row))
         lines += ["", "Measurement: " + canonical(row)]
     if comparison:
+        if explicit:
+            comparison = {"tests": [row for row in comparison["tests"] if row["id"] in test_ids],
+                          "benchmarks": [row for row in comparison["benchmarks"] if row["key"] in benchmark_keys]}
         lines += ["", "Comparison: " + canonical(comparison), "Statistical significance has not been assessed."]
     for artifact in result.get("artifacts", []):
-        lines.append("Artifact: " + canonical(artifact))
+        if not explicit or artifact["id"] in evidence_ids:
+            lines.append("Artifact: " + canonical(artifact))
     for issue in result.get("issues", []):
         lines.append("Import issue: " + canonical(issue))
-    text = "\n".join(lines)
-    return text[:48000] + ("\n[Brief truncated; inspect the retained evidence for the remainder.]" if len(text) > 48000 else "")
+    text = "\n".join(lines).encode("utf-8")
+    return text[:48000].decode("utf-8", "ignore") + ("\n[Brief truncated; inspect the retained evidence for the remainder.]" if len(text) > 48000 else "")
