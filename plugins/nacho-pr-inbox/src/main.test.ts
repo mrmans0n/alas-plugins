@@ -29,3 +29,17 @@ test("the inbox refreshes on start, every 5 minutes while hidden and every minut
   visible(false);
   assert.deepEqual(calls(testHost.takeSent()), [["timer/set", { id: "refresh", seconds: 300, repeat: true }]]);
 });
+
+test("merging still uses the main worktree and refreshes the inbox after completion", () => {
+  testHost.notify("view/event", { tab: 0, kind: "click", id: "refresh" });
+  const list = testHost.takeSent().find(m => m.method === "process/run");
+  testHost.reply(list.id, { exit: 0, stdout: JSON.stringify({ data: { repository: { nameWithOwner: "o/r", pullRequests: { nodes: [{ number: 3, title: "Change", url: "https://github.com/o/r/pull/3", isDraft: false, headRefName: "feature", updatedAt: "2026-10-16T00:00:00Z", mergeable: "MERGEABLE", reactions: { nodes: [{ user: { login: "chatgpt-codex-connector[bot]" } }] } }] } } } }), stderr: "" });
+  testHost.takeSent();
+  testHost.notify("view/event", { panel: "rail", kind: "click", id: "pr-3-merge" });
+  const merge = testHost.takeSent().find(m => m.method === "process/run");
+  assert.deepEqual(merge.params, { id: "merge", worktree: "trunk", args: ["3"] });
+  testHost.reply(merge.id, { exit: 0, stdout: "", stderr: "" });
+  const sent = testHost.takeSent();
+  assert.ok(sent.some(m => m.method === "notify/show" || m.method === "notify"), "successful merge notifies");
+  assert.ok(sent.some(m => m.method === "process/run" && m.params.id === "list"));
+});

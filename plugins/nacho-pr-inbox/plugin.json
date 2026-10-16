@@ -1,18 +1,21 @@
 {
   "id": "io.nlopez.nacho-pr-inbox",
   "name": "Nacho's PR Inbox",
-  "summary": "The repository's open pull requests, sorted into ready to merge, failing, waiting and drafts, and the recently merged ones. Squash-merges the ready ones with gh.",
-  "version": "0.11.0",
+  "summary": "PR Inbox with on-demand CI failure evidence, bounded history and reviewed agent investigation briefs.",
+  "version": "0.12.0",
   "api": 15,
   "entry": "plugin.js",
-  "capabilities": ["workspace.read", "process.exec", "timers", "notify"],
+  "capabilities": ["workspace.read", "process.exec", "timers", "notify", "session.write"],
   "remote": true,
   "processes": [
     {
       "id": "list",
-      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login} headRefName updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login} headRefName mergedAt}}}}"]
+      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login} headRefName headRefOid headRepository{nameWithOwner} baseRefName baseRefOid updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login} headRefName mergedAt}}}}"]
     },
-    { "id": "merge", "command": ["gh", "pr", "merge", "--squash", "--delete-branch"], "appendArgs": true }
+    { "id": "merge", "command": ["gh", "pr", "merge", "--squash", "--delete-branch"], "appendArgs": true },
+    { "id": "ci-api", "command": ["gh", "api"], "appendArgs": true },
+    { "id": "ci-remotes", "command": ["git", "remote", "-v"] },
+    { "id": "ci-head", "command": ["git", "rev-parse", "--verify", "HEAD"] }
   ],
   "contributes": {
     "tabs": [{ "id": "inbox", "title": "PR Inbox", "kind": "view" }],
