@@ -1,5 +1,16 @@
 # CI Doctor validation
 
+## Web page (0.13.0)
+
+The tab and the rail are web pages since 0.13.0. `view.ts` and
+`doctor-view.ts` build plain view models, tested with `node --test`.
+`page/main.ts` draws them, and `protocol.ts` checks every page message.
+The scenario below now drives the plugin with `web/message` and checks that
+each `web/post` stays within the 1 MiB message limit. The page was checked in
+a stub host with fixture state, in light and dark, at tab width and at the
+rail's 240-point minimum. It has not yet been run inside Alas; the native
+verification below is of 0.12.0.
+
 Verified on 2026-10-16 in the `nacho/ci-doctor` linked workspace.
 
 ## Automated checks
@@ -17,7 +28,7 @@ Verified on 2026-10-16 in the `nacho/ci-doctor` linked workspace.
   and view end to end with fixture processes: open PR, select failed attempt 1
   alongside passing attempt 2, load a large/truncated log, compare base, review
   the brief, explicitly select a worktree session, verify its identity, send once,
-  and reject a duplicate send. It validates native tree/message bounds.
+  and reject a duplicate send. It validates page message bounds.
 - That transcript passed `scripts/jsc-run` in bare JavaScriptCore, without JIT.
   The slowest handler used about 77 ms CPU, below the 250 ms host budget.
 

@@ -1,10 +1,11 @@
-import { definePlugin, notify, processRun, render, renderPanel, request, requestSnapshot, sessionSend, setTimer, storageGet, storageSet, type Event, type Snapshot } from "@alas/plugin";
-import { canMerge, parseInbox, processError } from "./inbox.ts";
-import { inboxView, mergeTarget, type ViewState } from "./view.ts";
+import { definePlugin, notify, processRun, request, requestSnapshot, sessionSend, setPanelBadge, setTimer, storageGet, storageSet, webPost, type Event, type Snapshot } from "@alas/plugin";
+import { canMerge, classify, isReady, parseInbox, processError } from "./inbox.ts";
+import { inboxModel, readyCount, type ViewState } from "./view.ts";
 import { DoctorController } from "./doctor-controller.ts";
 import { GitHub, ProcessQueue } from "./doctor-transport.ts";
-import { doctorView } from "./doctor-view.ts";
+import { doctorModel } from "./doctor-view.ts";
 import { object } from "./doctor.ts";
+import { parsePageMessage, type PageMessage, type PluginMessage } from "./protocol.ts";
 
 const TAB = 0;
 const PANEL = "rail";
@@ -23,12 +24,20 @@ let github: GitHub | undefined;
 let cached: unknown;
 let loadCache: number | undefined;
 let snapshot: Snapshot = { worktrees: [] };
+/** What Merge all still has to merge, in order. */
+let mergeQueue: number[] = [];
+/** The ready count the rail badge shows. */
+let badge = 0;
 const queue = new ProcessQueue((id, wt, args, done) => processRun(id, wt, { args: args.length ? args : undefined }, done));
 
+/** Sends the state to the tab's and the rail's pages; one that is not shown drops it. */
 const draw = () => {
-  const detail = doctor?.state.target ? doctor.state : undefined;
-  render(TAB, detail ? doctorView(detail) : inboxView(state, Date.now()));
-  renderPanel(PANEL, detail ? doctorView(detail, true) : inboxView(state, Date.now(), true));
+  const message: PluginMessage = { type: "state", inbox: inboxModel(state, Date.now()), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
+  webPost(TAB, message);
+  webPost(PANEL, message);
+  const ready = readyCount(state);
+  if (ready !== badge) setPanelBadge(PANEL, ready > 0 ? { count: ready, tone: "success" } : null);
+  badge = ready;
 };
 
 function refresh(manual = false): void {
@@ -58,7 +67,7 @@ function refresh(manual = false): void {
     if (again) {
       again = false;
       refresh();
-    } else draw();
+    } else if (!continueMergeAll()) draw();
   }, { priority: true });
 }
 
@@ -74,8 +83,41 @@ function merge(number: number): void {
     const failure = processError(outcome);
     if (failure === undefined) notify(`Merged #${number}`);
     else state.mergeErrors[number] = failure;
+    if (state.mergeAll) {
+      if (failure === undefined) state.mergeAll.done++;
+      else stopMergeAll();
+    }
     refresh();
   }, { priority: true });
+}
+
+/** Merges the ready pull requests one at a time, each after a fresh list, stopping at the first failure. */
+function mergeAll(): void {
+  if (!state.inbox || state.merging !== undefined || state.mergeAll) return;
+  mergeQueue = classify(state.inbox.pulls).ready.map((p) => p.number);
+  if (mergeQueue.length === 0) return;
+  state.mergeAll = { total: mergeQueue.length, done: 0 };
+  continueMergeAll();
+}
+
+function stopMergeAll(): void {
+  mergeQueue = [];
+  state.mergeAll = undefined;
+}
+
+/** Starts Merge all's next merge that is still ready on the current list; `false` when there is none to start. */
+function continueMergeAll(): boolean {
+  if (!state.mergeAll || state.merging !== undefined) return false;
+  while (mergeQueue.length > 0) {
+    const number = mergeQueue.shift()!;
+    const pull = state.inbox?.pulls.find((p) => p.number === number);
+    if (pull && isReady(pull)) {
+      merge(number);
+      return true;
+    }
+  }
+  stopMergeAll();
+  return false;
 }
 
 /** Refreshes every minute while the tab or the panel is shown, and every 5 minutes otherwise to keep the data current. */
@@ -110,6 +152,39 @@ function useSnapshot(next: Snapshot): void {
   refresh();
 }
 
+function pageMessage(m: PageMessage): void {
+  switch (m.type) {
+    case "ready": return draw();
+    case "refresh": return refresh(true);
+    case "merge": return merge(m.number);
+    case "mergeAll": return mergeAll();
+    case "doctor": {
+      const pull = state.inbox?.pulls.find((p) => p.number === m.number);
+      if (pull && state.inbox) doctor?.open(state.inbox.repo, pull);
+      return;
+    }
+  }
+  const d = doctor;
+  if (!d?.state.target) return;
+  const token = d.state.dispatch?.token;
+  switch (m.type) {
+    case "back": return d.close();
+    case "doctorRefresh": return d.refresh();
+    case "run": {
+      const run = d.state.evidence?.runs.find((r) => r.id === m.run);
+      if (run) d.selectAttempt(run.id, run.attempt);
+      return;
+    }
+    case "attempt": return d.selectAttempt(m.run, m.attempt);
+    case "job": return d.selectJob(m.job);
+    case "prepare": return d.prepare(m.job);
+    case "question": return m.token === token ? d.question(m.text) : undefined;
+    case "session": return m.token === token ? d.selectSession(m.session) : undefined;
+    case "acknowledge": return d.acknowledge();
+    case "send": return d.send();
+  }
+}
+
 definePlugin({
   handle(event: Event) {
     switch (event.type) {
@@ -131,38 +206,10 @@ definePlugin({
       case "timer":
         if (event.id === "ci-backoff") { queue.resume(); draw(); return; }
         return event.id === "refresh" ? refresh() : undefined;
-      case "viewEvent":
-      case "panelEvent": {
-        if (event.type === "viewEvent" ? event.tab !== TAB : event.panel !== PANEL) return;
-        if (doctor && doctor.state.target) {
-          if (event.kind === "submit" && event.id === `ci-question-${doctor.state.dispatch?.token}` && event.value !== undefined) return doctor.question(event.value);
-          if (event.kind === "select" && event.value !== undefined) {
-            if (event.id === "ci-runs") { const run = doctor.state.evidence?.runs.find(r => String(r.id) === event.value); if (run) doctor.selectAttempt(run.id, run.attempt); }
-            const attempts = /^ci-attempts-(\d+)$/.exec(event.id);
-            if (attempts && /^\d+$/.test(event.value)) doctor.selectAttempt(Number(attempts[1]), Number(event.value));
-            if (event.id === `ci-sessions-${doctor.state.dispatch?.token}`) doctor.selectSession(event.value);
-          }
-          if (event.kind !== "click") return;
-          if (event.id === "ci-back") return doctor.close();
-          if (event.id === "ci-refresh") return doctor.refresh();
-          if (event.id === "ci-send") return doctor.send();
-          if (event.id === "ci-acknowledge") return doctor.acknowledge();
-          const job = /^ci-job-open-(\d+)$/.exec(event.id);
-          if (job) return doctor.selectJob(Number(job[1]));
-          const prepare = /^ci-prepare-(\d+)$/.exec(event.id);
-          if (prepare) return doctor.prepare(Number(prepare[1]));
-          return;
-        }
-        if (event.kind !== "click") return;
-        if (event.id === "refresh" || event.id === "retry") return refresh(true);
-        const detail = /^pr-(\d+)-doctor$/.exec(event.id);
-        if (detail && state.inbox) {
-          const pull = state.inbox.pulls.find(p => p.number === Number(detail[1]));
-          if (pull) doctor?.open(state.inbox.repo, pull);
-          return;
-        }
-        const number = mergeTarget(event.id);
-        if (number !== undefined) merge(number);
+      case "webMessage": {
+        if (event.tab === undefined ? event.panel !== PANEL : event.tab !== TAB) return;
+        const message = parsePageMessage(event.message);
+        if (message) pageMessage(message);
         return;
       }
     }
