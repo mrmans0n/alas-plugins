@@ -1,5 +1,5 @@
 // Deterministic full detail/history/dispatch transcript. The process boundary is
-// fixture-backed; the production controller, SDK and view code run unchanged.
+// fixture-backed; the production controller, SDK and view-model code run unchanged.
 // node scripts/scenarios/ci-doctor.mjs > /tmp/ci-doctor.jsonl
 // scripts/jsc-run plugins/nacho-pr-inbox/dist/plugin.js /tmp/ci-doctor.jsonl
 import assert from "node:assert/strict";
@@ -14,26 +14,19 @@ const pull = { number: 3, title: "CI failure example", url: "https://github.com/
 const run = (id = 10, attempt = 2) => ({ id, workflow_id: 2, name: "Swift CI", run_attempt: attempt, head_sha: id === 10 ? sha : base, head_branch: id === 10 ? "feature" : "main", event: id === 10 ? "pull_request" : "push", status: "completed", conclusion: attempt === 1 && id === 10 ? "failure" : "success", created_at: "2026-10-16T00:00:00Z", updated_at: "2026-10-16T01:00:00Z", html_url: `https://github.com/o/r/actions/runs/${id}`, pull_requests: id === 10 ? [{ number: 3 }] : [], head_repository: { full_name: "o/r" } });
 const jobs = (id, attempt) => ({ total_count: 1, jobs: [{ id: id * 10 + attempt, run_id: id, run_attempt: attempt, name: "Tests (Swift)", status: "completed", conclusion: run(id, attempt).conclusion, started_at: "2026-10-16T00:00:00Z", completed_at: "2026-10-16T01:00:00Z", html_url: `https://github.com/o/r/actions/runs/${id}/job/${id * 10 + attempt}`, steps: [{ number: 3, name: "Swift tests", status: "completed", conclusion: run(id, attempt).conclusion }] }] });
 const log = "2026-10-16T00:00:00Z setup output\n".repeat(7000) + "Test Case '-[Core.testOrdering]' failed (0.1 seconds).\n" + "🚀 detail output\n".repeat(8000);
-let sends = 0, lastTrees = [];
+let sends = 0, lastStates = [];
 function deliver(message) { const value = { jsonrpc: "2.0", ...message }; transcript.push(value); testHost.dispatch(value); }
-function click(id) { deliver({ method: "view/event", params: { tab: 0, id, kind: "click" } }); settle(); }
-function select(id, value) { deliver({ method: "view/event", params: { tab: 0, id, kind: "select", value } }); settle(); }
-function checkTree(root) {
-  let count = 0; const ids = new Set();
-  function visit(n, depth = 1) {
-    assert.ok(depth <= 16); assert.ok(!ids.has(n.id)); ids.add(n.id); count++;
-    assert.ok(Buffer.byteLength(n.id) <= 64);
-    for (const [key, value] of Object.entries(n)) if (typeof value === "string" && !["id", "kind"].includes(key)) assert.ok(n.kind === "markdown" && key === "text" ? Buffer.byteLength(value) <= 32768 : [...value].length <= 4000);
-    if (n.children) n.children.forEach(child => visit(child, depth + 1));
-    if (n.child) visit(n.child, depth + 1);
-  }
-  visit(root); assert.ok(count <= 2000);
+function page(message) { deliver({ method: "web/message", params: { tab: 0, message } }); settle(); }
+/** A state the page gets: within the 1 MiB message limit, with ids the plugin can be asked about. */
+function checkState(params) {
+  assert.ok(Buffer.byteLength(JSON.stringify({ jsonrpc: "2.0", method: "web/post", params })) <= 1024 * 1024);
+  assert.equal(params.message.type, "state");
 }
 function settle() {
   for (let round = 0; round < 300; round++) {
     const sent = testHost.takeSent(); if (!sent.length) return;
     for (const m of sent) {
-      if (m.method === "view/render") { checkTree(m.params.root); lastTrees.push(m.params.root); continue; }
+      if (m.method === "web/post") { checkState(m.params); if (m.params.tab === 0) lastStates.push(m.params.message); continue; }
       if (m.id === undefined) continue;
       let result = {};
       if (m.method === "workspace/snapshot") result = { snapshot };
@@ -66,14 +59,14 @@ function settle() {
 }
 testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "Fixture project" }, grants: [] } });
 settle();
-click("pr-3-doctor");
-select("ci-attempts-10", "1");
-click("ci-job-open-101");
-assert.match(JSON.stringify(lastTrees.at(-1)), /possible regression/);
-click("ci-prepare-101");
-select("ci-sessions-1", session);
-click("ci-send");
-click("ci-send");
+page({ type: "doctor", number: 3 });
+page({ type: "attempt", run: 10, attempt: 1 });
+page({ type: "job", job: 101 });
+assert.match(lastStates.at(-1).doctor.evidence.suggestion.kind, /possible regression/);
+page({ type: "prepare", job: 101 });
+page({ type: "session", token: lastStates.at(-1).doctor.dispatch.token, session });
+page({ type: "send" });
+page({ type: "send" });
 assert.equal(sends, 1);
-assert.match(JSON.stringify(lastTrees.at(-1)), /Sent once/);
+assert.equal(lastStates.at(-1).doctor.dispatch.sent, true);
 console.log(transcript.map(m => JSON.stringify(m)).join("\n"));

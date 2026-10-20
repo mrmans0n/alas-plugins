@@ -3,9 +3,9 @@
 A personal tool for Nacho's merge workflow: a tab listing the repository's open
 pull requests, sorted by what they need, with a button that squash-merges the
 ones that are ready. Anyone who uses the GitHub CLI can install it; it reuses
-your `gh` login and asks for no token. It uses plugin API 15 (a command that
-opens its tab, progress, progress bar and link view nodes, tab visibility, the main
-worktree flag and button tones) and runs `gh` through `process.exec`.
+your `gh` login and asks for no token. It uses plugin API 15: the tab and the
+sidebar panel are web pages (`ui.js`) the plugin feeds its state, the sidebar
+icon carries a badge with the ready count, and `gh` runs through `process.exec`.
 On an SSH project it runs `gh` on the host (`remote`, API 11), so `gh` must be
 installed and logged in there.
 
@@ -21,7 +21,9 @@ plugins/nacho-pr-inbox/build.sh
 `build.sh` installs into `~/Library/Application Support/Alas/Plugins/nacho-pr-inbox`.
 Set `ALAS_APP_SUPPORT_DIR` to install into an isolated Alas profile instead.
 Approve it in **Settings → Plugins**. The approval sheet lists its declared
-commands and permission to send a reviewed brief to an agent session.
+commands, permission to send a reviewed brief to an agent session, and that it
+shows its own web content with no network access. `ui.js` is covered by the
+approval, so every rebuild that changes it asks again.
 
 ## Use
 
@@ -36,7 +38,8 @@ most recently updated first within each group:
 | Failing | Checks failed or errored |
 | Drafts | Drafts |
 
-Each row shows the branch and badges for checks, review, Codex (👍 once it
+The header shows a tile per group with its count; click one to show only that
+group, and again to show them all. Each row shows the author's initials, the branch and chips for checks, review, Codex (👍 once it
 approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. While checks run, a
 bar beside the checks badge fills with the finished ones in green (red once
 one failed), the running ones in yellow, and the rest gray, captioned
@@ -45,6 +48,10 @@ not a draft and has no conflicts gets a merge button, which runs
 `gh pr merge --squash --delete-branch <number>`: green with a checkmark when
 checks passed, plain while they run, and **Merge anyway** in the warning color
 when they failed. A failure shows under the title.
+
+With two or more ready, **Merge all** squash-merges each of them, one at a time.
+Before each merge it lists the pull requests again and skips one that is no
+longer ready; it stops at the first failure, which shows under that row.
 
 Below the open ones, **Recently merged** lists the pull requests merged in the
 last 24 hours, or the last 5 when fewer, the most recently merged first, each
@@ -63,10 +70,10 @@ in the selected session's own worktree, on its local or SSH host.
 
 Choose **CI Doctor** on an open PR to inspect Actions workflow runs, separate
 rerun attempts, jobs, failed steps, status/conclusion, timestamps and GitHub links.
-The tab and compact sidebar share selection. **Back** returns to the existing PR
+The tab and compact sidebar share selection. **← Inbox** returns to the existing PR
 list. Use the PR Inbox command to open the tab when more space is useful.
 
-Choose **Evidence** on a job to fetch a useful excerpt and bounded comparisons
+Pick a job to fetch a useful excerpt and bounded comparisons
 with the same workflow and exact job name on the PR and base branch. The view
 shows both the PR head and GitHub's recorded run SHA. An observed checkout SHA
 is labelled separately; when the log does not establish it, it stays unknown.
@@ -113,7 +120,7 @@ need explicit Retry/Refresh; rate limits pause detailed GitHub work until reset.
 
 ## Limits
 
-- One merge at a time.
+- One merge at a time; Merge all queues them.
 - At most two processes across list, merge, CI detail and identity work, with
   list/merge priority and shared duplicate requests.
 - A 14-day history window, up to 30 run summaries per query in pages of 10.

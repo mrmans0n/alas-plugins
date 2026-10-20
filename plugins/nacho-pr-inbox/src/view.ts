@@ -1,5 +1,4 @@
-import type { ButtonStyle, Node, Tone } from "@alas/plugin";
-import { agoLabel, BUCKETS, canMerge, recentMerged, classify, isReady, updatedLabel, type Bucket, type Inbox, type Merged, type Pull } from "./inbox.ts";
+import { BUCKETS, canMerge, classify, isReady, recentMerged, type Bucket, type Inbox, type Pull } from "./inbox.ts";
 
 export interface ViewState {
   inbox?: Inbox;
@@ -11,194 +10,108 @@ export interface ViewState {
   merging?: number;
   /** The last merge failure per pull request number. */
   mergeErrors: Record<number, string>;
+  /** A Merge all in progress: how many it started with and how many merged so far. */
+  mergeAll?: { total: number; done: number };
 }
 
-const TITLES: Record<Bucket, string> = { ready: "Ready to merge", failing: "Failing", waiting: "Waiting", drafts: "Drafts" };
-const TONES: Record<Bucket, Tone> = { ready: "accent", failing: "danger", waiting: "warn", drafts: "dim" };
+export type Tone = "accent" | "success" | "warn" | "danger" | "dim";
 
-const text = (id: string, value: string, style: "body" | "caption" | "title" | "monospaced", tone?: Tone): Node =>
-  ({ kind: "text", id, text: value, style, ...(tone && { tone }) });
+export interface Chip { text: string; tone: Tone }
 
-/** Centers `child` in the remaining space. */
-const centered = (id: string, child: Node): Node => ({
-  kind: "vstack", id, children: [
-    { kind: "spacer", id: `${id}-top` },
-    { kind: "hstack", id: `${id}-row`, children: [{ kind: "spacer", id: `${id}-left` }, child, { kind: "spacer", id: `${id}-right` }] },
-    { kind: "spacer", id: `${id}-bottom` },
-  ],
-});
+/** How a merge button looks: `go` once checks passed, `plain` while they run, `risk` when they failed. */
+export interface MergeAction { look: "go" | "plain" | "risk"; label: string; short: string; disabled: boolean; busy: boolean }
 
-function header(state: ViewState, now: number, compact: boolean): Node {
-  const title = state.inbox && !compact ? `PR Inbox — ${state.inbox.repo}` : "PR Inbox";
-  const status: Node[] = state.refreshing
-    ? [{ kind: "progress", id: "refreshing", text: "Refreshing…" }]
-    : [
-        ...(state.fetchedAt === undefined || compact ? [] : [text("updated", updatedLabel(state.fetchedAt, now)!, "caption", "dim")]),
-        { kind: "button", id: "refresh", label: "Refresh", icon: "arrow.clockwise", style: "plain" },
-      ];
-  return { kind: "hstack", id: "header", spacing: 8, children: [text("title", title, "title"), { kind: "spacer", id: "header-spacer" }, ...status] };
+export interface Row {
+  number: number;
+  title: string;
+  url: string;
+  branch: string;
+  author: string;
+  /** ISO 8601; the page words it relative to its own clock. */
+  updatedAt: string;
+  chips: Chip[];
+  /** Checks still to finish: how far along they are, `failed` once one failed. */
+  checks?: { done: number; running: number; total: number; failed: boolean };
+  merge?: MergeAction;
+  error?: string;
 }
 
-function badges(p: Pull): Node[] {
-  const id = (name: string) => `pr-${p.number}-${name}`;
-  const out: Node[] = [];
-  if (p.ci === "SUCCESS") out.push({ kind: "badge", id: id("ci"), text: "CI ✓", tone: "accent" });
-  else if (p.ci === "FAILURE" || p.ci === "ERROR") out.push({ kind: "badge", id: id("ci"), text: "CI ✗", tone: "danger" });
-  else if (p.ci !== null) out.push({ kind: "badge", id: id("ci"), text: "CI …", tone: "dim" });
-  // Checks still to finish: how far along they are, red once one failed.
+export interface Section { key: Bucket; title: string; tone: Tone; rows: Row[] }
+
+export interface MergedRow { number: number; title: string; url: string; branch: string; author: string; mergedAt: string }
+
+export interface InboxModel {
+  repo?: string;
+  fetchedAt?: number;
+  refreshing: boolean;
+  error?: string;
+  /** Nothing to show yet: no list and no error. */
+  loading: boolean;
+  counts: Record<Bucket, number>;
+  sections: Section[];
+  merged: MergedRow[];
+  /** Merges every ready pull request, one at a time; offered from two. */
+  mergeAll?: { count: number; disabled: boolean; progress?: string };
+}
+
+export const TITLES: Record<Bucket, string> = { ready: "Ready to merge", failing: "Failing", waiting: "Waiting", drafts: "Drafts" };
+export const TONES: Record<Bucket, Tone> = { ready: "success", failing: "danger", waiting: "warn", drafts: "dim" };
+
+const failing = (p: Pull) => p.ci === "FAILURE" || p.ci === "ERROR";
+
+export function chips(p: Pull): Chip[] {
+  const out: Chip[] = [];
   const c = p.checks;
-  if (c && c.done < c.total) {
-    const tone: Tone = p.ci === "FAILURE" || p.ci === "ERROR" ? "danger" : "success";
-    out.push({ kind: "progressBar", id: id("checks"), done: c.done, running: c.running, total: c.total, text: `${c.done}/${c.total}`, tone });
-  }
-  if (p.reviewDecision === "APPROVED") out.push({ kind: "badge", id: id("review"), text: "✓ Approved", tone: "accent" });
-  else if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ kind: "badge", id: id("review"), text: "Changes requested", tone: "warn" });
-  else if (p.reviewDecision === "REVIEW_REQUIRED") out.push({ kind: "badge", id: id("review"), text: "Review needed", tone: "dim" });
-  if (p.codexThumbsUp) out.push({ kind: "badge", id: id("codex"), text: "Codex 👍", tone: "accent" });
-  else if (p.codexReviewing) out.push({ kind: "badge", id: id("codex"), text: "Codex 👀", tone: "dim" });
-  if (p.mergeable === "CONFLICTING") out.push({ kind: "badge", id: id("conflicts"), text: "Conflicts", tone: "warn" });
+  if (p.ci === "SUCCESS") out.push({ text: c ? `✓ CI ${c.total}/${c.total}` : "✓ CI", tone: "success" });
+  else if (failing(p)) out.push({ text: "✗ CI", tone: "danger" });
+  else if (p.ci !== null && !(c && c.done < c.total)) out.push({ text: "CI …", tone: "dim" });
+  if (p.reviewDecision === "APPROVED") out.push({ text: "✓ Approved", tone: "success" });
+  else if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ text: "Changes requested", tone: "warn" });
+  else if (p.reviewDecision === "REVIEW_REQUIRED") out.push({ text: "Review needed", tone: "dim" });
+  if (p.codexThumbsUp) out.push({ text: "Codex 👍", tone: "success" });
+  else if (p.codexReviewing) out.push({ text: "Codex 👀", tone: "accent" });
+  if (p.mergeable === "CONFLICTING") out.push({ text: "Conflicts", tone: "warn" });
   return out;
 }
 
 /** Green checks make merging the obvious action, running ones a neutral one, red ones a warning. */
-function mergeLook(p: Pull, compact: boolean): { label: string; icon?: string; style: ButtonStyle; tone?: Tone } {
-  const label = compact ? "Merge" : "Squash & merge";
-  if (isReady(p)) return { label, icon: "checkmark", style: "primary", tone: "success" };
-  if (p.ci === "FAILURE" || p.ci === "ERROR") return { label: "Merge anyway", icon: "exclamationmark.triangle", style: "normal", tone: "warn" };
-  return { label, style: "normal" };
+function mergeAction(p: Pull, state: ViewState): MergeAction | undefined {
+  if (!canMerge(p)) return undefined;
+  const look = isReady(p) ? "go" : failing(p) ? "risk" : "plain";
+  const label = look === "risk" ? "Merge anyway" : "Squash & merge";
+  return { look, label, short: look === "risk" ? "Anyway" : "Merge", disabled: state.merging !== undefined, busy: state.merging === p.number };
 }
 
-function row(p: Pull, state: ViewState, compact: boolean): Node {
-  const id = (name: string) => `pr-${p.number}-${name}`;
-  const mergeError = state.mergeErrors[p.number];
-  const actions: Node[] = [{ kind: "link", id: id("open"), label: "Open", url: p.url }];
-  actions.push({ kind: "button", id: id("doctor"), label: "CI Doctor", style: "plain" });
-  if (canMerge(p)) {
-    if (state.merging === p.number) actions.push({ kind: "progress", id: id("merging"), text: "Merging…" });
-    actions.push({ kind: "button", id: mergeButtonId(p.number), ...mergeLook(p, compact), disabled: state.merging !== undefined });
-  }
-  if (compact) {
-    const meta = badges(p);
-    return {
-      kind: "vstack", id: id("row"), spacing: 4, children: [
-        { kind: "hstack", id: id("info"), spacing: 6, children: [text(id("number"), `#${p.number}`, "monospaced", "dim"), text(id("title"), p.title, "body")] },
-        ...(meta.length === 0 ? [] : [{ kind: "hstack", id: id("meta"), spacing: 6, children: meta } as Node]),
-        ...(mergeError === undefined ? [] : [text(id("error"), mergeError, "caption", "warn")]),
-        { kind: "hstack", id: id("actions"), spacing: 8, align: "center", children: actions },
-      ],
-    };
-  }
-  // The number sits level with the title; the actions center on the whole row.
+function row(p: Pull, state: ViewState): Row {
+  const c = p.checks;
   return {
-    kind: "hstack", id: id("row"), spacing: 10, align: "center", children: [
-      {
-        kind: "hstack", id: id("info"), spacing: 10, children: [
-          text(id("number"), `#${p.number}`, "monospaced", "dim"),
-          {
-            kind: "vstack", id: id("main"), spacing: 4, children: [
-              text(id("title"), p.title, "body"),
-              { kind: "hstack", id: id("meta"), spacing: 6, children: [text(id("branch"), p.branch, "monospaced", "dim"), ...badges(p)] },
-              ...(mergeError === undefined ? [] : [text(id("error"), mergeError, "caption", "warn")]),
-            ],
-          },
-        ],
-      },
-      { kind: "spacer", id: id("spacer") },
-      ...actions,
-    ],
+    number: p.number, title: p.title, url: p.url, branch: p.branch, author: p.author, updatedAt: p.updatedAt, chips: chips(p),
+    ...(c && c.done < c.total ? { checks: { ...c, failed: failing(p) } } : {}),
+    ...(canMerge(p) ? { merge: mergeAction(p, state) } : {}),
+    ...(state.mergeErrors[p.number] === undefined ? {} : { error: state.mergeErrors[p.number] }),
   };
 }
 
-export const mergeButtonId = (number: number) => `pr-${number}-merge`;
-
-/** The pull request number a `Squash & merge` button id names, or `undefined`. */
-export function mergeTarget(id: string): number | undefined {
-  const match = /^pr-(\d{1,9})-merge$/.exec(id);
-  return match ? Number(match[1]) : undefined;
-}
-
-/** A merged pull request: no badges or actions beyond opening it, and when it merged. */
-function mergedRow(m: Merged, now: number, compact: boolean): Node {
-  const id = (name: string) => `merged-${m.number}-${name}`;
-  const ago = agoLabel(m.mergedAt, now);
-  if (compact) {
-    return {
-      kind: "vstack", id: id("row"), spacing: 4, children: [
-        { kind: "hstack", id: id("info"), spacing: 6, children: [text(id("number"), `#${m.number}`, "monospaced", "dim"), text(id("title"), m.title, "body")] },
-        {
-          kind: "hstack", id: id("meta"), spacing: 6, children: [
-            text(id("by"), ago === undefined ? `by ${m.author}` : `${ago} by ${m.author}`, "caption", "dim"),
-            { kind: "spacer", id: id("spacer") },
-            { kind: "link", id: id("open"), label: "Open", url: m.url },
-          ],
-        },
-      ],
-    };
-  }
+/** What the page draws: the buckets in order without empty ones, then the recently merged. */
+export function inboxModel(state: ViewState, now: number): InboxModel {
+  const buckets = classify(state.inbox?.pulls ?? []);
+  const counts = Object.fromEntries(BUCKETS.map((b) => [b, buckets[b].length])) as Record<Bucket, number>;
+  const ready = buckets.ready.length;
+  const all = state.mergeAll;
   return {
-    kind: "hstack", id: id("row"), spacing: 10, align: "center", children: [
-      {
-        kind: "hstack", id: id("info"), spacing: 10, children: [
-          text(id("number"), `#${m.number}`, "monospaced", "dim"),
-          {
-            kind: "vstack", id: id("main"), spacing: 4, children: [
-              text(id("title"), m.title, "body"),
-              {
-                kind: "hstack", id: id("meta"), spacing: 6, children: [
-                  text(id("branch"), m.branch, "monospaced", "dim"),
-                  text(id("by"), ago === undefined ? `by ${m.author}` : `merged ${ago} by ${m.author}`, "caption", "dim"),
-                ],
-              },
-            ],
-          },
-        ],
-      },
-      { kind: "spacer", id: id("spacer") },
-      { kind: "link", id: id("open"), label: "Open", url: m.url },
-    ],
+    repo: state.inbox?.repo,
+    fetchedAt: state.fetchedAt,
+    refreshing: state.refreshing,
+    error: state.error,
+    loading: !state.inbox && state.error === undefined,
+    counts,
+    sections: BUCKETS.filter((b) => buckets[b].length > 0).map((b) => ({ key: b, title: TITLES[b], tone: TONES[b], rows: buckets[b].map((p) => row(p, state)) })),
+    merged: state.inbox ? recentMerged(state.inbox.merged, now).map(({ number, title, url, branch, author, mergedAt }) => ({ number, title, url, branch, author, mergedAt })) : [],
+    ...(ready >= 2 || all ? { mergeAll: { count: ready, disabled: state.merging !== undefined, ...(all ? { progress: `Merging ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}) } } : {}),
   };
 }
 
-function section(key: string, title: string, count: number, tone: Tone, rows: Node[]): Node {
-  return {
-    kind: "vstack", id: `bucket-${key}`, spacing: 7, children: [
-      {
-        kind: "hstack", id: `bucket-${key}-header`, spacing: 6, children: [
-          text(`bucket-${key}-title`, title.toUpperCase(), "caption", "dim"),
-          text(`bucket-${key}-count`, `${count} PR${count === 1 ? "" : "s"}`, "caption", tone),
-        ],
-      },
-      ...rows,
-    ],
-  };
-}
-
-function content(state: ViewState, now: number, compact: boolean): Node[] {
-  if (!state.inbox) return state.error !== undefined ? [] : [centered("loading", { kind: "progress", id: "loading-progress", text: "Loading pull requests…" })];
-  const { pulls, merged } = state.inbox;
-  if (pulls.length === 0 && merged.length === 0) return [centered("clear", text("clear-text", "Inbox is clear.", "body", "dim"))];
-  const buckets = classify(pulls);
-  const sections: Node[] = pulls.length === 0
-    ? [text("clear-text", "Inbox is clear.", "body", "dim")]
-    : BUCKETS.filter((b) => buckets[b].length > 0).map((b) => section(b, TITLES[b], buckets[b].length, TONES[b], buckets[b].map((p) => row(p, state, compact))));
-  if (merged.length > 0) {
-    const shown = recentMerged(merged, now);
-    sections.push(section("merged", "Recently merged", shown.length, "success", shown.map((m) => mergedRow(m, now, compact))));
-  }
-  return [{ kind: "scroll", id: "scroll", axis: "vertical", child: { kind: "vstack", id: "buckets", spacing: 16, children: sections } }];
-}
-
-/**
- * The whole tab: header, error banner, then the buckets and the recently merged, or a placeholder.
- * `compact` fits the narrow right rail: rows stack title, badges and actions, without branches.
- */
-export function inboxView(state: ViewState, now: number, compact = false): Node {
-  const banner: Node[] = state.error === undefined ? [] : [{
-    kind: "hstack", id: "error", spacing: 8, children: [
-      text("error-text", state.error, "caption", "danger"),
-      { kind: "spacer", id: "error-spacer" },
-      { kind: "button", id: "retry", label: "Retry", style: "plain" },
-    ],
-  }];
-  return { kind: "vstack", id: "root", spacing: 10, children: [header(state, now, compact), { kind: "divider", id: "header-divider" }, ...banner, ...content(state, now, compact)] };
+/** The rail badge: the ready count, or none. */
+export function readyCount(state: ViewState): number {
+  return state.inbox ? classify(state.inbox.pulls).ready.length : 0;
 }

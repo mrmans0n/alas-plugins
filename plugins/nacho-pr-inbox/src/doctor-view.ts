@@ -1,121 +1,137 @@
-import type { Node, Tone } from "@alas/plugin";
 import type { DoctorState } from "./doctor-controller.ts";
-import { attemptKey, attemptNumbers, classifyEvidence, cut, failed, literal, statusLabel } from "./doctor.ts";
+import { attemptKey, attemptNumbers, classifyEvidence, failed, statusLabel } from "./doctor.ts";
+import type { Tone } from "./view.ts";
 
-const safe = (value: string) => [...value].slice(0, 3900).join("");
-const text = (id: string, value: string, tone?: Tone): Node => ({ kind: "text", id, text: safe(value), style: "caption", tone });
-const button = (id: string, label: string, disabled = false): Node => ({ kind: "button", id, label, disabled });
-/** Fences cannot be closed by log data. Chunk to fit even pathological backtick/tilde runs. */
-function quoted(id: string, value: string): Node[] {
-  const out: Node[] = [];
-  let remaining = value;
-  while (remaining && out.length < 4) {
-    const part = cut(remaining, 8 * 1024);
-    out.push({ kind: "markdown", id: `${id}-${out.length}`, text: literal(part) });
-    remaining = remaining.slice(part.length);
-  }
-  return out.length ? out : [text(id, "Unavailable", "dim")];
+export interface Note { text: string; tone?: Tone }
+export interface Option { id: string; label: string }
+/** One past result of the selected job: passed, failed, or anything else. */
+export type Outcome = "pass" | "fail" | "other";
+
+export interface JobModel {
+  id: number; name: string; status: string; failed: boolean; time: string; url: string;
+  notes: Note[]; steps: string[]; selected: boolean;
 }
 
-/** Same evidence and selection in the tab and the narrow rail. */
-export function doctorView(state: DoctorState, compact = false): Node {
+export interface EvidenceModel {
+  job: number; title: string; notes: Note[]; excerpt: string; comparing: boolean;
+  suggestion: { kind: string; text: string; links: string[] };
+  observations: { text: string; url: string }[];
+  /** The selected job's comparable runs, oldest first, per side. */
+  history: { pr: Outcome[]; base: Outcome[] };
+  canPrepare: boolean;
+}
+
+export interface DispatchModel {
+  token: number; brief: string; question: string; sessions: Option[]; session?: string; notes: Note[];
+  verification?: string; mismatch: boolean; canAcknowledge: boolean; acknowledged: boolean;
+  progress?: string; sent: boolean; canSend: boolean;
+}
+
+export interface DoctorModel {
+  number: number; title: string; url?: string; loading: boolean; busy: boolean;
+  /** Comparing history: jobs wait to be picked until it finishes. */
+  historyLoading: boolean;
+  error?: string; unavailable?: string;
+  head?: string; base?: string; notes: Note[];
+  runs: Option[]; run?: string; attempts: Option[]; attempt?: string; runNotes: Note[];
+  jobs: JobModel[]; evidence?: EvidenceModel; dispatch?: DispatchModel;
+}
+
+const outcome = (conclusion: string | null): Outcome => (conclusion === "success" ? "pass" : failed(conclusion) ? "fail" : "other");
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/** What the page draws for CI Doctor, in the tab and the rail alike. GitHub data stays plain text. */
+export function doctorModel(state: DoctorState): DoctorModel {
+  const pull = state.target!.pull;
   const e = state.evidence;
-  const contents: Node[] = [
-    { kind: "hstack", id: "ci-header", spacing: 8, children: [button("ci-back", "Back"), text("ci-title", "CI Doctor"), { kind: "spacer", id: "ci-spacer" }, button("ci-refresh", "Refresh", state.loading || state.historyLoading)] },
-    ...(state.loading ? [{ kind: "progress", id: "ci-loading", text: "Loading evidence…" } as Node] : []),
-    ...(state.error ? [text("ci-error", state.error, "danger")] : []),
-  ];
-  if (!e) {
-    contents.push(text("ci-unavailable", state.loading ? "Fetching PR identity…" : "Evidence unavailable. Retry after checking gh on the owning host.", "dim"));
-    return { kind: "vstack", id: "ci-root", spacing: 8, children: contents };
-  }
-  const detail: Node[] = [
-    text("ci-pr", `${e.repo} #${e.number} · ${e.title}`),
-    { kind: "link", id: "ci-pr-link", label: "Open pull request", url: e.url },
-    text("ci-head", `PR head: ${e.head.repo}@${e.head.sha}`),
-    text("ci-base", `Base: ${e.head.baseBranch}@${e.head.baseSha}`),
-    text("ci-age", `${state.cached ? "Cached evidence" : "Evidence fetched"}: ${new Date(e.fetchedAt).toISOString()}`, "dim"),
-    ...(state.historical ? [text("ci-historical", "Historical evidence: the PR changed or left this inbox. Refresh before investigating the current head.", "warn")] : []),
-    text("ci-window", `Observation window: ${e.since} through ${e.until}`, "dim"),
-    text("ci-bounds", "Bounded sample: 30 summaries, 5 comparison runs per side, 5 attempts/run, 100 jobs/attempt, 4 comparison logs. Absence is not proof of success.", "dim"),
-    ...e.coverage.slice(0, 50).map((c, i) => text(`ci-coverage-${i}`, c, "warn")),
-  ];
-  if (!e.runs.length) detail.push(text("ci-no-runs", "No associated Actions runs available in this bounded window. Other CI providers are not included.", "dim"));
-  const selected = e.attempts.find(a => attemptKey(a.run.id, a.run.attempt) === state.selectedAttempt);
-  const run = e.runs.find(r => r.id === selected?.run.id) ?? e.runs[0];
+  const model: DoctorModel = {
+    number: pull.number, title: e?.title ?? pull.title, url: e?.url ?? pull.url, loading: state.loading,
+    busy: state.loading || state.historyLoading, historyLoading: state.historyLoading, ...(state.error ? { error: state.error } : {}),
+    notes: [], runs: [], attempts: [], runNotes: [], jobs: [],
+  };
+  if (!e) return { ...model, unavailable: state.loading ? "Fetching PR identity…" : "Evidence unavailable. Retry after checking gh on the owning host." };
+  model.head = `PR head ${e.head.repo}@${e.head.sha}`;
+  model.base = `Base ${e.head.baseBranch}@${e.head.baseSha}`;
+  model.notes.push({ text: `${state.cached ? "Cached evidence" : "Evidence fetched"} ${iso(e.fetchedAt)}`, tone: "dim" });
+  if (state.historical) model.notes.push({ text: "Historical evidence: the PR changed or left this inbox. Refresh before investigating the current head.", tone: "warn" });
+  model.notes.push(
+    { text: `Observation window: ${e.since} through ${e.until}`, tone: "dim" },
+    { text: "Bounded sample: 30 summaries, 5 comparison runs per side, 5 attempts/run, 100 jobs/attempt, 4 comparison logs. Absence is not proof of success.", tone: "dim" },
+    ...e.coverage.slice(0, 50).map((text) => ({ text, tone: "warn" as Tone })),
+  );
+  if (!e.runs.length) model.notes.push({ text: "No associated Actions runs available in this bounded window. Other CI providers are not included.", tone: "dim" });
+
+  const selected = e.attempts.find((a) => attemptKey(a.run.id, a.run.attempt) === state.selectedAttempt);
+  const run = e.runs.find((r) => r.id === selected?.run.id) ?? e.runs[0];
   if (run) {
-    detail.push({ kind: "menu", id: "ci-runs", label: `Workflow/run: ${safe(run.name).slice(0, 120)} · ${run.id}`, items: e.runs.slice(0, 30).map(r => ({ id: String(r.id), label: safe(`${r.name} · run ${r.id} · ${statusLabel(r)} · ${r.sha.slice(0, 12)}`) })) });
-    detail.push({ kind: "menu", id: `ci-attempts-${run.id}`, label: `Attempt ${selected?.run.attempt ?? run.attempt}`, items: attemptNumbers(run.attempt).map(n => {
-      const a = e.attempts.find(a => a.run.id === run.id && a.run.attempt === n);
+    model.runs = e.runs.slice(0, 30).map((r) => ({ id: String(r.id), label: `${r.name} · run ${r.id} · ${statusLabel(r)} · ${r.sha.slice(0, 12)}` }));
+    model.run = String(run.id);
+    model.attempts = attemptNumbers(run.attempt).map((n) => {
+      const a = e.attempts.find((a) => a.run.id === run.id && a.run.attempt === n);
       return { id: String(n), label: `Attempt ${n} · ${a ? statusLabel(a.run) : "not loaded"}` };
-    }) });
-    if (run.attempt > 5) detail.push(text("ci-attempt-bound", `Attempts 2 through ${run.attempt - 4} omitted by the five-attempt bound.`, "warn"));
+    });
+    model.attempt = String(selected?.run.attempt ?? run.attempt);
+    if (run.attempt > 5) model.runNotes.push({ text: `Attempts 2 through ${run.attempt - 4} omitted by the five-attempt bound.`, tone: "warn" });
   }
-  if (selected) {
-    const r = selected.run;
-    detail.push(
-      text("ci-run-status", `${r.name} · run ${r.id} · attempt ${r.attempt} · ${statusLabel(r)}`),
-      text("ci-run-sha", `Recorded run SHA: ${r.sha}\nRef: ${r.branch} · event: ${r.event}\nA PR workflow may test a synthetic merge or custom checkout. The run SHA is not checkout proof.`),
-      text("ci-run-time", `Created ${r.created || "unknown"} · updated ${r.updated || "unknown"}`, "dim"),
-      { kind: "link", id: "ci-run-link", label: "Open run attempt", url: `${r.url}/attempts/${r.attempt}` },
-    );
-    if (r.sha !== e.head.sha) detail.push(text("ci-run-historical", "This run's recorded SHA differs from the current PR head. Treat it as historical or a distinct tested ref.", "warn"));
-    if (!selected.complete) detail.push(text("ci-jobs-incomplete", selected.error ?? "Jobs incomplete or unavailable.", "warn"));
-    if (!selected.jobs.length) detail.push(text("ci-no-jobs", "No jobs available for this attempt.", "dim"));
-    for (const j of selected.jobs) {
-      const failures = j.steps.filter(s => failed(s.conclusion));
-      detail.push({ kind: "vstack", id: `ci-job-${j.id}`, spacing: 4, children: [
-        text(`ci-job-name-${j.id}`, `${j.name} · ${statusLabel(j)}`, failed(j.conclusion) ? "danger" : "dim"),
-        ...(selected.cachedJobs?.includes(j.id) ? [text(`ci-job-cached-${j.id}`, `Cached job observation${selected.fetchedAt ? " from " + new Date(selected.fetchedAt).toISOString() : ""}; live refresh incomplete.`, "warn")] : []),
-        text(`ci-job-time-${j.id}`, `${j.started || "Start unknown"} → ${j.completed || "Not completed"}`, "dim"),
-        ...failures.slice(0, 5).map(s => text(`ci-step-${j.id}-${s.number}`, `Step ${s.number}: ${s.name} · ${statusLabel(s)}`, "danger")),
-        ...(failures.length > 5 ? [text(`ci-steps-omitted-${j.id}`, `${failures.length - 5} failed steps omitted here; open the job on GitHub for all steps.`, "warn")] : []),
-        { kind: "hstack", id: `ci-job-actions-${j.id}`, spacing: 6, children: [
-          { kind: "link", id: `ci-job-link-${j.id}`, label: "Open job", url: j.url },
-          button(`ci-job-open-${j.id}`, "Evidence", state.historyLoading),
-        ] },
-      ] });
-    }
-    const job = selected.jobs.find(j => j.id === state.selectedJob);
-    if (job) {
-      const log = e.logs[String(job.id)];
-      detail.push({ kind: "divider", id: "ci-evidence-divider" }, text("ci-evidence-title", `Failure evidence · ${job.name}`));
-      if (log?.error) detail.push(text("ci-log-error", log.error, "warn"));
-      if (log?.fetchedAt) detail.push(text("ci-log-time", `Log fetched ${new Date(log.fetchedAt).toISOString()}`, "dim"));
-      detail.push(text("ci-checkout", `Tested checkout observed in log: ${log?.checkout ?? "unknown"}. This is a log observation only.`, "dim"));
-      if (log?.truncated) detail.push(text("ci-log-truncated", "Bounded excerpt: lines or bytes were omitted. Host output may also be truncated; the missing tail was not searched.", "warn"));
-      detail.push(...quoted("ci-excerpt", log?.text || "Logs unavailable or still loading."));
-      if (state.historyLoading) detail.push({ kind: "progress", id: "ci-history-loading", text: "Comparing bounded PR/base history…" });
-      const suggestion = state.historyLoading ? { kind: "unknown", text: "Comparison in progress; classification is pending until the bounded sample finishes.", links: [job.url] } : classifyEvidence(e, job);
-      detail.push(text("ci-suggestion", `${suggestion.kind}: ${suggestion.text}`));
-      suggestion.links.forEach((url, i) => detail.push({ kind: "link", id: `ci-support-${i}`, label: `Supporting job ${i + 1}`, url }));
-      for (const [i, o] of e.observations.entries()) detail.push({ kind: "vstack", id: `ci-observation-${i}`, spacing: 3, children: [text(`ci-observation-text-${i}`, `${o.side} · ${o.run.name} · ${o.job.name}\n${o.run.sha} · run ${o.run.id} · attempt ${o.job.attempt} · ${statusLabel(o.job)}`), { kind: "link", id: `ci-observation-link-${i}`, label: "Comparison job", url: o.job.url }] });
-      detail.push(button(`ci-prepare-${job.id}`, "Investigate…", state.historical || state.loading || state.historyLoading || ["verifying", "sending"].includes(state.dispatch?.phase ?? "")));
-    }
+  if (!selected) return model;
+
+  const r = selected.run;
+  model.runNotes.push(
+    { text: `${r.name} · run ${r.id} · attempt ${r.attempt} · ${statusLabel(r)}` },
+    { text: `Recorded run SHA ${r.sha} · ref ${r.branch} · event ${r.event}. A PR workflow may test a synthetic merge or custom checkout; the run SHA is not checkout proof.`, tone: "dim" },
+    { text: `Created ${r.created || "unknown"} · updated ${r.updated || "unknown"}`, tone: "dim" },
+  );
+  if (r.sha !== e.head.sha) model.runNotes.push({ text: "This run's recorded SHA differs from the current PR head. Treat it as historical or a distinct tested ref.", tone: "warn" });
+  if (!selected.complete) model.runNotes.push({ text: selected.error ?? "Jobs incomplete or unavailable.", tone: "warn" });
+  if (!selected.jobs.length) model.runNotes.push({ text: "No jobs available for this attempt.", tone: "dim" });
+  model.jobs = selected.jobs.map((j) => {
+    const failures = j.steps.filter((s) => failed(s.conclusion));
+    return {
+      id: j.id, name: j.name, status: statusLabel(j), failed: failed(j.conclusion), url: j.url, selected: j.id === state.selectedJob,
+      time: `${j.started || "Start unknown"} → ${j.completed || "Not completed"}`,
+      notes: selected.cachedJobs?.includes(j.id) ? [{ text: `Cached job observation${selected.fetchedAt ? " from " + iso(selected.fetchedAt) : ""}; live refresh incomplete.`, tone: "warn" }] : [],
+      steps: [
+        ...failures.slice(0, 5).map((s) => `Step ${s.number}: ${s.name} · ${statusLabel(s)}`),
+        ...(failures.length > 5 ? [`${failures.length - 5} failed steps omitted here; open the job on GitHub for all steps.`] : []),
+      ],
+    };
+  });
+
+  const job = selected.jobs.find((j) => j.id === state.selectedJob);
+  if (job) {
+    const log = e.logs[String(job.id)];
+    const notes: Note[] = [];
+    if (log?.error) notes.push({ text: log.error, tone: "warn" });
+    if (log?.fetchedAt) notes.push({ text: `Log fetched ${iso(log.fetchedAt)}`, tone: "dim" });
+    notes.push({ text: `Tested checkout observed in log: ${log?.checkout ?? "unknown"}. This is a log observation only.`, tone: "dim" });
+    if (log?.truncated) notes.push({ text: "Bounded excerpt: lines or bytes were omitted. Host output may also be truncated; the missing tail was not searched.", tone: "warn" });
+    const same = e.observations.filter((o) => o.job.name === job.name).sort((a, b) => (a.run.created < b.run.created ? -1 : a.run.created > b.run.created ? 1 : 0));
+    model.evidence = {
+      job: job.id, title: `Failure evidence · ${job.name}`, notes, excerpt: log?.text || "Logs unavailable or still loading.",
+      comparing: state.historyLoading,
+      suggestion: state.historyLoading ? { kind: "unknown", text: "Comparison in progress; classification is pending until the bounded sample finishes.", links: [job.url] } : classifyEvidence(e, job),
+      observations: e.observations.map((o) => ({ text: `${o.side} · ${o.run.name} · ${o.job.name} · ${o.run.sha} · run ${o.run.id} · attempt ${o.job.attempt} · ${statusLabel(o.job)}`, url: o.job.url })),
+      history: { pr: same.filter((o) => o.side === "pr").map((o) => outcome(o.job.conclusion)), base: same.filter((o) => o.side === "base").map((o) => outcome(o.job.conclusion)) },
+      canPrepare: !(state.historical || state.loading || state.historyLoading || ["verifying", "sending"].includes(state.dispatch?.phase ?? "")),
+    };
   }
+
   const d = state.dispatch;
   if (d) {
-    detail.push({ kind: "divider", id: "ci-dispatch-divider" }, text("ci-preview-title", "Review investigation brief"), ...quoted("ci-brief", d.text));
-    detail.push({ kind: "textField", id: `ci-question-${d.token}`, value: safe(d.question), placeholder: "Investigation question", multiline: true });
-    detail.push(text("ci-question-help", "Command-Return applies the question to the brief. Select the brief text to copy it.", "dim"));
-    const candidates = state.snapshot.worktrees.flatMap(w => w.sessions.filter(s => /^[A-Za-z0-9_-]{1,48}$/.test(s.id) && !["detached", "failed", "unknown"].includes(s.state)).map(s => ({ id: s.id, label: safe(`${w.branch} · ${s.title} · ${s.agent} · ${s.state}`) })));
-    detail.push(text("ci-session-help", "Choose a session explicitly. The host checks live chat availability on send; terminal-only sessions are refused.", "dim"));
-    if (candidates.length) detail.push({ kind: "menu", id: `ci-sessions-${d.token}`, label: d.session ? `Session: ${d.session}` : "Select a session…", items: candidates.slice(0, 64) });
-    else detail.push(text("ci-no-sessions", "No live session candidates. Open a chat in the correct repository worktree, or copy the brief.", "warn"));
-    if (candidates.length > 64) detail.push(text("ci-session-bound", "Only the first 64 session candidates are shown.", "warn"));
-    if (d.verification) {
-      detail.push(text("ci-verified", `Verified ${d.verification.repo} · worktree ${d.verification.worktree}\nHEAD ${d.verification.sha}\nChecked ${new Date(d.verification.at).toISOString()}`, "dim"));
-      if (d.verification.mismatch) {
-        detail.push(text("ci-mismatch", "This checkout/repository differs from the PR head. The agent must investigate the identified commits.", "warn"));
-        detail.push(button("ci-acknowledge", d.acknowledged ? "Mismatch acknowledged" : "Acknowledge checkout mismatch", d.acknowledged || d.phase !== "preview"));
-      }
-    }
-    if (d.error) detail.push(text("ci-dispatch-error", d.error, "warn"));
-    if (d.phase === "verifying" || d.phase === "sending") detail.push({ kind: "progress", id: "ci-dispatch-progress", text: d.phase === "verifying" ? "Verifying session and current identities…" : "Waiting for the host to accept the prompt. Do not resend." });
-    if (d.phase === "sent") detail.push(text("ci-sent", "Sent once to the selected session.", "success"));
-    detail.push(button("ci-send", "Send investigation", d.phase !== "preview" || !d.session || !d.verification || (d.verification.mismatch && !d.acknowledged) || state.historical));
+    const candidates = state.snapshot.worktrees.flatMap((w) => w.sessions.filter((s) => /^[A-Za-z0-9_-]{1,48}$/.test(s.id) && !["detached", "failed", "unknown"].includes(s.state)).map((s) => ({ id: s.id, label: `${w.branch} · ${s.title} · ${s.agent} · ${s.state}` })));
+    const notes: Note[] = [{ text: "Choose a session explicitly. The host checks live chat availability on send; terminal-only sessions are refused.", tone: "dim" }];
+    if (!candidates.length) notes.push({ text: "No live session candidates. Open a chat in the correct repository worktree, or copy the brief.", tone: "warn" });
+    if (candidates.length > 64) notes.push({ text: "Only the first 64 session candidates are shown.", tone: "warn" });
+    const v = d.verification;
+    model.dispatch = {
+      token: d.token, brief: d.text, question: d.question, sessions: candidates.slice(0, 64), ...(d.session ? { session: d.session } : {}), notes,
+      ...(v ? { verification: `Verified ${v.repo} · worktree ${v.worktree} · HEAD ${v.sha} · checked ${iso(v.at)}` } : {}),
+      mismatch: !!v?.mismatch, acknowledged: d.acknowledged, canAcknowledge: !!v?.mismatch && !d.acknowledged && d.phase === "preview",
+      ...(d.error ? { notes: [...notes, { text: d.error, tone: "warn" as Tone }] } : {}),
+      ...(d.phase === "verifying" || d.phase === "sending" ? { progress: d.phase === "verifying" ? "Verifying session and current identities…" : "Waiting for the host to accept the prompt. Do not resend." } : {}),
+      sent: d.phase === "sent",
+      canSend: !(d.phase !== "preview" || !d.session || !v || (v.mismatch && !d.acknowledged) || state.historical),
+    };
   }
-  // Compactness comes from native width wrapping, with no fixed-width content.
-  contents.push({ kind: "scroll", id: "ci-scroll", axis: "vertical", child: { kind: "vstack", id: "ci-detail", spacing: compact ? 6 : 9, children: detail } });
-  return { kind: "vstack", id: "ci-root", spacing: 8, children: contents };
+  return model;
 }
