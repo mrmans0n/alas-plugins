@@ -27,6 +27,7 @@ export interface Row {
   url: string;
   branch: string;
   author: string;
+  avatar?: string;
   /** ISO 8601; the page words it relative to its own clock. */
   updatedAt: string;
   chips: Chip[];
@@ -38,7 +39,7 @@ export interface Row {
 
 export interface Section { key: Bucket; title: string; tone: Tone; rows: Row[] }
 
-export interface MergedRow { number: number; title: string; url: string; branch: string; author: string; mergedAt: string }
+export interface MergedRow { number: number; title: string; url: string; branch: string; author: string; avatar?: string; mergedAt: string }
 
 export interface InboxModel {
   repo?: string;
@@ -85,7 +86,7 @@ function mergeAction(p: Pull, state: ViewState): MergeAction | undefined {
 function row(p: Pull, state: ViewState): Row {
   const c = p.checks;
   return {
-    number: p.number, title: p.title, url: p.url, branch: p.branch, author: p.author, updatedAt: p.updatedAt, chips: chips(p),
+    number: p.number, title: p.title, url: p.url, branch: p.branch, author: p.author, ...(p.avatar ? { avatar: p.avatar } : {}), updatedAt: p.updatedAt, chips: chips(p),
     ...(c && c.done < c.total ? { checks: { ...c, failed: failing(p) } } : {}),
     ...(canMerge(p) ? { merge: mergeAction(p, state) } : {}),
     ...(state.mergeErrors[p.number] === undefined ? {} : { error: state.mergeErrors[p.number] }),
@@ -106,7 +107,7 @@ export function inboxModel(state: ViewState, now: number): InboxModel {
     loading: !state.inbox && state.error === undefined,
     counts,
     sections: BUCKETS.filter((b) => buckets[b].length > 0).map((b) => ({ key: b, title: TITLES[b], tone: TONES[b], rows: buckets[b].map((p) => row(p, state)) })),
-    merged: state.inbox ? recentMerged(state.inbox.merged, now).map(({ number, title, url, branch, author, mergedAt }) => ({ number, title, url, branch, author, mergedAt })) : [],
+    merged: state.inbox ? recentMerged(state.inbox.merged, now).map(({ number, title, url, branch, author, avatar, mergedAt }) => ({ number, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })) : [],
     ...(ready >= 2 || all ? { mergeAll: { count: ready, disabled: state.merging !== undefined, ...(all ? { progress: `Merging ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}) } } : {}),
   };
 }

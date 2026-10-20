@@ -1,5 +1,13 @@
 # CI Doctor validation
 
+## Avatars (0.13.1)
+
+Authors' avatars come from the list query's `avatarUrl(size:64)`. The plugin
+passes on only `https://avatars.githubusercontent.com/…` URLs, matched by a
+strict pattern because the plugin runtime has no `URL`. Others fall back to
+initials. Checked in the stub host with real avatars for a user and a bot, a
+missing one, the hover name, and the 240-point rail.
+
 ## Web page (0.13.0)
 
 The tab and the rail are web pages since 0.13.0. `view.ts` and
