@@ -8,6 +8,8 @@ export interface Pull {
   url: string;
   isDraft: boolean;
   author: string;
+  /** The author's GitHub avatar, when it is on the host the page may load images from. */
+  avatar?: string;
   branch: string;
   /** ISO 8601, so it sorts as text. */
   updatedAt: string;
@@ -35,6 +37,7 @@ export interface Merged {
   title: string;
   url: string;
   author: string;
+  avatar?: string;
   branch: string;
   /** ISO 8601, so it sorts as text. */
   mergedAt: string;
@@ -75,6 +78,16 @@ function isObject(value: unknown): value is Record<string, any> {
 
 const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
+/**
+ * `{ avatar }` when `author` has an avatar on avatars.githubusercontent.com, the manifest's only `network` host
+ * and so the only one the page may show images from; others, such as GitHub Enterprise ones, fall back to initials.
+ */
+function avatar(author: any): { avatar?: string } {
+  const url = str(author?.avatarUrl);
+  // No `URL` in the plugin runtime: a strict pattern, so no userinfo, port or other host can slip in.
+  return url !== null && url.length <= 512 && /^https:\/\/avatars\.githubusercontent\.com\/[A-Za-z0-9/?=&%._-]*$/.test(url) ? { avatar: url } : {};
+}
+
 /** The sum of the `{state, count}` entries whose state is in `states`. */
 function countOf(entries: unknown, states: string[]): number {
   if (!Array.isArray(entries)) return 0;
@@ -103,6 +116,7 @@ function pull(node: unknown): Pull | undefined {
     url,
     isDraft,
     author: str(node.author?.login) ?? "ghost",
+    ...avatar(node.author),
     branch: headRefName,
     updatedAt,
     reviewDecision: str(node.reviewDecision),
@@ -120,7 +134,7 @@ function merged(node: unknown): Merged | undefined {
   const { number, title, url, headRefName, mergedAt } = node;
   if (!Number.isInteger(number) || number <= 0 || typeof title !== "string" || typeof url !== "string" || !url.startsWith("https://")) return undefined;
   if (typeof headRefName !== "string" || typeof mergedAt !== "string") return undefined;
-  return { number, title, url, author: str(node.author?.login) ?? "ghost", branch: headRefName, mergedAt };
+  return { number, title, url, author: str(node.author?.login) ?? "ghost", ...avatar(node.author), branch: headRefName, mergedAt };
 }
 
 /** The merged pull requests, the most recent first. GitHub cannot order by merge time, so the query fetches the recently updated ones and this sorts them. */

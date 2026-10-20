@@ -97,6 +97,14 @@ test("recently merged pull requests come in the order given, with when and who",
   assert.deepEqual(m.merged.map((r) => [r.number, r.author, r.url]), [[9, "nacho", "https://github.com/o/r/pull/9"], [8, "nacho", "https://github.com/o/r/pull/8"]]);
 });
 
+test("rows carry the author's avatar when there is one", () => {
+  const avatar = "https://avatars.githubusercontent.com/u/1?v=4";
+  const m = model({ inbox: inbox([pull(1, { avatar }), pull(2)], [{ ...merged(9, new Date(NOW).toISOString()), avatar }]) });
+  assert.deepEqual(m.sections[0].rows.map((r) => r.avatar), [undefined, avatar]);
+  assert.equal(m.merged[0].avatar, avatar);
+  assert.ok(!("avatar" in m.sections[0].rows[0]));
+});
+
 test("recently merged lists the last day's, or the last 5 when fewer", () => {
   const hour = 3600_000;
   const numbers = (list: Merged[]) => model({ inbox: inbox([], list) }).merged.map((r) => r.number);

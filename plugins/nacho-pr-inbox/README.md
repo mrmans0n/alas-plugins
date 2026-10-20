@@ -22,7 +22,9 @@ plugins/nacho-pr-inbox/build.sh
 Set `ALAS_APP_SUPPORT_DIR` to install into an isolated Alas profile instead.
 Approve it in **Settings → Plugins**. The approval sheet lists its declared
 commands, permission to send a reviewed brief to an agent session, and that it
-shows its own web content with no network access. `ui.js` is covered by the
+shows its own web content, with images from `avatars.githubusercontent.com`.
+That host is its only `network` entry, so it is also allowed web requests there
+(it makes none): it is what lets the page show authors' GitHub avatars. `ui.js` is covered by the
 approval, so every rebuild that changes it asks again.
 
 ## Use
@@ -39,7 +41,9 @@ most recently updated first within each group:
 | Drafts | Drafts |
 
 The header shows a tile per group with its count; click one to show only that
-group, and again to show them all. Each row shows the author's initials, the branch and chips for checks, review, Codex (👍 once it
+group, and again to show them all. Each row shows the author's GitHub avatar (their initials
+while it loads, or when it is not on `avatars.githubusercontent.com`, as on GitHub Enterprise),
+with the account name on hover, then the branch and chips for checks, review, Codex (👍 once it
 approves, 👀 while it reviews, nothing otherwise) and conflicts, and opens the pull request in the browser. While checks run, a
 bar beside the checks badge fills with the finished ones in green (red once
 one failed), the running ones in yellow, and the rest gray, captioned

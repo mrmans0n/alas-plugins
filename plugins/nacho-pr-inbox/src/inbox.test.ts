@@ -156,3 +156,19 @@ test("the ago label counts minutes, hours, then days", () => {
   assert.equal(agoLabel("2026-10-05T11:00:00Z", now), "3d ago");
   assert.equal(agoLabel("yesterday", now), undefined);
 });
+
+test("avatars come only from GitHub's avatar host, for open and merged pull requests alike", () => {
+  const person = "https://avatars.githubusercontent.com/u/534307?s=64&u=6cec9fe09d844899433f3b7aae97e8d90e3119f5&v=4";
+  const bot = "https://avatars.githubusercontent.com/in/2740?s=64&v=4";
+  const of = (avatarUrl: unknown) => parseInbox(reply([node(1, { author: { login: "nacho", avatarUrl } })]))!.pulls[0].avatar;
+  assert.equal(of(person), person);
+  assert.equal(of(bot), bot);
+  for (const url of [undefined, null, 7, "http://avatars.githubusercontent.com/u/1", "https://avatars.githubusercontent.com.evil.com/u/1",
+    "https://evil.com/?https://avatars.githubusercontent.com/u/1", "https://avatars.githubusercontent.com@evil.com/u/1",
+    "https://avatars.githubusercontent.com:8443/u/1", "https://ghe.example.com/avatars/u/1", `https://avatars.githubusercontent.com/u/1?${"a".repeat(600)}`,
+    "https://avatars.githubusercontent.com/u/1\"><script>"]) {
+    assert.equal(of(url), undefined, String(url));
+  }
+  const merged = parseInbox(reply([], [mergedNode(9, "2026-10-01T00:00:00Z", { author: { login: "renovate", avatarUrl: bot } })]))!.merged[0];
+  assert.equal(merged.avatar, bot);
+});

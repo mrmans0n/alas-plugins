@@ -104,16 +104,31 @@ function select(options: Option[], value: string | undefined, placeholder: strin
   return s;
 }
 
-/** A stable color per author for the initials avatar. */
-function avatar(login: string): HTMLElement {
+/**
+ * The author's GitHub avatar over their initials, which show through while it loads or when it can't, with the account
+ * name on hover. `small` is the merged rows' size; `badge` marks the corner.
+ */
+function avatar(login: string, url: string | undefined, small = false, badge?: string): HTMLElement {
   let hash = 0;
   for (const ch of login) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0;
+  const bot = /\[bot\]$/.test(login);
   const name = login.replace(/\[bot\]$/, "");
   const parts = name.split(/[-_.\s]+/).filter(Boolean);
   const initials = (parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2)).toUpperCase();
-  const a = el("div", "avatar", initials);
+  const a = el("div", `avatar${small ? " small" : ""}`, el("span", "initials", initials));
   a.style.setProperty("--hue", String(hash % 360));
-  a.title = login;
+  a.dataset.tip = bot ? `${name} (bot)` : `@${login}`;
+  a.setAttribute("aria-label", a.dataset.tip);
+  if (url) {
+    const img = el("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("error", () => img.remove());
+    img.src = url;
+    a.append(img);
+  }
+  if (badge) a.append(el("span", "avatar-badge", badge));
   return a;
 }
 
@@ -186,7 +201,7 @@ function row(r: Row, sectionTone: Tone): HTMLElement {
   }
   const ago = agoLabel(r.updatedAt, now);
   return el("article", `pr ${tone(sectionTone)}`,
-    avatar(r.author),
+    avatar(r.author, r.avatar),
     el("div", "pr-main",
       el("div", "pr-title", el("span", "num", `#${r.number}`), r.title),
       el("div", "meta",
@@ -202,7 +217,9 @@ function row(r: Row, sectionTone: Tone): HTMLElement {
 }
 
 function section(s: Section, m: InboxModel): HTMLElement {
-  const head = el("h4", `section-head ${tone(s.tone)}`, el("span", "dot"), s.title, el("span", "count", String(s.rows.length)), el("span", "grow"));
+  // The rail is too narrow for the long title next to Merge all: it takes its tile's.
+  const title = compact() && s.key === "ready" ? "Ready" : s.title;
+  const head = el("h4", `section-head ${tone(s.tone)}`, el("span", "dot"), title, el("span", "count", String(s.rows.length)), el("span", "grow"));
   if (s.key === "ready" && m.mergeAll) {
     const all = m.mergeAll;
     head.append(all.progress
@@ -215,7 +232,7 @@ function section(s: Section, m: InboxModel): HTMLElement {
 function mergedRow(r: MergedRow): HTMLElement {
   const ago = agoLabel(r.mergedAt, Date.now());
   return el("article", "pr merged",
-    el("span", "tick", "✓"),
+    avatar(r.author, r.avatar, true, "✓"),
     el("div", "pr-main",
       el("div", "pr-title", el("span", "num", `#${r.number}`), r.title),
       compact() && el("div", "meta", el("span", "when", ago === undefined ? `by ${r.author}` : `${ago} by ${r.author}`)),
@@ -476,14 +493,24 @@ button, select, textarea { font: inherit; color: inherit; }
 .section-head { margin: 0 0 2px; display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
 .section-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent); }
 .section-head .count { color: var(--c); font-weight: 650; }
-.section-head .btn { text-transform: none; letter-spacing: 0; }
+.section-head .btn, .section-head .updated { flex: none; text-transform: none; letter-spacing: 0; }
 
 .pr { position: relative; display: flex; align-items: center; gap: 12px; padding: 11px 12px; background: var(--card); border: 1px solid var(--line);
   border-radius: 10px; transition: transform .12s, border-color .12s; }
-.pr:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--c) 50%, var(--line)); }
+.pr:hover { z-index: 1; transform: translateY(-1px); border-color: color-mix(in srgb, var(--c) 50%, var(--line)); }
 .pr::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: var(--c); }
-.avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #fff;
-  background: linear-gradient(135deg, hsl(var(--hue) 65% 52%), hsl(calc(var(--hue) + 40) 65% 42%)); }
+.avatar { position: relative; flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, hsl(var(--hue) 65% 52%), hsl(calc(var(--hue) + 40) 65% 42%));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent); cursor: default; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.avatar.small { width: 22px; height: 22px; font-size: 9px; }
+.avatar-badge { position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 8px; font-weight: 800; color: #06210f; background: var(--ok); box-shadow: 0 0 0 2px var(--bg); }
+.avatar[data-tip]::after { content: attr(data-tip); position: absolute; left: -4px; top: calc(100% + 6px); z-index: 10; white-space: nowrap;
+  padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(0, 0, 0, .25); opacity: 0; transform: translateY(-2px);
+  transition: opacity .12s, transform .12s; pointer-events: none; }
+.avatar[data-tip]:hover::after { opacity: 1; transform: none; }
 .pr-main { flex: 1; min-width: 0; }
 .pr-title { font-weight: 560; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .num { font-family: var(--mono); color: var(--muted); font-weight: 400; margin-right: 6px; }
@@ -501,7 +528,6 @@ button, select, textarea { font: inherit; color: inherit; }
 .actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .pr.merged { background: transparent; border-style: dashed; padding: 8px 12px; }
 .pr.merged::before { display: none; }
-.tick { color: var(--ok); font-weight: 700; }
 
 .label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 8px 0 2px; }
 .note { font-size: 11.5px; color: var(--c); }
@@ -550,6 +576,7 @@ body.compact .pr { flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 
 body.compact .pr.merged { align-items: center; }
 body.compact .section-head { letter-spacing: .05em; white-space: nowrap; }
 body.compact .avatar { width: 22px; height: 22px; font-size: 9px; }
+body.compact .avatar.small { width: 18px; height: 18px; font-size: 8px; }
 body.compact .pr-title { white-space: normal; font-size: 12.5px; }
 body.compact .actions { width: 100%; justify-content: flex-end; }
 body.compact .pr.merged .btn { margin-left: auto; }
