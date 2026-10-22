@@ -57,6 +57,17 @@ A merge request already in a train is shown only in the train strip. The header
 shows a tile per group with its count; click one to show only that group, and
 again to show them all.
 
+**All | Mine.** A toggle in the tab's header (not in the sidebar rail) switches
+between every MR and only yours (authored by the `glab` user). With **Mine** on,
+the groups, their counts and **Recently merged** show only your MRs (your merges
+are picked first, then the usual last-24-hours-or-5 trim applies), and an
+empty result says "No open merge requests of yours." **Add all** follows it: it
+covers only your ready MRs, in its count and label and in the re-check before
+each add, so an MR that is not yours is never added while **Mine** is on. The
+train strip stays complete, since your place in the train depends on the other
+cars. The choice is remembered per project; it starts on **All**. The toggle is
+hidden while `glab` has not told the plugin who you are.
+
 **Train strip.** One strip per target branch with an active merge train, the
 cars in merge order, each with its `!iid` and a status: `merging ✓`, `⏳ done/total`
 while its pipeline runs, `queued`, `restarting`, or `failed`. Your cars carry a

@@ -2,7 +2,7 @@
   "id": "io.nlopez.nacho-mr-inbox",
   "name": "Nacho's MR Inbox",
   "summary": "The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "api": 17,
   "requires": { "codeHost": "gitlab" },
   "entry": "plugin.js",

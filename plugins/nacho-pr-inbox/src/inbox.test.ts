@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { agoLabel, bucketOf, classify, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
 
 /** One node as `gh api graphql` returns it for the manifest's query. */
@@ -17,8 +18,8 @@ const node = (number: number, fields: object = {}) => ({
   reactions: { nodes: [{ user: { login: "chatgpt-codex-connector[bot]" } }] },
   ...fields,
 });
-const reply = (nodes: unknown[], merged?: unknown[]) =>
-  JSON.stringify({ data: { repository: { nameWithOwner: "o/r", pullRequests: { nodes }, ...(merged && { merged: { nodes: merged } }) } } });
+const reply = (nodes: unknown[], merged?: unknown[], viewer: unknown = { login: "nacho" }) =>
+  JSON.stringify({ data: { ...(viewer !== undefined && { viewer }), repository: { nameWithOwner: "o/r", pullRequests: { nodes }, ...(merged && { merged: { nodes: merged } }) } } });
 const mergedNode = (number: number, mergedAt: string, fields: object = {}) => ({
   number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, author: { login: "nacho" }, headRefName: `nacho/pr-${number}`, mergedAt, ...fields,
 });
@@ -171,4 +172,18 @@ test("avatars come only from GitHub's avatar host, for open and merged pull requ
   }
   const merged = parseInbox(reply([], [mergedNode(9, "2026-10-01T00:00:00Z", { author: { login: "renovate", avatarUrl: bot } })]))!.merged[0];
   assert.equal(merged.avatar, bot);
+});
+
+test("reads the viewer's login, or an empty one when the reply has none", () => {
+  assert.equal(parseInbox(reply([node(1)]))!.viewer, "nacho");
+  const without = JSON.parse(reply([node(1)]));
+  delete without.data.viewer;
+  assert.equal(parseInbox(JSON.stringify(without))!.viewer, "");
+  assert.equal(parseInbox(reply([node(1)], undefined, { login: 7 }))!.viewer, "");
+  assert.equal(parseInbox(reply([node(1)], undefined, null))!.viewer, "");
+});
+
+test("the manifest's list query asks for the viewer's login", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../plugin.json", import.meta.url), "utf8"));
+  assert.match(manifest.processes.find((p: any) => p.id === "list").command.join(" "), /viewer\{login\}/);
 });

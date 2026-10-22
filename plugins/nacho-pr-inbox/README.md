@@ -58,6 +58,18 @@ With two or more ready, **Merge all** squash-merges each of them, one at a time.
 Before each merge it lists the pull requests again and skips one that is no
 longer ready; it stops at the first failure, which shows under that row.
 
+**All | Mine.** A toggle in the tab's header, and on its own row in the sidebar
+rail, switches between every pull request and only yours (authored by the `gh`
+user; bots such as Renovate are not yours). With **Mine** on, the groups, their
+counts and **Recently merged** show only yours, and an empty result says
+"Nothing of yours is open." **Merge all** follows it: it covers only your ready
+pull requests, in its count and in the re-check before each merge, so one that
+is not yours is never merged by it while **Mine** is on. A merge button on a
+single row still works. **Recently merged** takes your merges first and then
+applies the 24-hour / last-5 rule. The rail badge still counts every ready pull
+request. The choice is remembered per project and starts on **All**. The toggle
+is hidden while the plugin does not know who you are.
+
 Below the open ones, **Recently merged** lists the pull requests merged in the
 last 24 hours, or the last 5 when fewer, the most recently merged first, each
 with its branch, when it merged and who wrote it, and a link to open it. GitHub cannot sort by merge time, so the query fetches the 50 most
@@ -117,7 +129,7 @@ need explicit Retry/Refresh; rate limits pause detailed GitHub work until reset.
 
 | Id | Command |
 |---|---|
-| `list` | `gh api graphql -F owner={owner} -F name={repo} -f query=…`, a fixed query for the open pull requests and the recently merged ones |
+| `list` | `gh api graphql -F owner={owner} -F name={repo} -f query=…`, a fixed query for the open pull requests and the recently merged ones; it also reads the viewer's login for **Mine** |
 | `merge` | `gh pr merge --squash --delete-branch`, plus the pull request number |
 | `ci-api` | `gh api`, plus an explicit repository REST endpoint, GET, response headers and bounded JSON projection |
 | `ci-remotes` | `git remote -v`, in the explicitly selected session worktree |

@@ -164,8 +164,16 @@ function header(m: InboxModel): HTMLElement {
     });
     tiles.append(tile);
   }
+  const scope = el("div", "segmented");
+  scope.setAttribute("role", "group");
+  scope.setAttribute("aria-label", "Show");
+  for (const [label, mine] of [["All", false], ["Mine", true]] as const) {
+    const b = button(label, () => post({ type: "scope", mine }), `small${m.scope.mineOnly === mine ? " on" : ""}`);
+    b.setAttribute("aria-pressed", String(m.scope.mineOnly === mine));
+    scope.append(b);
+  }
   return el("header", "hero",
-    el("div", "hero-row", el("div", "logo", "⑂"), title, el("span", "grow"), status, button(["⟳", !compact() && " Refresh"], () => post({ type: "refresh" }), "ghost", m.refreshing, "Refresh")),
+    el("div", "hero-row", el("div", "logo", "⑂"), title, el("span", "grow"), status, !compact() && m.scope.available && scope, button(["⟳", !compact() && " Refresh"], () => post({ type: "refresh" }), "ghost", m.refreshing, "Refresh")),
     m.project !== undefined && !compact() && tiles,
   );
 }
@@ -286,9 +294,10 @@ function inbox(m: InboxModel): HTMLElement[] {
     return out;
   }
   const sections = m.sections.filter((s) => filter === undefined || filter === s.key);
-  if (m.sections.length === 0 && m.merged.length === 0) body.append(centered(el("div", "clear-icon", "✓"), el("span", "dim", "Inbox is clear.")));
+  const none = m.scope.mineOnly && m.scope.hidden > 0 ? "No open merge requests of yours." : "Inbox is clear.";
+  if (m.sections.length === 0 && m.merged.length === 0) body.append(centered(el("div", "clear-icon", "✓"), el("span", "dim", none)));
   else {
-    if (m.sections.length === 0 && filter === undefined) body.append(el("div", "dim clear-line", "Inbox is clear."));
+    if (m.sections.length === 0 && filter === undefined) body.append(el("div", "dim clear-line", none));
     body.append(...sections.map((s) => section(s, m)));
     if (m.merged.length > 0 && (filter === undefined || filter === "merged")) {
       body.append(el("section", "section", el("h4", "section-head tone-accent", el("span", "dot"), "Recently merged", el("span", "count", String(m.merged.length))), ...m.merged.map(mergedRow)));
@@ -493,6 +502,11 @@ button, select, textarea { font: inherit; color: inherit; }
 .btn:hover:not(:disabled) { background: var(--card-hi); }
 .btn:disabled { opacity: .45; cursor: default; }
 .btn.ghost { background: transparent; }
+.segmented { display: inline-flex; }
+.segmented .btn { border-radius: 0; }
+.segmented .btn:first-child { border-radius: 8px 0 0 8px; }
+.segmented .btn:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+.segmented .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; position: relative; }
 .btn.small { padding: 3px 8px; font-size: 11px; }
 .btn.go { background: linear-gradient(180deg, color-mix(in srgb, var(--ok) 88%, #fff), var(--ok)); color: #06210f; border-color: transparent;
   font-weight: 650; box-shadow: 0 4px 14px color-mix(in srgb, var(--ok) 30%, transparent); }
@@ -594,7 +608,7 @@ button, select, textarea { font: inherit; color: inherit; }
 .brief { max-height: 260px; }
 .question { width: 100%; min-height: 64px; resize: vertical; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); padding: 8px; }
 
-.train { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.train { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; flex: none; }
 .train .loco { font-size: 18px; }
 .train-cars { display: flex; align-items: center; }
 .coupler { width: 14px; height: 2px; background: var(--line); flex: none; }
@@ -603,6 +617,7 @@ button, select, textarea { font: inherit; color: inherit; }
 .car.mine { box-shadow: 0 0 0 2px var(--accent); }
 a.car { text-decoration: none; }
 .you { font-size: 9px; font-weight: 750; letter-spacing: .04em; padding: 0 5px; border-radius: 4px; background: var(--accent); color: #fff; }
+.pr-title .you { margin-left: 6px; }
 .pr.mine { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
 .stop { display: flex; align-items: center; gap: 8px; padding: 5px 4px 5px 10px; border-left: 2px solid color-mix(in srgb, var(--c) 60%, var(--line)); margin-left: 4px; font-size: 12px; }
 .stop.mine .stop-link, .stop.mine > span:nth-child(2) { color: var(--accent); font-weight: 650; }

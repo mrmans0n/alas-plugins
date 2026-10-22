@@ -13,6 +13,7 @@ export type PageMessage =
   | { type: "refresh" }
   | { type: "merge"; number: number }
   | { type: "mergeAll" }
+  | { type: "scope"; mine: boolean }
   | { type: "doctor"; number: number }
   | { type: "back" }
   | { type: "doctorRefresh" }
@@ -44,6 +45,8 @@ export function parsePageMessage(message: unknown): PageMessage | undefined {
     case "merge":
     case "doctor":
       return id(m.number) ? { type: m.type, number: m.number } : undefined;
+    case "scope":
+      return typeof m.mine === "boolean" ? { type: "scope", mine: m.mine } : undefined;
     case "run":
       return id(m.run) ? { type: "run", run: m.run } : undefined;
     case "attempt":

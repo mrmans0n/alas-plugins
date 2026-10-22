@@ -7,11 +7,17 @@ import "./main.ts";
 const page = (message: object, target: object = { tab: 0 }) => testHost.notify("web/message", { ...target, message });
 const posted = (sent: any[]): any => sent.findLast((m) => m.method === "web/post")?.params.message;
 const proc = (sent: any[], id: string) => sent.find((m) => m.method === "process/run" && m.params.id === id);
+let viewLoad = 0;
 const done = (stdout: string, exit = 0, stderr = "") => ({ exit, stdout, stderr });
 
 test("start: list and project, then add, add all, auto-merge fallback, retry and the badge", () => {
   testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "P" }, grants: [] } });
-  const snap = testHost.takeSent().find((m) => m.method === "workspace/snapshot");
+  const first = testHost.takeSent();
+  const snap = first.find((m) => m.method === "workspace/snapshot");
+  const gets = first.filter((m) => m.method === "storage/get");
+  assert.deepEqual(gets.map((m) => m.params.key), ["ci-doctor-v1", "view-v1"], "loads the CI Doctor cache and the view scope with their own requests");
+  assert.notEqual(gets[0].id, gets[1].id);
+  viewLoad = gets[1].id;
   testHost.reply(snap.id, { snapshot: { worktrees: [{ id: "trunk", branch: "main", current: false, main: true, sessions: [] }] } });
   let sent = testHost.takeSent();
   assert.ok(proc(sent, "list"), "lists on start");
@@ -139,5 +145,123 @@ test("Add all does not wedge when a queued MR has an unusable sha", () => {
   testHost.reply(proc(sent, "list").id, done(reply([node(1), node(3)])));
   testHost.takeSent();
   page({ type: "addAll" });
-  assert.ok(proc(testHost.takeSent(), "add"), "Add all can start again");
+  sent = testHost.takeSent();
+  assert.ok(proc(sent, "add"), "Add all can start again");
+  // Finish it, so it frees its process slot for the next test.
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([])));
+  testHost.takeSent();
+});
+
+const stored = (id: number, value: unknown) => testHost.reply(id, { value });
+const rowsOf = (sent: any[]) => posted(sent).inbox.sections.flatMap((s: any) => s.rows.map((r: any) => r.iid));
+const storageSets = (sent: any[]) => sent.filter((m) => m.method === "storage/set").map((m) => m.params);
+
+test("a scope message persists the choice, redraws, and ignores a non-boolean", () => {
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2, { author: { username: "ana" } }), node(3)])));
+  sent = testHost.takeSent();
+  assert.deepEqual(rowsOf(sent), [3, 2, 1]);
+  assert.deepEqual(posted(sent).inbox.scope, { mineOnly: false, available: true, hidden: 0 });
+
+  page({ type: "scope", mine: "yes" });
+  assert.deepEqual(testHost.takeSent(), [], "malformed: nothing happens");
+  page({ type: "scope", mine: true });
+  sent = testHost.takeSent();
+  assert.deepEqual(storageSets(sent), [{ key: "view-v1", value: { mineOnly: true } }]);
+  assert.deepEqual(rowsOf(sent), [3, 1]);
+  assert.equal(posted(sent).inbox.scope.mineOnly, true);
+});
+
+test("Add all with Mine on adds only your ready MRs, also when the list changes under it", () => {
+  // Mine is on from the test above; 2 is ana's and ready.
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2, { author: { username: "ana" } }), node(3), node(4, { author: { username: "bob" } })])));
+  sent = testHost.takeSent();
+  assert.equal(posted(sent).inbox.addAll.count, 2);
+  page({ type: "addAll" });
+  sent = testHost.takeSent();
+  assert.equal(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/3", "newest of mine first, not ana's 2 or bob's 4");
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  // 1 turns out to be ana's now: its queued id must be dropped by the re-check.
+  testHost.reply(proc(sent, "list").id, done(reply([node(1, { author: { username: "ana" } }), node(2, { author: { username: "ana" } })])));
+  sent = testHost.takeSent();
+  assert.equal(proc(sent, "add"), undefined, "no add of a non-mine MR while Mine is on");
+  assert.equal(posted(sent).inbox.addAll, undefined);
+
+  page({ type: "scope", mine: false });
+  testHost.takeSent();
+  page({ type: "refresh" });
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1, { author: { username: "ana" } }), node(2, { author: { username: "ana" } })])));
+  testHost.takeSent();
+  page({ type: "addAll" });
+  sent = testHost.takeSent();
+  assert.ok(proc(sent, "add"), "with All, ana's ready MRs are added too");
+  // Finish it, so it frees its process slot for the next test.
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([])));
+  testHost.takeSent();
+});
+
+// Each activation asks storage again, with a new request id (a reply answers its request once).
+const viewGet = () => {
+  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "P" }, grants: [] } });
+  return testHost.takeSent().find((m) => m.method === "storage/get" && m.params.key === "view-v1").id;
+};
+const listed = (nodes: unknown[]) => {
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply(nodes)));
+  return testHost.takeSent();
+};
+
+test("a stored scope arriving after the list redraws it filtered; a malformed one is ignored", () => {
+  assert.deepEqual(rowsOf(listed([node(1), node(2, { author: { username: "ana" } })])), [2, 1]);
+  for (const bad of [{ mineOnly: "yes" }, {}, null, "x", [true]]) {
+    stored(viewGet(), bad);
+    const sent = testHost.takeSent();
+    assert.deepEqual(storageSets(sent), []);
+    assert.equal(posted(sent), undefined, `${JSON.stringify(bad)}: nothing redrawn`);
+  }
+  stored(viewGet(), { mineOnly: true });
+  const sent = testHost.takeSent();
+  assert.deepEqual(rowsOf(sent), [1], "redrawn with only mine");
+  assert.equal(posted(sent).inbox.scope.mineOnly, true);
+  assert.deepEqual(storageSets(sent), [], "applying a stored value does not write it back");
+});
+
+test("a stored scope that arrives after the user clicked the toggle is ignored", () => {
+  const id = viewGet();
+  page({ type: "scope", mine: false });
+  testHost.takeSent();
+  stored(id, { mineOnly: true });
+  assert.deepEqual(testHost.takeSent(), [], "late stored value dropped");
+  page({ type: "ready" });
+  assert.equal(posted(testHost.takeSent()).inbox.scope.mineOnly, false);
+});
+
+test("with Mine on, a row still adds an MR that is not yours", () => {
+  listed([node(1), node(2, { author: { username: "ana" } })]);
+  page({ type: "scope", mine: true });
+  testHost.takeSent();
+  page({ type: "add", iid: 2 });
+  const sent = testHost.takeSent();
+  assert.equal(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/2", "the filter only shapes Add all");
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  testHost.reply(proc(testHost.takeSent(), "list").id, done(reply([node(1)])));
+  testHost.takeSent();
 });
