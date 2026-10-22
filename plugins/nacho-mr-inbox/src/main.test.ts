@@ -84,3 +84,60 @@ test("a failed re-list stops Add all instead of adding from stale data", () => {
   assert.equal(posted(sent).inbox.addAll?.progress, undefined, "Add all is no longer running");
   assert.ok(posted(sent).inbox.error);
 });
+
+test("a failed project call keeps the buttons on the train endpoint; a later trains-off reply flips them", () => {
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done("", 1, "glab: 503 Service Unavailable (HTTP 503)"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
+  sent = testHost.takeSent();
+  assert.equal(posted(sent).inbox.trainsEnabled, true);
+  page({ type: "add", iid: 1 });
+  sent = testHost.takeSent();
+  assert.equal(proc(sent, "automerge"), undefined, "no auto-merge after a failed project call");
+  assert.ok(proc(sent, "add"), "still the train endpoint");
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
+  testHost.takeSent();
+
+  page({ type: "refresh" });
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":false}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
+  testHost.takeSent();
+  page({ type: "add", iid: 1 });
+  sent = testHost.takeSent();
+  assert.ok(proc(sent, "automerge"), "trains reported off: Merge when green");
+  testHost.reply(proc(sent, "automerge").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
+  testHost.takeSent();
+});
+
+test("Add all does not wedge when a queued MR has an unusable sha", () => {
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2, { diffHeadSha: "" })])));
+  sent = testHost.takeSent();
+  page({ type: "addAll" });
+  sent = testHost.takeSent();
+  assert.deepEqual(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/1", "skips the unusable newest MR");
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(2, { diffHeadSha: "" })])));
+  sent = testHost.takeSent();
+  assert.equal(posted(sent).inbox.addAll, undefined, "Add all ended");
+  page({ type: "refresh" });
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(3)])));
+  testHost.takeSent();
+  page({ type: "addAll" });
+  assert.ok(proc(testHost.takeSent(), "add"), "Add all can start again");
+});

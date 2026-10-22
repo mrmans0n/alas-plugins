@@ -46,7 +46,8 @@ function refresh(manual = false): void {
   if (manual || state.trainsEnabled === undefined) {
     queue.run("project", worktree, [], (outcome) => {
       const enabled = processError(outcome) === undefined ? parseTrainsEnabled(outcome.result!.stdout) : undefined;
-      state.trainsEnabled = enabled ?? false;
+      // An error or unreadable reply keeps the old value; undefined counts as on and is asked again on the next refresh.
+      if (enabled !== undefined) state.trainsEnabled = enabled;
       draw();
     }, { priority: true });
   }
@@ -92,11 +93,12 @@ function ensureDoctor(): void {
 
 const SHA = /^[0-9a-f]{40,64}$/;
 
-function add(iid: number): void {
+/** True when a write was started. */
+function add(iid: number): boolean {
   const inbox = state.inbox;
   const mr = inbox?.mrs.find((m) => m.iid === iid);
   const when = mr && addMode(mr);
-  if (!worktree || !inbox || !mr || !when || state.busy !== undefined || !SHA.test(mr.sha)) return;
+  if (!worktree || !inbox || !mr || !when || state.busy !== undefined || !SHA.test(mr.sha)) return false;
   state.busy = iid;
   delete state.errors[iid];
   draw();
@@ -117,6 +119,7 @@ function add(iid: number): void {
     }
     refresh();
   }, { priority: true });
+  return true;
 }
 
 /** Adds the ready MRs one at a time, each after a fresh list, stopping at the first failure. */
@@ -139,8 +142,7 @@ function continueAddAll(): boolean {
     const iid = addQueue.shift()!;
     const mr = state.inbox?.mrs.find((m) => m.iid === iid);
     if (mr && addMode(mr) === "now" && classify(state.inbox!).ready.includes(mr)) {
-      add(iid);
-      return true;
+      if (add(iid)) return true;
     }
   }
   stopAddAll();
@@ -187,7 +189,7 @@ function pageMessage(m: PageMessage): void {
   switch (m.type) {
     case "ready": return draw();
     case "refresh": return refresh(true);
-    case "add": return add(m.iid);
+    case "add": add(m.iid); return;
     case "addAll": return addAll();
     case "retryPipeline": return retryPipeline(m.pipeline);
     case "doctor": {
