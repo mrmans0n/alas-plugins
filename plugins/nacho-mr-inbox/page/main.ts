@@ -1,12 +1,12 @@
-// The PR Inbox page, in the tab and the rail: draws the state the plugin posts and sends back what the
+// The MR Inbox page, in the tab and the rail: draws the state the plugin posts and sends back what the
 // user did. It keeps only view state (the group filter, an unsent question); the plugin runs every action
-// and answers with the whole state again. GitHub data only ever goes in as text, never as HTML.
+// and answers with the whole state again. GitLab data only ever goes in as text, never as HTML.
 
 import { connect, pageHost, type PageContext } from "@alas/plugin/page";
 import type { DoctorModel, Note, Option, Outcome } from "../src/doctor-view.ts";
 import { agoLabel, updatedLabel, type Bucket } from "../src/inbox.ts";
 import type { PageMessage, PluginMessage } from "../src/protocol.ts";
-import type { Chip, InboxModel, MergedRow, Row, Section, Tone } from "../src/view.ts";
+import type { CarView, Chip, InboxModel, MergedRow, Row, Section, Tone, TrainView } from "../src/view.ts";
 
 let state: PluginMessage | undefined;
 /** Shows only one group; picked from the stat tiles. */
@@ -105,7 +105,7 @@ function select(options: Option[], value: string | undefined, placeholder: strin
 }
 
 /**
- * The author's GitHub avatar over their initials, which show through while it loads or when it can't, with the account
+ * The author's GitLab avatar over their initials, which show through while it loads or when it can't, with the account
  * name on hover. `small` is the merged rows' size; `badge` marks the corner.
  */
 function avatar(login: string, url: string | undefined, small = false, badge?: string): HTMLElement {
@@ -135,11 +135,11 @@ function avatar(login: string, url: string | undefined, small = false, badge?: s
 // MARK: - Inbox
 
 const TILES: { key: Bucket | "merged"; label: string; short: string; tone: Tone }[] = [
-  { key: "ready", label: "Ready to merge", short: "Ready", tone: "success" },
-  { key: "waiting", label: "Waiting", short: "Wait", tone: "warn" },
-  { key: "failing", label: "Failing", short: "Fail", tone: "danger" },
-  { key: "drafts", label: "Drafts", short: "Draft", tone: "dim" },
-  { key: "merged", label: "Merged recently", short: "Merged", tone: "accent" },
+  { key: "ready", label: "Ready", short: "Ready", tone: "success" },
+  { key: "blocked", label: "Blocked", short: "Blocked", tone: "warn" },
+  { key: "failing", label: "Failing", short: "Failing", tone: "danger" },
+  { key: "drafts", label: "Drafts", short: "Drafts", tone: "dim" },
+  { key: "merged", label: "Merged", short: "Merged", tone: "accent" },
 ];
 
 function header(m: InboxModel): HTMLElement {
@@ -148,10 +148,10 @@ function header(m: InboxModel): HTMLElement {
     ? el("span", "updated", spinner(), "Refreshing…")
     : m.fetchedAt !== undefined && el("span", "updated", el("span", "pulse"), compact() ? (agoLabel(new Date(m.fetchedAt).toISOString(), now) ?? "") : `${updatedLabel(m.fetchedAt, now)} · every minute`);
   const title = el("div", "repo");
-  if (m.repo && !compact()) {
-    const [owner, name] = m.repo.split("/");
+  if (m.project && !compact()) {
+    const [owner, name] = m.project.split("/");
     title.append(el("span", "owner", `${owner}/`), name ?? "");
-  } else title.append("PR Inbox");
+  } else title.append("MR Inbox");
   const tiles = el("div", "stats");
   for (const t of TILES) {
     if (t.key === "merged" && compact()) continue;
@@ -166,12 +166,12 @@ function header(m: InboxModel): HTMLElement {
     tiles.append(tile);
   }
   return el("header", "hero",
-    el("div", "hero-row", el("div", "logo", "⇡"), title, el("span", "grow"), status, button(["⟳", !compact() && " Refresh"], () => post({ type: "refresh" }), "ghost", m.refreshing, "Refresh")),
-    m.repo !== undefined && tiles,
+    el("div", "hero-row", el("div", "logo", "⑂"), title, el("span", "grow"), status, button(["⟳", !compact() && " Refresh"], () => post({ type: "refresh" }), "ghost", m.refreshing, "Refresh")),
+    m.project !== undefined && tiles,
   );
 }
 
-function checksBar(c: NonNullable<Row["checks"]>): HTMLElement {
+function checksBar(c: NonNullable<Row["progress"]>): HTMLElement {
   const bar = el("i", "bar-track");
   const part = (n: number, cls: string) => {
     const s = el("s", cls);
@@ -184,29 +184,52 @@ function checksBar(c: NonNullable<Row["checks"]>): HTMLElement {
   return wrap;
 }
 
+function carEl(c: CarView, index: number): HTMLElement {
+  const title = `${index + 1}. ${c.title}`;
+  const body = el(c.url?.startsWith("https://") ? "a" : "span", `car ${tone(c.tone)}${c.mine ? " mine" : ""}`, el("span", "num", `!${c.iid}`), c.mine && el("span", "you", "YOU"), el("span", "car-label", c.label));
+  if (body instanceof HTMLAnchorElement) { body.href = c.url!; body.rel = "noreferrer"; }
+  body.title = title;
+  return body;
+}
+
+function trainStrip(t: TrainView): HTMLElement {
+  if (compact()) {
+    return el("section", "section", el("h4", "section-head tone-accent", el("span", "dot"), `🚂 Train → ${t.target}`, el("span", "count", String(t.cars.length))),
+      ...t.cars.map((c, i) => el("div", `stop ${tone(c.tone)}${c.mine ? " mine" : ""}`, el("span", "num", String(i + 1)), c.url ? link(`!${c.iid}`, c.url, "stop-link", c.title) : el("span", "", `!${c.iid}`), c.mine && el("span", "you", "YOU"), el("span", "grow"), el("span", "when", c.label))));
+  }
+  const cars = el("div", "train-cars");
+  t.cars.forEach((c, i) => { if (i > 0) cars.append(el("span", "coupler")); cars.append(carEl(c, i)); });
+  return el("section", "train", el("span", "loco", "🚂"), el("span", "branch", t.target), cars);
+}
+
 const chip = (c: Chip) => el("span", `chip ${tone(c.tone)}`, c.text);
 
 function row(r: Row, sectionTone: Tone): HTMLElement {
   const now = Date.now();
   const actions = el("div", "actions",
-    button([pulseIcon(), !compact() && "CI Doctor"], () => post({ type: "doctor", number: r.number }), sectionTone === "danger" ? "doctor-hot" : "ghost", false, "CI Doctor"),
-    link("↗", r.url, "btn ghost", "Open on GitHub"),
+    r.doctor && button([pulseIcon(), !compact() && "CI Doctor"], () => post({ type: "doctor", iid: r.iid }), sectionTone === "danger" ? "doctor-hot" : "ghost", false, "CI Doctor"),
+    link("↗", r.url, "btn ghost", "Open on GitLab"),
   );
-  if (r.merge) {
-    const m = r.merge;
-    const label = compact() ? m.short : m.label;
-    actions.append(m.busy
-      ? button([spinner(), " Merging…"], () => {}, "merging", true)
-      : button(m.look === "go" ? `✓ ${label}` : m.look === "risk" ? `⚠ ${label}` : label, () => post({ type: "merge", number: r.number }), m.look, m.disabled));
+  if (r.retry) {
+    const t = r.retry;
+    actions.append(t.busy
+      ? button([spinner(), " Retrying…"], () => {}, "ghost", true)
+      : button("↻ Retry failed", () => post({ type: "retryPipeline", pipeline: t.pipeline }), "ghost", t.disabled, "Retry the pipeline's failed jobs"));
+  }
+  if (r.add) {
+    const a = r.add;
+    actions.append(a.busy
+      ? button([spinner(), " Adding…"], () => {}, "merging", true)
+      : button(compact() ? a.short : a.label, () => post({ type: "add", iid: r.iid }), a.look, a.disabled));
   }
   const ago = agoLabel(r.updatedAt, now);
-  return el("article", `pr ${tone(sectionTone)}`,
+  return el("article", `pr ${tone(sectionTone)}${r.mine ? " mine" : ""}`,
     avatar(r.author, r.avatar),
     el("div", "pr-main",
-      el("div", "pr-title", el("span", "num", `#${r.number}`), r.title),
+      el("div", "pr-title", el("span", "num", `!${r.iid}`), r.title, r.mine && el("span", "you", "YOU")),
       el("div", "meta",
         !compact() && el("span", "branch", r.branch),
-        r.checks && checksBar(r.checks),
+        r.progress && checksBar(r.progress),
         ...r.chips.map(chip),
         ago !== undefined && el("span", "when", `· ${ago}`),
       ),
@@ -217,14 +240,12 @@ function row(r: Row, sectionTone: Tone): HTMLElement {
 }
 
 function section(s: Section, m: InboxModel): HTMLElement {
-  // The rail is too narrow for the long title next to Merge all: it takes its tile's.
-  const title = compact() && s.key === "ready" ? "Ready" : s.title;
-  const head = el("h4", `section-head ${tone(s.tone)}`, el("span", "dot"), title, el("span", "count", String(s.rows.length)), el("span", "grow"));
-  if (s.key === "ready" && m.mergeAll) {
-    const all = m.mergeAll;
+  const head = el("h4", `section-head ${tone(s.tone)}`, el("span", "dot"), s.title, el("span", "count", String(s.rows.length)), el("span", "grow"));
+  if (s.key === "ready" && m.addAll) {
+    const all = m.addAll;
     head.append(all.progress
       ? el("span", "updated tone-success", spinner(), all.progress)
-      : button(`✓ Merge all ${all.count}`, () => post({ type: "mergeAll" }), "go small", all.disabled, "Squash-merge each ready pull request, one at a time, stopping at the first failure"));
+      : button(all.label, () => post({ type: "addAll" }), "go small", all.disabled, "Add each ready MR one at a time, stopping at the first failure"));
   }
   return el("section", "section", head, ...s.rows.map((r) => row(r, s.tone)));
 }
@@ -234,12 +255,12 @@ function mergedRow(r: MergedRow): HTMLElement {
   return el("article", "pr merged",
     avatar(r.author, r.avatar, true, "✓"),
     el("div", "pr-main",
-      el("div", "pr-title", el("span", "num", `#${r.number}`), r.title),
+      el("div", "pr-title", el("span", "num", `!${r.iid}`), r.title),
       compact() && el("div", "meta", el("span", "when", ago === undefined ? `by ${r.author}` : `${ago} by ${r.author}`)),
     ),
     !compact() && el("span", "branch", r.branch),
     !compact() && el("span", "when", ago === undefined ? `by ${r.author}` : `merged ${ago} by ${r.author}`),
-    link("↗", r.url, "btn ghost", "Open on GitHub"),
+    link("↗", r.url, "btn ghost", "Open on GitLab"),
   );
 }
 
@@ -252,11 +273,19 @@ function inbox(m: InboxModel): HTMLElement[] {
   if (m.error !== undefined) out.push(el("div", "banner tone-danger", el("span", "grow", m.error), button("Retry", () => post({ type: "refresh" }), "ghost")));
   if (notice) out.push(el("div", "banner tone-warn", notice));
   if (m.loading) {
-    out.push(centered(spinner(), el("span", "dim", "Loading pull requests…")));
+    out.push(centered(spinner(), el("span", "dim", "Loading merge requests…")));
     return out;
   }
-  if (m.repo === undefined) return out;
+  if (m.project === undefined) return out;
+  if (!m.trainsEnabled) out.push(el("div", "banner tone-dim", "Merge trains are off for this project: buttons merge when the pipeline passes."));
   const body = el("div", "body");
+  body.append(...m.trains.map(trainStrip));
+  if (compact()) {
+    body.append(el("section", "section", el("h4", "section-head tone-accent", el("span", "dot"), "Yours", el("span", "count", String(m.mine.length))), ...m.mine.map((r) => row(r, r.add ? "success" : r.retry ? "danger" : "warn"))),
+      el("div", "dim clear-line", "Open MR Inbox from the repository menu for every MR."));
+    out.push(body);
+    return out;
+  }
   const sections = m.sections.filter((s) => filter === undefined || filter === s.key);
   if (m.sections.length === 0 && m.merged.length === 0) body.append(centered(el("div", "clear-icon", "✓"), el("span", "dim", "Inbox is clear.")));
   else {
@@ -294,15 +323,16 @@ function doctor(d: DoctorModel): HTMLElement[] {
   const out: HTMLElement[] = [el("header", "hero slim",
     el("div", "hero-row",
       button("← Inbox", () => post({ type: "back" }), "ghost"),
-      el("div", "repo doctor-title", el("span", "num", `#${d.number}`), d.title),
+      el("div", "repo doctor-title", el("span", "num", `!${d.number}`), d.title),
       el("span", "grow"),
       !compact() && d.head !== undefined && el("span", "chip tone-dim mono", d.head.replace(/@([0-9a-f]{7})[0-9a-f]+/i, "@$1")),
-      d.url !== undefined && link("↗", d.url, "btn ghost", "Open pull request"),
+      d.url !== undefined && link("↗", d.url, "btn ghost", "Open merge request"),
       button("⟳", () => post({ type: "doctorRefresh" }), "ghost", d.busy, "Refresh evidence"),
     ),
   )];
   if (notice) out.push(el("div", "banner tone-warn", notice));
   if (d.error) out.push(el("div", "banner tone-danger", d.error));
+  if (d.retryError) out.push(el("div", "banner tone-danger", d.retryError));
   if (d.loading) out.push(el("div", "updated pad", spinner(), "Loading evidence…"));
   if (d.unavailable) {
     out.push(centered(el("span", "dim", d.unavailable)));
@@ -313,10 +343,10 @@ function doctor(d: DoctorModel): HTMLElement[] {
 
   const runs = el("div", "pane runs");
   if (d.runs.length) {
-    runs.append(
-      el("div", "label", "Workflow run"),
+    add(runs,
+      el("div", "label", "Pipeline"),
       select(d.runs, d.run, undefined, (v) => post({ type: "run", run: Number(v) })),
-      select(d.attempts, d.attempt, undefined, (v) => post({ type: "attempt", run: Number(d.run), attempt: Number(v) })),
+      d.attempts.length > 1 && select(d.attempts, d.attempt, undefined, (v) => post({ type: "attempt", run: Number(d.run), attempt: Number(v) })),
     );
   }
   add(runs, ...notes(d.runNotes, "Run details"));
@@ -324,7 +354,9 @@ function doctor(d: DoctorModel): HTMLElement[] {
   for (const j of d.jobs) {
     const job = button([el("span", j.failed ? "tone-danger" : j.status === "success" ? "tone-success" : "dim", j.failed ? "✗" : j.status === "success" ? "✓" : "•"), el("span", "job-name", j.name), el("span", "when", j.status)],
       () => post({ type: "job", job: j.id }), `job${j.selected ? " selected" : ""}${j.failed ? " failed" : ""}`, d.historyLoading, `${j.time}\nShow failure evidence`);
-    runs.append(el("div", "job-row", job, link("↗", j.url, "btn ghost small", "Open job on GitHub")));
+    runs.append(el("div", "job-row", job,
+      j.canRetry || j.retrying ? button(j.retrying ? [spinner(), " Retrying…"] : "↻ Retry", () => post({ type: "retryJob", job: j.id }), "ghost small", !j.canRetry, "Retry this job on GitLab") : undefined,
+      link("↗", j.url, "btn ghost small", "Open job on GitLab")));
     if (j.failed || j.selected) for (const s of j.steps) runs.append(el("div", "step tone-danger", s));
     runs.append(...j.notes.map(note));
   }
@@ -341,7 +373,7 @@ function doctor(d: DoctorModel): HTMLElement[] {
       el("div", "evidence-head", el("b", "", e.title), el("span", "grow"), job && link("↗ Open job", job.url)),
       ...notes(e.notes, "Log details"),
       excerpt,
-      e.comparing ? el("div", "updated", spinner(), "Comparing bounded PR/base history…") : el("div", "histories", history("PR", e.history.pr), history("base", e.history.base)),
+      e.comparing ? el("div", "updated", spinner(), "Comparing bounded MR/target history…") : el("div", "histories", history("MR", e.history.pr), history("target", e.history.base)),
       el("div", `verdict ${tone(verdictTone)}`, el("b", "", e.suggestion.kind), el("span", "", e.suggestion.text),
         e.suggestion.links.length > 0 && el("div", "links", ...e.suggestion.links.map((url, i) => link(`Supporting job ${i + 1}`, url, "btn ghost small")))),
       e.observations.length > 0 && fold(`Comparison jobs (${e.observations.length})`, ...e.observations.map((o) => el("div", "obs", el("span", "mono small", o.text), link("↗", o.url, "btn ghost small")))),
@@ -380,7 +412,7 @@ function dispatch(x: NonNullable<DoctorModel["dispatch"]>): HTMLElement {
     x.sessions.length > 0 && select(x.sessions, x.session, "Select a session…", (v) => post({ type: "session", token: x.token, session: v })),
     ...x.notes.map(note),
     x.verification !== undefined && note({ text: x.verification, tone: "dim" }),
-    x.mismatch && note({ text: "This checkout/repository differs from the PR head. The agent must investigate the identified commits.", tone: "warn" }),
+    x.mismatch && note({ text: "This checkout/repository differs from the MR head. The agent must investigate the identified commits.", tone: "warn" }),
     x.mismatch && button(x.acknowledged ? "Mismatch acknowledged" : "Acknowledge checkout mismatch", () => post({ type: "acknowledge" }), "risk", !x.canAcknowledge),
     x.progress !== undefined && el("div", "updated", spinner(), x.progress),
     x.sent && note({ text: "Sent once to the selected session.", tone: "success" }),
@@ -398,7 +430,7 @@ function render(): void {
   const scroll = scroller?.scrollTop ?? 0;
   const inner = [...app.querySelectorAll<HTMLElement>(".excerpt")].map((x) => x.scrollTop);
   document.body.classList.toggle("compact", compact());
-  if (!state) app.replaceChildren(centered(spinner(), el("span", "dim", "Loading pull requests…")));
+  if (!state) app.replaceChildren(centered(spinner(), el("span", "dim", "Loading merge requests…")));
   else app.replaceChildren(...(state.doctor ? doctor(state.doctor) : inbox(state.inbox)));
   const next = app.querySelector(".body");
   if (next && scroller) next.scrollTop = scroll;
@@ -562,6 +594,20 @@ button, select, textarea { font: inherit; color: inherit; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .brief { max-height: 260px; }
 .question { width: 100%; min-height: 64px; resize: vertical; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); padding: 8px; }
+
+.train { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.train .loco { font-size: 18px; }
+.train-cars { display: flex; align-items: center; }
+.coupler { width: 14px; height: 2px; background: var(--line); flex: none; }
+.car { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 8px; white-space: nowrap; font-size: 11.5px;
+  color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
+.car.mine { box-shadow: 0 0 0 2px var(--accent); }
+a.car { text-decoration: none; }
+.you { font-size: 9px; font-weight: 750; letter-spacing: .04em; padding: 0 5px; border-radius: 4px; background: var(--accent); color: #fff; }
+.pr.mine { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.stop { display: flex; align-items: center; gap: 8px; padding: 5px 4px 5px 10px; border-left: 2px solid color-mix(in srgb, var(--c) 60%, var(--line)); margin-left: 4px; font-size: 12px; }
+.stop.mine .stop-link, .stop.mine > span:nth-child(2) { color: var(--accent); font-weight: 650; }
+.stop-link { color: var(--text); text-decoration: none; font-family: var(--mono); }
 
 body.compact .hero { padding: 12px 12px 10px; }
 body.compact .hero.slim { padding: 8px 10px; }
