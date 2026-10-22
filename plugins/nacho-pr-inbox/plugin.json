@@ -2,7 +2,7 @@
   "id": "io.nlopez.nacho-pr-inbox",
   "name": "Nacho's PR Inbox",
   "summary": "PR Inbox with on-demand CI failure evidence, bounded history and reviewed agent investigation briefs.",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "api": 17,
   "requires": { "codeHost": "github" },
   "entry": "plugin.js",
@@ -13,7 +13,7 @@
   "processes": [
     {
       "id": "list",
-      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login avatarUrl(size:64)} headRefName headRefOid headRepository{nameWithOwner} baseRefName baseRefOid updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login avatarUrl(size:64)} headRefName mergedAt}}}}"]
+      "command": ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query=query($owner:String!,$name:String!){viewer{login} repository(owner:$owner,name:$name){nameWithOwner pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url isDraft author{login avatarUrl(size:64)} headRefName headRefOid headRepository{nameWithOwner} baseRefName baseRefOid updatedAt reviewDecision mergeable commits(last:1){nodes{commit{statusCheckRollup{state contexts{totalCount checkRunCountsByState{state count} statusContextCountsByState{state count}}}}}} reactions(content:THUMBS_UP,first:50){nodes{user{login}}} eyes:reactions(content:EYES,first:50){nodes{user{login}}}}} merged:pullRequests(states:MERGED,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url author{login avatarUrl(size:64)} headRefName mergedAt}}}}"]
     },
     { "id": "merge", "command": ["gh", "pr", "merge", "--squash", "--delete-branch"], "appendArgs": true },
     { "id": "ci-api", "command": ["gh", "api"], "appendArgs": true },

@@ -46,6 +46,8 @@ export interface Merged {
 export interface Inbox {
   /** `owner/name`. */
   repo: string;
+  /** The signed-in user's login; empty when the reply has none. */
+  viewer: string;
   pulls: Pull[];
   /** The most recently merged first. */
   merged: Merged[];
@@ -153,13 +155,14 @@ export function parseInbox(stdout: string): Inbox | undefined {
   } catch {
     return undefined;
   }
-  const repository = isObject(json) && isObject(json.data) ? json.data.repository : undefined;
+  const data = isObject(json) && isObject(json.data) ? json.data : undefined;
+  const repository = data?.repository;
   if (!isObject(repository) || typeof repository.nameWithOwner !== "string") return undefined;
   const nodes = repository.pullRequests?.nodes;
   if (!Array.isArray(nodes)) return undefined;
   const pulls = new Map<number, Pull>();
   for (const p of nodes.map(pull)) if (p && !pulls.has(p.number)) pulls.set(p.number, p);
-  return { repo: repository.nameWithOwner, pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
+  return { repo: repository.nameWithOwner, viewer: str(data?.viewer?.login) ?? "", pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
 }
 
 /** Codex approved (or Renovate wrote it) and nothing stops gh from merging; checks may still be running or red. */

@@ -12,6 +12,8 @@ export interface ViewState {
   mergeErrors: Record<number, string>;
   /** A Merge all in progress: how many it started with and how many merged so far. */
   mergeAll?: { total: number; done: number };
+  /** Show only the signed-in user's pull requests; no effect while the user is unknown. */
+  mineOnly?: boolean;
 }
 
 export type Tone = "accent" | "success" | "warn" | "danger" | "dim";
@@ -53,6 +55,8 @@ export interface InboxModel {
   merged: MergedRow[];
   /** Merges every ready pull request, one at a time; offered from two. */
   mergeAll?: { count: number; disabled: boolean; progress?: string };
+  /** `available`: the user is known, so the toggle is offered. `hidden`: items the filter hides. */
+  scope: { mineOnly: boolean; available: boolean; hidden: number };
 }
 
 export const TITLES: Record<Bucket, string> = { ready: "Ready to merge", failing: "Failing", waiting: "Waiting", drafts: "Drafts" };
@@ -93,11 +97,29 @@ function row(p: Pull, state: ViewState): Row {
   };
 }
 
+/** The filter is on and the user is known. */
+const filtering = (state: ViewState): boolean => !!state.mineOnly && !!state.inbox?.viewer;
+
+/** GitHub logins are case-insensitive; a bot never matches the viewer. */
+const isMine = (state: ViewState, author: string): boolean => author.toLowerCase() === state.inbox?.viewer.toLowerCase();
+
+/** The ready pull requests Merge all covers: only yours while the filter is on. */
+export function mergeCandidates(state: ViewState): Pull[] {
+  const ready = classify(state.inbox?.pulls ?? []).ready;
+  return filtering(state) ? ready.filter((p) => isMine(state, p.author)) : ready;
+}
+
 /** What the page draws: the buckets in order without empty ones, then the recently merged. */
 export function inboxModel(state: ViewState, now: number): InboxModel {
-  const buckets = classify(state.inbox?.pulls ?? []);
+  const mineOnly = filtering(state);
+  const every = classify(state.inbox?.pulls ?? []);
+  const buckets = mineOnly ? Object.fromEntries(BUCKETS.map((b) => [b, every[b].filter((p) => isMine(state, p.author))])) as typeof every : every;
   const counts = Object.fromEntries(BUCKETS.map((b) => [b, buckets[b].length])) as Record<Bucket, number>;
-  const ready = buckets.ready.length;
+  const ready = mergeCandidates(state).length;
+  // Your merges first, then the usual trim, so a quiet project still lists them; `hidden` counts what the recent list loses to the filter.
+  const merges = state.inbox?.merged ?? [];
+  const shownMerged = recentMerged(mineOnly ? merges.filter((m) => isMine(state, m.author)) : merges, now);
+  const hidden = BUCKETS.reduce((n, b) => n + every[b].length - buckets[b].length, mineOnly ? recentMerged(merges, now).filter((m) => !isMine(state, m.author)).length : 0);
   const all = state.mergeAll;
   return {
     repo: state.inbox?.repo,
@@ -107,7 +129,8 @@ export function inboxModel(state: ViewState, now: number): InboxModel {
     loading: !state.inbox && state.error === undefined,
     counts,
     sections: BUCKETS.filter((b) => buckets[b].length > 0).map((b) => ({ key: b, title: TITLES[b], tone: TONES[b], rows: buckets[b].map((p) => row(p, state)) })),
-    merged: state.inbox ? recentMerged(state.inbox.merged, now).map(({ number, title, url, branch, author, avatar, mergedAt }) => ({ number, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })) : [],
+    merged: shownMerged.map(({ number, title, url, branch, author, avatar, mergedAt }) => ({ number, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })),
+    scope: { mineOnly, available: !!state.inbox?.viewer, hidden },
     ...(ready >= 2 || all ? { mergeAll: { count: ready, disabled: state.merging !== undefined, ...(all ? { progress: `Merging ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}) } } : {}),
   };
 }

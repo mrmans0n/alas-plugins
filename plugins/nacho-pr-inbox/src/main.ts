@@ -1,6 +1,6 @@
 import { definePlugin, notify, processRun, request, requestSnapshot, sessionSend, setPanelBadge, setTimer, storageGet, storageSet, webPost, type Event, type Snapshot } from "@alas/plugin";
-import { canMerge, classify, isReady, parseInbox, processError } from "./inbox.ts";
-import { inboxModel, readyCount, type ViewState } from "./view.ts";
+import { canMerge, isReady, parseInbox, processError } from "./inbox.ts";
+import { inboxModel, mergeCandidates, readyCount, type ViewState } from "./view.ts";
 import { DoctorController } from "./doctor-controller.ts";
 import { GitHub, ProcessQueue } from "./doctor-transport.ts";
 import { doctorModel } from "./doctor-view.ts";
@@ -23,6 +23,9 @@ let doctor: DoctorController | undefined;
 let github: GitHub | undefined;
 let cached: unknown;
 let loadCache: number | undefined;
+let loadView: number | undefined;
+/** The user clicked the toggle: a stored value that arrives later is older than that. */
+let scopeTouched = false;
 let snapshot: Snapshot = { worktrees: [] };
 /** What Merge all still has to merge, in order. */
 let mergeQueue: number[] = [];
@@ -94,7 +97,7 @@ function merge(number: number): void {
 /** Merges the ready pull requests one at a time, each after a fresh list, stopping at the first failure. */
 function mergeAll(): void {
   if (!state.inbox || state.merging !== undefined || state.mergeAll) return;
-  mergeQueue = classify(state.inbox.pulls).ready.map((p) => p.number);
+  mergeQueue = mergeCandidates(state).map((p) => p.number);
   if (mergeQueue.length === 0) return;
   state.mergeAll = { total: mergeQueue.length, done: 0 };
   continueMergeAll();
@@ -111,7 +114,7 @@ function continueMergeAll(): boolean {
   while (mergeQueue.length > 0) {
     const number = mergeQueue.shift()!;
     const pull = state.inbox?.pulls.find((p) => p.number === number);
-    if (pull && isReady(pull)) {
+    if (pull && isReady(pull) && mergeCandidates(state).includes(pull)) {
       merge(number);
       return true;
     }
@@ -158,6 +161,11 @@ function pageMessage(m: PageMessage): void {
     case "refresh": return refresh(true);
     case "merge": return merge(m.number);
     case "mergeAll": return mergeAll();
+    case "scope":
+      scopeTouched = true;
+      state.mineOnly = m.mine;
+      storageSet("view-v1", { mineOnly: m.mine });
+      return draw();
     case "doctor": {
       const pull = state.inbox?.pulls.find((p) => p.number === m.number);
       if (pull && state.inbox) doctor?.open(state.inbox.repo, pull);
@@ -192,9 +200,12 @@ definePlugin({
         draw();
         requestSnapshot();
         loadCache = storageGet("ci-doctor-v1");
+        loadView = storageGet("view-v1");
+        scopeTouched = false;
         return;
       case "stored":
         if (event.id === loadCache && !event.error) { cached = event.value; doctor?.restore(cached); }
+        if (event.id === loadView && !event.error && !scopeTouched && object(event.value) && typeof event.value.mineOnly === "boolean") { state.mineOnly = event.value.mineOnly; draw(); }
         return;
       case "snapshot":
       case "workspaceChanged":

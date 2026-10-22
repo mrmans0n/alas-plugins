@@ -8,6 +8,18 @@ strict pattern because the plugin runtime has no `URL`. Others fall back to
 initials. Checked in the stub host with real avatars for a user and a bot, a
 missing one, the hover name, and the 240-point rail.
 
+## All | Mine (0.15.0)
+
+The toggle is covered by `view.test.ts`, `main.test.ts`, `inbox.test.ts` and
+`protocol.test.ts`: filtering of groups, counts and recently merged (author
+first, then the 24-hour / last-5 trim), Merge all and its re-check, a row merge
+of a pull request that is not yours, persistence under `view-v1`, a stored value
+applied after the list, ignored when malformed, and ignored when it arrives after
+a click, and the `viewer{login}` in the manifest's `list` query. It has not been
+rendered or run inside Alas.
+
+- [ ] All | Mine in the tab header and on its own row in the rail: Mine shows only my pull requests, counts and merged follow; Merge all covers only mine; choice survives a restart
+
 ## Web page (0.13.0)
 
 The tab and the rail are web pages since 0.13.0. `view.ts` and
