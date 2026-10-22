@@ -89,7 +89,7 @@ export class GitLab {
     if (!processError(outcome)) return;
     const parsed = response(outcome.result?.stdout ?? "");
     const message = `${outcome.result?.stderr ?? ""}\n${parsed.body}\n${processError(outcome)}`;
-    if (/\b429\b|rate limit|too many requests/i.test(message) || /^HTTP\/\S+ 429/m.test(parsed.headers)) {
+    if (/(?:HTTP\/\S+ |: )429\b|rate limit|too many requests/i.test(message) || /^HTTP\/\S+ 429/m.test(parsed.headers)) {
       const retry = /retry-after:\s*(\d+)/i.exec(parsed.headers);
       const reset = /ratelimit-reset:\s*(\d+)/i.exec(parsed.headers);
       const delay = retry ? Number(retry[1]) * 1000 : reset ? Math.max(60000, Number(reset[1]) * 1000 - this.now()) : 60000;

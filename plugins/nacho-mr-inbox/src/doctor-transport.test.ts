@@ -86,3 +86,15 @@ test("retries post to the job or pipeline endpoint", () => {
   calls[1].done({ result: { exit: 1, stdout: "", stderr: "glab: 403 Forbidden (HTTP 403)", timedOut: false, truncated: false } });
   assert.deepEqual(errors, [undefined, "glab: 403 Forbidden (HTTP 403)"]);
 });
+
+test("an id of 429 in a failing URL is not a rate limit; a 429 status is", () => {
+  const { calls, gl, backoffs } = setup(1_000_000);
+  gl.retryJob(429, () => {});
+  calls[0].done({ result: { exit: 1, stdout: "", stderr: "POST https://gitlab.example.com/api/v4/projects/acme%2Fshop/jobs/429/retry: 403 {message: 403 Forbidden}", timedOut: false, truncated: false } });
+  assert.equal(gl.blockedUntil, 0);
+  assert.deepEqual(backoffs, []);
+  gl.run(7, () => {});
+  calls[1].done({ result: { exit: 1, stdout: "", stderr: "glab: 429 Too Many Requests", timedOut: false, truncated: false } });
+  assert.ok(gl.blockedUntil > 1_000_000);
+  assert.equal(backoffs.length, 1);
+});
