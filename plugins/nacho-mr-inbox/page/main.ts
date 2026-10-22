@@ -134,12 +134,12 @@ function avatar(login: string, url: string | undefined, small = false, badge?: s
 
 // MARK: - Inbox
 
-const TILES: { key: Bucket | "merged"; label: string; short: string; tone: Tone }[] = [
-  { key: "ready", label: "Ready", short: "Ready", tone: "success" },
-  { key: "blocked", label: "Blocked", short: "Blocked", tone: "warn" },
-  { key: "failing", label: "Failing", short: "Failing", tone: "danger" },
-  { key: "drafts", label: "Drafts", short: "Drafts", tone: "dim" },
-  { key: "merged", label: "Merged", short: "Merged", tone: "accent" },
+const TILES: { key: Bucket | "merged"; label: string; tone: Tone }[] = [
+  { key: "ready", label: "Ready", tone: "success" },
+  { key: "blocked", label: "Blocked", tone: "warn" },
+  { key: "failing", label: "Failing", tone: "danger" },
+  { key: "drafts", label: "Drafts", tone: "dim" },
+  { key: "merged", label: "Merged", tone: "accent" },
 ];
 
 function header(m: InboxModel): HTMLElement {
@@ -154,9 +154,8 @@ function header(m: InboxModel): HTMLElement {
   } else title.append("MR Inbox");
   const tiles = el("div", "stats");
   for (const t of TILES) {
-    if (t.key === "merged" && compact()) continue;
     const count = t.key === "merged" ? m.merged.length : m.counts[t.key];
-    const tile = el("button", `stat ${tone(t.tone)}${filter === t.key ? " on" : ""}${count === 0 ? " zero" : ""}`, el("b", "", String(count)), el("small", "", compact() ? t.short : t.label));
+    const tile = el("button", `stat ${tone(t.tone)}${filter === t.key ? " on" : ""}${count === 0 ? " zero" : ""}`, el("b", "", String(count)), el("small", "", t.label));
     tile.type = "button";
     tile.title = filter === t.key ? "Show every group" : `Show only ${t.label.toLowerCase()}`;
     tile.addEventListener("click", () => {
@@ -167,7 +166,7 @@ function header(m: InboxModel): HTMLElement {
   }
   return el("header", "hero",
     el("div", "hero-row", el("div", "logo", "⑂"), title, el("span", "grow"), status, button(["⟳", !compact() && " Refresh"], () => post({ type: "refresh" }), "ghost", m.refreshing, "Refresh")),
-    m.project !== undefined && tiles,
+    m.project !== undefined && !compact() && tiles,
   );
 }
 
@@ -613,9 +612,6 @@ body.compact .hero { padding: 12px 12px 10px; }
 body.compact .hero.slim { padding: 8px 10px; }
 body.compact .logo { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
 body.compact .repo { font-size: 13px; }
-body.compact .stats { grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 10px; }
-body.compact .stat { padding: 5px 4px; text-align: center; }
-body.compact .stat b { font-size: 15px; } body.compact .stat small { font-size: 9.5px; }
 body.compact .body { padding: 10px; gap: 12px; }
 body.compact .banner { margin: 8px 10px 0; }
 body.compact .pr { flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 9px 10px; }
