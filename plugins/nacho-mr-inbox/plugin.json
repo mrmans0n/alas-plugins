@@ -1,0 +1,31 @@
+{
+  "id": "io.nlopez.nacho-mr-inbox",
+  "name": "Nacho's MR Inbox",
+  "summary": "The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI.",
+  "version": "0.1.0",
+  "api": 15,
+  "entry": "plugin.js",
+  "web": "ui.js",
+  "capabilities": ["workspace.read", "process.exec", "timers", "notify", "session.write", "network"],
+  "network": ["gitlab.com", "secure.gravatar.com"],
+  "remote": true,
+  "processes": [
+    { "id": "list", "command": ["glab", "api", "graphql", "-F", "fullPath=:fullpath", "-f", "query=query($fullPath:ID!){currentUser{username} project(fullPath:$fullPath){fullPath webUrl mergeTrains{nodes{targetBranch cars(first:20){nodes{status mergeRequest{iid} pipeline{status jobs{count} done:jobs(statuses:[SUCCESS,FAILED,CANCELED,SKIPPED,MANUAL]){count} running:jobs(statuses:[RUNNING]){count}}}}}} mergeRequests(state:opened,first:50,sort:UPDATED_DESC){nodes{iid title webUrl draft updatedAt author{username avatarUrl} sourceBranch targetBranch diffHeadSha detailedMergeStatus conflicts approvalsLeft approvalsRequired reviewers{nodes{username mergeRequestInteraction{reviewState}}} resolvableDiscussionsCount resolvedDiscussionsCount headPipeline{id status sha jobs{count} done:jobs(statuses:[SUCCESS,FAILED,CANCELED,SKIPPED,MANUAL]){count} running:jobs(statuses:[RUNNING]){count}}}} merged:mergeRequests(state:merged,first:50,sort:MERGED_AT_DESC){nodes{iid title webUrl sourceBranch mergedAt author{username avatarUrl}}}}}"] },
+    { "id": "project", "command": ["glab", "api", "projects/:id"] },
+    { "id": "add", "command": ["glab", "api", "--method", "POST"], "appendArgs": true },
+    { "id": "automerge", "command": ["glab", "api", "--method", "PUT"], "appendArgs": true },
+    { "id": "retry", "command": ["glab", "api", "--method", "POST"], "appendArgs": true },
+    { "id": "ci-api", "command": ["glab", "api", "--method", "GET", "--include"], "appendArgs": true },
+    { "id": "ci-trace", "command": ["sh", "-c", "out=$(glab api \"projects/:id/jobs/$1/trace\") || exit $?; printf '%s' \"$out\" | tail -c 262144", "trace"], "appendArgs": true },
+    { "id": "ci-remotes", "command": ["git", "remote", "-v"] },
+    { "id": "ci-head", "command": ["git", "rev-parse", "--verify", "HEAD"] }
+  ],
+  "contributes": {
+    "tabs": [{ "id": "inbox", "title": "MR Inbox", "kind": "web" }],
+    "panels": [{ "id": "rail", "title": "MR Inbox", "icon": "arrow.triangle.merge", "location": "right", "kind": "web" }],
+    "commands": [
+      { "id": "open", "title": "MR Inbox", "icon": "arrow.triangle.merge", "slots": ["repo.menu", "palette"], "opens": "inbox" },
+      { "id": "rail", "title": "MR Inbox in the Sidebar", "icon": "sidebar.right", "slots": ["palette"], "opens": "rail" }
+    ]
+  }
+}
