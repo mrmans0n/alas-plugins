@@ -22,8 +22,8 @@ stand, with CI Doctor ported to GitLab CI.
 
 Hosts: `gitlab.com` by default, plus any self-managed GitLab the user is
 logged in to with `glab`. Nothing names a specific self-managed host. Merge
-trains need GitLab Premium/Ultimate and reviewer `reviewState` needs a recent
-GitLab; both degrade gracefully (see below).
+trains need GitLab Premium/Ultimate; without them the plugin falls back to
+"Merge when green" (see below).
 
 ## Plugin shape
 
@@ -40,59 +40,64 @@ GitLab; both degrade gracefully (see below).
 
 ## Commands
 
-All run with `glab` on the owning host (SSH projects run it remotely).
+All run with `glab` in the project's main worktree, on the owning host (SSH
+projects run it remotely). `glab` substitutes `:fullpath` / `:id` from the
+repository's own remotes, which also picks the host and its login, so the
+plugin never parses remotes or names a host for listing and writing.
 
 | Id | Command | Purpose |
 |---|---|---|
-| `list` | `glab api graphql` with a fixed query on `project(fullPath)` | Open MRs + recently merged + current username |
-| `train` | `glab api projects/:id/merge_trains/:target_branch` (GET) | Active train cars, in order |
-| `add` | `glab api -X POST projects/:id/merge_trains/merge_requests/:iid` (+ `when_pipeline_succeeds=true` when the pipeline is running) | Add to train |
-| `automerge` | `glab mr merge --auto-merge :iid` | Fallback when trains are disabled |
-| `retry` | `glab api -X POST` restricted to `projects/:id/jobs/:job_id/retry` and `projects/:id/pipelines/:id/retry` | Retry a job / all failed jobs of a pipeline |
-| `ci-api` | `glab api` GET on an explicit project endpoint | CI Doctor reads |
+| `list` | `glab api graphql -F fullPath=:fullpath -f query=…` (fixed) | Open MRs, merge trains with cars, recently merged, current username, project URL |
+| `project` | `glab api projects/:id` (fixed) | `merge_trains_enabled` |
+| `add` | `glab api --method POST` + `projects/:id/merge_trains/merge_requests/<iid>`, `-f sha=<head>` [, `-f auto_merge=true`] | Add to train (now, or when the pipeline succeeds) |
+| `automerge` | `glab api --method PUT` + `projects/:id/merge_requests/<iid>/merge`, `-f sha=<head>`, `-f auto_merge=true`, `-f merge_when_pipeline_succeeds=true` | Fallback when trains are off |
+| `retry` | `glab api --method POST` + `projects/:id/jobs/<id>/retry` or `projects/:id/pipelines/<id>/retry` | Retry a job / a pipeline's failed jobs |
+| `ci-api` | `glab api --method GET --include` + a `projects/:id/…` endpoint | CI Doctor reads |
+| `ci-trace` | `sh -c 'glab api "projects/:id/jobs/$1/trace" \| tail -c 262144' trace` + `<job id>` | The last 256 KiB of a job log (GitLab ignores Range, and failures are at the end) |
 | `ci-remotes` | `git remote -v` in the selected session worktree | Checkout verification |
 | `ci-head` | `git rev-parse --verify HEAD` in that worktree | Checkout verification |
 
-Argument validation in `main.ts` enforces: numeric ids/iids, a project path
-matching the remote, and for `retry` exactly one of the two endpoint shapes.
-`ci-api` only issues GETs.
+`main.ts` builds every appended argument itself and checks each against a
+pattern before running: ids and iids are positive integers, SHAs are hex, the
+endpoint shapes are the exact ones above. `ci-api` is GET only.
 
-### `list` query fields
+### `list` query
 
-Per open MR (first 50, `UPDATED_DESC`): `iid title webUrl draft
-author{username avatarUrl} sourceBranch targetBranch diffHeadSha
-detailedMergeStatus conflicts approvalsLeft approvalsRequired
-reviewers{nodes{username mergeRequestInteraction{reviewState}}}
-resolvableDiscussionsCount resolvedDiscussionsCount
-headPipeline{id iid status jobs{count by status}}`.
-Plus merged MRs (first 50 by `MERGED_AT_DESC`: `iid title webUrl sourceBranch
-mergedAt author{username avatarUrl}`) and `currentUser{username}`.
+Verified against GitLab 19.4:
 
-Exact field names are confirmed against the server's GraphQL schema while
-capturing fixtures. Where a field is missing, the REST equivalent is used.
+```graphql
+query($fullPath: ID!) {
+  currentUser { username }
+  project(fullPath: $fullPath) {
+    fullPath webUrl
+    mergeTrains { nodes { targetBranch cars(first: 20) { nodes {
+      status mergeRequest { iid }
+      pipeline { status jobs { count } done: jobs(statuses: [SUCCESS, FAILED, CANCELED, SKIPPED, MANUAL]) { count } running: jobs(statuses: [RUNNING]) { count } }
+    } } } }
+    mergeRequests(state: opened, first: 50, sort: UPDATED_DESC) { nodes {
+      iid title webUrl draft updatedAt author { username avatarUrl }
+      sourceBranch targetBranch diffHeadSha detailedMergeStatus conflicts
+      approvalsLeft approvalsRequired
+      reviewers { nodes { username mergeRequestInteraction { reviewState } } }
+      resolvableDiscussionsCount resolvedDiscussionsCount
+      headPipeline { id status sha jobs { count } done: jobs(statuses: [SUCCESS, FAILED, CANCELED, SKIPPED, MANUAL]) { count } running: jobs(statuses: [RUNNING]) { count } }
+    } }
+    merged: mergeRequests(state: merged, first: 50, sort: MERGED_AT_DESC) { nodes {
+      iid title webUrl sourceBranch mergedAt author { username avatarUrl }
+    } }
+  }
+}
+```
 
-### Project resolution
-
-The remotes of the main worktree (`origin` first) are parsed for SSH, scp-like
-and HTTPS URLs, giving `host` and full path `group/sub/project` (nested groups
-allowed, `.git` stripped). `:id` is the URL-encoded full path. A remote counts
-as GitLab when its host is:
-
-1. `gitlab.com`, or
-2. a host `glab` knows: listed by `glab auth status` / `glab config get host`
-   / `GITLAB_HOST`, or
-3. a host whose name contains `gitlab` (then `glab` must be logged in to it).
-
-Commands pass `--hostname <host>` so the right login is used. A GitLab-looking
-remote with no `glab` login → sign-in message naming that host. A remote that
-matches none of these → "no GitLab remote".
+`project.webUrl` gives the host (`https://<host>/`). Links in every reply are
+accepted only under it. The `project` reply's `merge_trains_enabled` is
+fetched on start and on manual Refresh.
 
 ### Refresh
 
 Same as pr-inbox: when shown and data > 1 min old, every minute while the tab
 or sidebar is visible, every 5 min while hidden, after any write, on Refresh.
-`list` and `train` (one call per distinct target branch among open MRs) are
-fetched together and published as one snapshot.
+One `list` call returns MRs and trains together, so they never disagree.
 
 ## Classification
 
@@ -136,7 +141,7 @@ One strip per target branch with an active train. Cars in order, left to right:
 iid, then status (`merging ✓`, `⏳ done/total`, `queued`, `failed` in danger).
 Your cars are ringed in the accent color. Clicking a car opens the MR. A failed car
 stays until GitLab drops it. An empty train shows "Train empty".
-If the train endpoint returns 403/404 for the project, the strip is replaced by
+If `merge_trains_enabled` is false (or `project` fails), the strip is replaced by
 "Merge trains are off for this project" and the fallback buttons apply.
 
 ## Recently merged
@@ -163,7 +168,7 @@ with this mapping:
 | Run attempt | Retries: `pipelines/:id/jobs?include_retried=true` grouped by job name, each retry one attempt |
 | Job | Job: name, stage, status, `failure_reason`, timestamps, `web_url` |
 | Steps | Trace sections (`section_start:<ts>:<name>` markers). Failing section = last opened before failure. No sections → "steps unavailable" |
-| Log excerpt | `jobs/:id/trace`, ANSI stripped, same 100-line / 12 KiB excerpt rules |
+| Log excerpt | `ci-trace` (last 256 KiB), ANSI and section markers stripped, same 100-line / 12 KiB excerpt rules, labelled truncated when the head was cut |
 | Run SHA vs head | Pipeline `sha` vs MR `diffHeadSha`. Merged-results and train pipelines run on a synthetic merge commit, labelled as such and never assumed equal to HEAD |
 | Base comparison | Same job name in recent pipelines with `ref=<target branch>` |
 | Infrastructure clue | `failure_reason` in {`runner_system_failure`, `stuck_or_timeout_failure`, `scheduler_failure`, `api_failure`} plus existing log markers |
@@ -177,16 +182,17 @@ comparison pipelines per side; ≤ 100 jobs per pipeline in pages of 25; ≤ 4
 comparison logs per job; ≤ 8 cached entries in 256 KiB of project storage;
 brief < 32 KiB; explicit session selection; remote + HEAD verification;
 identity re-check before `sessionSend`; no automatic retry of sends. Links
-are accepted only for `https://<project host>/`. Remote verification matches
-the project's host and full path.
+are accepted only under `project.webUrl`'s host. Remote verification parses
+`git remote -v` (SSH, scp-like, HTTPS, any host, nested groups, `.git`
+stripped, credentials dropped) and matches host + full path.
 
 ## Errors and limits
 
-- `glab` missing / not logged in to the host → "Sign in with
+- `glab` missing or not logged in → "Sign in with
   `glab auth login --hostname <host>` in a terminal, then Refresh."
-- No GitLab remote → "This repository has no GitLab remote."
-- Server without `reviewState` in its schema → the query omits it and the
-  `changes requested` chip is not shown; everything else works.
+- `glab` reports no known GitLab remote → "This repository has no GitLab remote glab knows. Run `glab auth login --hostname <host>` for self-managed GitLab."
+- A GitLab too old for a field in the fixed query → the query fails and the
+  tab shows GitLab's error. Tested on GitLab 19.4; gitlab.com is always current.
 - Write failure (add, retry, automerge) → GitLab's message under that row.
 - Auth failures and rate limits pause CI Doctor until explicit Retry/Refresh.
 - One write at a time (queued). At most two processes total, list and writes first.
@@ -197,8 +203,8 @@ the project's host and full path.
 - Fixtures: `list`, `train`, pipelines, jobs, and a trace, captured from a
   real GitLab and scrubbed: host rewritten to `gitlab.example.com`, project,
   user and branch names replaced. No real host or name stays in the repo.
-- Remote parsing tests: gitlab.com SSH/HTTPS, nested groups, self-managed host
-  known to `glab`, host containing `gitlab`, non-GitLab host.
+- Remote parsing tests (CI Doctor verification): gitlab.com SSH/HTTPS/scp,
+  nested groups, any self-managed host, credentials dropped, host mismatch.
 - Unit tests: list/train parsing, classification, chips, buttons, strip and
   sidebar models, badge count, argument validation for each command, CI Doctor
   parsing (pipelines, retries → attempts, trace sections, excerpts,
