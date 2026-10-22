@@ -64,21 +64,26 @@ const NAMED: Record<string, string> = { NEED_REBASE: "needs rebase", BLOCKED_STA
 
 export function chips(mr: MergeRequest): Chip[] {
   const out: Chip[] = [];
+  /** A chip (or the progress bar) says why the MR is not ready. */
+  let why = false;
+  const add = (text: string, tone: Tone, reason = true) => { out.push({ text, tone }); why ||= reason; };
   const p = mr.pipeline;
-  if (p?.status === "SUCCESS") out.push({ text: "✓ pipeline", tone: "success" });
-  else if (p?.status === "FAILED") out.push({ text: "✗ pipeline", tone: "danger" });
-  else if (p?.status === "CANCELED") out.push({ text: "pipeline canceled", tone: "danger" });
-  else if (p?.status === "MANUAL") out.push({ text: "pipeline manual", tone: "dim" });
-  else if (!p && mr.status === "CI_MUST_PASS") out.push({ text: "no pipeline", tone: "warn" });
-  if (mr.changesRequestedBy.length) out.push({ text: `changes requested · ${mr.changesRequestedBy.map((u) => `@${u}`).join(", ")}`, tone: "danger" });
-  else if (mr.status === "REQUESTED_CHANGES") out.push({ text: "changes requested", tone: "danger" });
-  if (mr.unresolved > 0) out.push({ text: `💬 ${mr.unresolved} unresolved`, tone: "warn" });
-  if (mr.approvalsLeft > 0) out.push({ text: `needs ${mr.approvalsLeft} approval${mr.approvalsLeft === 1 ? "" : "s"}`, tone: "warn" });
-  else if (mr.approvalsRequired > 0) out.push({ text: "✓ approved", tone: "success" });
-  if (mr.conflicts) out.push({ text: "conflicts", tone: "warn" });
-  if (TRANSIENT.has(mr.status)) out.push({ text: "checking…", tone: "dim" });
-  else if (NAMED[mr.status]) out.push({ text: NAMED[mr.status], tone: "warn" });
-  else if (!EXPLAINED.has(mr.status)) out.push({ text: mr.status.toLowerCase().replace(/_/g, " "), tone: "warn" });
+  if (p?.status === "SUCCESS") add("✓ pipeline", "success", false);
+  else if (p?.status === "FAILED") add("✗ pipeline", "danger");
+  else if (p?.status === "CANCELED") add("pipeline canceled", "danger");
+  else if (p?.status === "MANUAL") add("pipeline manual", "dim");
+  else if (!p && mr.status === "CI_MUST_PASS") add("no pipeline", "warn");
+  else if (p && p.status === "RUNNING" && p.progress) why = true;
+  else if (p && ["RUNNING", "PENDING", "CREATED", "WAITING_FOR_RESOURCE", "PREPARING"].includes(p.status)) add(`pipeline ${p.status === "RUNNING" ? "running" : "pending"}`, "dim");
+  if (mr.changesRequestedBy.length) add(`changes requested · ${mr.changesRequestedBy.map((u) => `@${u}`).join(", ")}`, "danger");
+  else if (mr.status === "REQUESTED_CHANGES") add("changes requested", "danger");
+  if (mr.unresolved > 0) add(`💬 ${mr.unresolved} unresolved`, "warn");
+  if (mr.approvalsLeft > 0) add(`needs ${mr.approvalsLeft} approval${mr.approvalsLeft === 1 ? "" : "s"}`, "warn");
+  else if (mr.approvalsRequired > 0 && mr.status !== "NOT_APPROVED") add("✓ approved", "success", false);
+  if (mr.conflicts) add("conflicts", "warn");
+  if (TRANSIENT.has(mr.status)) add("checking…", "dim");
+  else if (NAMED[mr.status]) add(NAMED[mr.status], "warn");
+  else if (!EXPLAINED.has(mr.status) || (!why && !mr.draft && mr.status !== "MERGEABLE")) add(mr.status.toLowerCase().replace(/_/g, " "), "warn");
   return out;
 }
 

@@ -36,6 +36,15 @@ test("chips say why an MR is blocked", () => {
   assert.deepEqual(texts(mr(1, { status: "CI_STILL_RUNNING", pipeline: { id: 1, status: "RUNNING", sha: "", progress: { done: 1, running: 1, total: 4 } }, approvalsRequired: 0 })), [], "the progress bar says it");
 });
 
+test("a blocked MR is never left unexplained", () => {
+  assert.deepEqual(texts(mr(1, { status: "NOT_APPROVED", approvalsLeft: 0, approvalsRequired: 1 })), ["success:✓ pipeline", "warn:not approved"]);
+  assert.deepEqual(texts(mr(1, { status: "DISCUSSIONS_NOT_RESOLVED", unresolved: 0, approvalsRequired: 0 })), ["success:✓ pipeline", "warn:discussions not resolved"]);
+  assert.deepEqual(texts(mr(1, { status: "CONFLICT", conflicts: false, approvalsRequired: 0 })), ["success:✓ pipeline", "warn:conflict"]);
+  assert.deepEqual(texts(mr(1, { status: "CI_MUST_PASS", approvalsRequired: 0, pipeline: { id: 1, status: "PENDING", sha: "", progress: null } })), ["dim:pipeline pending"]);
+  assert.deepEqual(texts(mr(1, { status: "CI_MUST_PASS", approvalsRequired: 0, pipeline: { id: 1, status: "SKIPPED", sha: "", progress: null } })), ["warn:ci must pass"]);
+  assert.deepEqual(texts(mr(1, { status: "SOMETHING_NEW", approvalsRequired: 0 })), ["success:✓ pipeline", "warn:something new"]);
+});
+
 test("ready rows add to the train; running ones add when green; trains off means merge when green", () => {
   const ready = model({ inbox: inbox([mr(1)]) }).sections[0].rows[0];
   assert.deepEqual(ready.add, { when: "now", look: "go", label: "🚂 Add to train", short: "Add", disabled: false, busy: false });
