@@ -15,8 +15,7 @@ The toggle is covered by `view.test.ts`, `main.test.ts`, `inbox.test.ts` and
 first, then the 24-hour / last-5 trim), Merge all and its re-check, a row merge
 of a pull request that is not yours, persistence under `view-v1`, a stored value
 applied after the list, ignored when malformed, and ignored when it arrives after
-a click, and the `viewer{login}` in the manifest's `list` query. It has not been
-rendered or run inside Alas.
+a click, and the `viewer{login}` in the manifest's `list` query. Rendered from the built page with fixture state in headless Chrome (dark and light, tab and rail widths; the All | Mine toggle posts {type:"scope", mine:true}; no horizontal overflow at 260 px); not run inside Alas.
 
 - [ ] All | Mine in the tab header and on its own row in the rail: Mine shows only my pull requests, counts and merged follow; Merge all covers only mine; choice survives a restart
 

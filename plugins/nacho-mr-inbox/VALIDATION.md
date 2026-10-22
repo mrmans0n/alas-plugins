@@ -1,8 +1,7 @@
 # MR Inbox validation
 
 The tab and the rail are web pages (`page/main.ts`) drawn from view models built
-in `view.ts` and `doctor-view.ts`. The page has not yet been rendered inside
-Alas.
+in `view.ts` and `doctor-view.ts`. Rendered from the built page with fixture state in headless Chrome (dark and light, tab and rail widths; the All | Mine toggle posts {type:"scope", mine:true}; no horizontal overflow at 260 px); not run inside Alas.
 
 ## Automated checks
 
@@ -15,7 +14,7 @@ Run on 2026-10-22 from the repository root with Node 24.13.0.
 
 The All | Mine toggle (0.3.0) is covered by `view.test.ts`, `main.test.ts` and
 `protocol.test.ts` (filtering, the complete train strip, Add all and its re-check,
-persistence). It has not been rendered or run inside Alas.
+persistence). Rendered from the built page with fixture state in headless Chrome (dark and light, tab and rail widths; the All | Mine toggle posts {type:"scope", mine:true}; no horizontal overflow at 260 px); not run inside Alas.
 
 ## Manual checks (self-managed GitLab with merge trains, and gitlab.com)
 
