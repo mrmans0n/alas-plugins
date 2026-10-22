@@ -1,6 +1,6 @@
 import type { Outcome, ProcessResult } from "@alas/plugin";
 import { processError } from "./inbox.ts";
-import { excerpt, parseIdentity, parseJobs, parseRun, parseRuns, type Excerpt, type Job, type PullIdentity, type Run } from "./doctor.ts";
+import { excerpt, parseIdentity, parseJobs, parsePipeline, parsePipelines, type Excerpt, type Job, type PullIdentity, type Run } from "./doctor.ts";
 
 type Done = (o: Outcome<ProcessResult>) => void;
 type Driver = (id: string, worktree: string, args: string[], done: Done) => void;
@@ -14,7 +14,7 @@ export class ProcessQueue {
   private shared = new Map<string, Task>();
   private active = 0;
   private draining = false;
-  private githubReady = () => true;
+  private gateReady = () => true;
   private driver: Driver;
   constructor(driver: Driver) { this.driver = driver; }
   run(id: string, worktree: string, args: string[], done: Done, options: RequestOptions = {}): void {
@@ -28,8 +28,8 @@ export class ProcessQueue {
     this.drain();
   }
   resume(): void { this.drain(); }
-  setGitHubGate(ready: () => boolean): void { this.githubReady = ready; }
-  private ready(task: Task): boolean { return task.ready() && (!["list", "merge", "ci-api"].includes(task.id) || this.githubReady()); }
+  setGate(ready: () => boolean): void { this.gateReady = ready; }
+  private ready(task: Task): boolean { return task.ready() && (!["list", "project", "add", "automerge", "retry", "ci-api", "ci-trace"].includes(task.id) || this.gateReady()); }
   private drain(): void {
     if (this.draining) return;
     this.draining = true;
@@ -56,9 +56,7 @@ export class ProcessQueue {
   }
 }
 export interface Result<T> { value?: T; error?: string; complete: boolean; warning?: string }
-const RUN_FIELDS = "{id,workflow_id,name,run_attempt,head_sha,head_branch,event,status,conclusion,created_at,updated_at,html_url,pull_requests:[.pull_requests[]?|{number}],head_repository:{full_name:.head_repository.full_name}}";
-const JOB_FIELDS = "{id,run_id,run_attempt,name,status,conclusion,started_at,completed_at,html_url,steps:[.steps[]?|{number,name,status,conclusion}]}";
-/** Strip gh --include headers, including any redirects, without treating log text as headers. */
+/** Strip glab --include headers, including any redirects, without treating log text as headers. */
 function response(stdout: string): { body: string; headers: string } {
   let body = stdout, headers = "";
   while (/^HTTP\/\S+ \d{3}/.test(body)) {
@@ -71,98 +69,110 @@ function response(stdout: string): { body: string; headers: string } {
   return { body, headers };
 }
 
-export class GitHub {
+export const endpoint = (project: string, rest: string) => `projects/${encodeURIComponent(project)}/${rest}`;
+
+export class GitLab {
   blockedUntil = 0;
   authBlocked = false;
   private queue: ProcessQueue;
   readonly worktree: string;
+  readonly project: string;
+  readonly host: string;
   private now: () => number;
   private backoff: (seconds: number) => void;
-  constructor(queue: ProcessQueue, worktree: string, now: () => number, backoff: (seconds: number) => void) {
-    this.queue = queue; this.worktree = worktree; this.now = now; this.backoff = backoff;
-    this.queue.setGitHubGate(() => !this.authBlocked && this.now() >= this.blockedUntil);
+  constructor(queue: ProcessQueue, worktree: string, project: string, host: string, now: () => number, backoff: (seconds: number) => void) {
+    this.queue = queue; this.worktree = worktree; this.project = project; this.host = host; this.now = now; this.backoff = backoff;
+    this.queue.setGate(() => !this.authBlocked && this.now() >= this.blockedUntil);
   }
   retry(): void { this.authBlocked = false; this.queue.resume(); }
-  /** Original list/merge share this error gate even though their response is not REST JSON. */
   observe(outcome: Outcome<ProcessResult>): void {
     if (!processError(outcome)) return;
     const parsed = response(outcome.result?.stdout ?? "");
     const message = `${outcome.result?.stderr ?? ""}\n${parsed.body}\n${processError(outcome)}`;
-    if (/rate limit|secondary rate|abuse detection/i.test(message) || /^HTTP\/\S+ 429/m.test(parsed.headers)) {
+    if (/\b429\b|rate limit|too many requests/i.test(message) || /^HTTP\/\S+ 429/m.test(parsed.headers)) {
       const retry = /retry-after:\s*(\d+)/i.exec(parsed.headers);
-      const reset = /x-ratelimit-reset:\s*(\d+)/i.exec(parsed.headers);
+      const reset = /ratelimit-reset:\s*(\d+)/i.exec(parsed.headers);
       const delay = retry ? Number(retry[1]) * 1000 : reset ? Math.max(60000, Number(reset[1]) * 1000 - this.now()) : 60000;
       this.blockedUntil = Math.max(this.blockedUntil, this.now() + Math.max(1000, delay));
       this.backoff(Math.max(1, Math.ceil((this.blockedUntil - this.now()) / 1000)));
     }
-    if (/gh auth login|bad credentials|HTTP 401|not logged/i.test(message)) this.authBlocked = true;
+    if (/401 Unauthorized|glab auth login|no token found/i.test(message)) this.authBlocked = true;
   }
-  json(path: string, done: (r: Result<any>) => void, options: RequestOptions = {}, projection?: string): void {
-    this.request(path, false, done, options, projection);
+  private gateError(): string | undefined {
+    if (this.authBlocked) return "Sign in with glab auth login on this execution host, then Retry.";
+    if (this.now() < this.blockedUntil) return `GitLab rate limited. Retry after ${new Date(this.blockedUntil).toISOString()}.`;
+    return undefined;
   }
-  private request(path: string, raw: boolean, done: (r: Result<any>) => void, options: RequestOptions, projection?: string, allowEscapes = false): void {
-    if (this.authBlocked) return done({ error: "Sign in with gh auth login on this execution host, then Retry.", complete: false });
-    if (this.now() < this.blockedUntil) return done({ error: `GitHub rate limited. Retry after ${new Date(this.blockedUntil).toISOString()}.`, complete: false });
-    const args = [path, "--method", "GET", "--include", ...(allowEscapes ? ["--allow-escape-sequences"] : []), ...(projection ? ["--jq", projection] : [])];
-    this.queue.run("ci-api", this.worktree, args, outcome => {
-      const out = outcome.result;
-      const parsed = response(out?.stdout ?? "");
-      const error = processError(outcome);
-      // Recent gh protects terminals from raw log escapes. Older gh needs no flag.
-      // Only retry its specific refusal; excerpt() strips control sequences before rendering.
-      if (raw && !allowEscapes && error && /response contains terminal escape sequences.*--allow-escape-sequences/s.test(out?.stderr ?? "")) return this.request(path, raw, done, options, projection, true);
+  private ready = () => !this.authBlocked && this.now() >= this.blockedUntil;
+  json(rest: string, done: (r: Result<any>) => void, options: RequestOptions = {}): void {
+    const blocked = this.gateError();
+    if (blocked) return done({ error: blocked, complete: false });
+    this.queue.run("ci-api", this.worktree, [endpoint(this.project, rest)], outcome => {
       this.observe(outcome);
-      if (error) {
-        const message = `${out?.stderr ?? ""}\n${parsed.body}\n${error}`;
-        const logMissing = raw && /HTTP 404|HTTP 410|not found|expired/i.test(message);
-        return done({ error: logMissing ? "Logs unavailable or expired (GitHub 404/410)." : error, complete: false });
-      }
-      if (!raw && out?.truncated) return done({ error: "GitHub JSON output was truncated; evidence is incomplete.", complete: false });
-      if (raw) return done({ value: { ...excerpt(parsed.body, !!out?.truncated), fetchedAt: this.now() }, complete: !out?.truncated });
+      const error = processError(outcome);
+      if (error) return done({ error, complete: false });
+      if (outcome.result?.truncated) return done({ error: "GitLab JSON output was truncated; evidence is incomplete.", complete: false });
       let value: unknown;
-      try { value = JSON.parse(parsed.body); }
-      catch { return done({ error: "GitHub returned malformed JSON; evidence is unavailable.", complete: false }); }
+      try { value = JSON.parse(response(outcome.result!.stdout).body); }
+      catch { return done({ error: "GitLab returned malformed JSON; evidence is unavailable.", complete: false }); }
       done({ value, complete: true });
-    }, { ...options, ready: () => !this.authBlocked && this.now() >= this.blockedUntil });
+    }, { ...options, ready: this.ready });
   }
-  identity(repo: string, number: number, done: (r: Result<PullIdentity>) => void, options: RequestOptions = {}): void {
-    this.json(`repos/${repo}/pulls/${number}`, r => this.normalize(r, parseIdentity, done), options, "{head:{sha:.head.sha,ref:.head.ref,repo:{full_name:.head.repo.full_name}},base:{sha:.base.sha,ref:.base.ref}}");
+  identity(iid: number, done: (r: Result<PullIdentity>) => void, options: RequestOptions = {}): void {
+    this.json(`merge_requests/${iid}`, r => this.normalize(r, v => parseIdentity(v, this.project), done), options);
   }
-  run(repo: string, id: number, attempt: number | undefined, done: (r: Result<Run>) => void, options: RequestOptions = {}): void {
-    this.json(`repos/${repo}/actions/runs/${id}${attempt ? `/attempts/${attempt}` : ""}`, r => this.normalize(r, parseRun, done), options, RUN_FIELDS);
+  run(id: number, done: (r: Result<Run>) => void, options: RequestOptions = {}): void {
+    this.json(`pipelines/${id}`, r => this.normalize(r, v => parsePipeline(v, this.host, this.project), done), options);
   }
-  runs(repo: string, filter: { branch?: string; workflow?: number; since?: string; until?: string }, done: (r: Result<Run[]>) => void, options: RequestOptions = {}): void {
+  runs(filter: { mr?: number; ref?: string; since: string }, done: (r: Result<Run[]>) => void, options: RequestOptions = {}): void {
     const collected: Run[] = [];
     const next = (page: number) => {
-      const query = `per_page=10&page=${page}${filter.branch !== undefined ? `&branch=${encodeURIComponent(filter.branch)}` : ""}${filter.since ? `&created=${encodeURIComponent(filter.until ? `${filter.since}..${filter.until}` : ">=" + filter.since)}` : ""}`;
-      const path = `repos/${repo}/actions/${filter.workflow ? `workflows/${filter.workflow}/runs` : "runs"}?${query}`;
-      this.json(path, r => {
+      const rest = filter.mr !== undefined
+        ? `merge_requests/${filter.mr}/pipelines?per_page=10&page=${page}`
+        : `pipelines?ref=${encodeURIComponent(filter.ref ?? "")}&source=push&updated_after=${encodeURIComponent(filter.since)}&per_page=10&page=${page}`;
+      this.json(rest, r => {
         if (r.error) return done({ value: collected, error: r.error, complete: false });
         let values: Run[];
-        try { values = parseRuns(r.value); } catch (e) { return done({ value: collected, error: String(e), complete: false }); }
-        collected.push(...values);
-        const more = values.length === 10 && (typeof r.value?.total_count !== "number" || collected.length < r.value.total_count);
+        try { values = parsePipelines(r.value, this.host, this.project); } catch (e) { return done({ value: collected, error: String(e), complete: false }); }
+        collected.push(...values.filter(v => v.created >= filter.since));
+        const more = values.length === 10;
         if (more && page < 3) return next(page + 1);
-        done({ value: collected, complete: !more, warning: more ? "Run history incomplete: stopped at 30 summaries." : undefined });
-      }, options, `{total_count,workflow_runs:[.workflow_runs[]|${RUN_FIELDS}]}`);
+        done({ value: collected, complete: !more, warning: more ? "Pipeline history incomplete: stopped at 30 summaries." : undefined });
+      }, options);
     };
     next(1);
   }
-  jobs(repo: string, id: number, attempt: number, done: (r: Result<Job[]>) => void, options: RequestOptions = {}): void {
+  jobs(pipeline: number, done: (r: Result<Job[]>) => void, options: RequestOptions = {}): void {
     const collected: Job[] = [];
-    const next = (page: number) => this.json(`repos/${repo}/actions/runs/${id}/attempts/${attempt}/jobs?per_page=25&page=${page}`, r => {
+    const next = (page: number) => this.json(`pipelines/${pipeline}/jobs?include_retried=true&per_page=25&page=${page}`, r => {
       if (r.error) return done({ value: collected, error: r.error, complete: false });
       let jobs: Job[];
-      try { jobs = parseJobs(r.value, id, attempt); } catch (e) { return done({ value: collected, error: String(e), complete: false }); }
+      try { jobs = parseJobs(r.value, pipeline, this.host); } catch (e) { return done({ value: collected, error: String(e), complete: false }); }
       collected.push(...jobs);
-      const more = jobs.length === 25 && (typeof r.value?.total_count !== "number" || collected.length < r.value.total_count);
+      const more = jobs.length === 25;
       if (more && page < 4) return next(page + 1);
+      // Attempt numbers count retries across pages, so recount once everything is in.
+      for (const j of collected) j.attempt = collected.filter(o => o.name === j.name && o.id < j.id).length + 1;
       done({ value: collected, complete: !more, warning: more ? "Jobs incomplete: stopped at 100 jobs." : undefined });
-    }, options, `{total_count,jobs:[.jobs[]|${JOB_FIELDS}]}`);
+    }, options);
     next(1);
   }
-  log(repo: string, job: number, done: (r: Result<Excerpt>) => void, options: RequestOptions = {}): void {
-    this.request(`repos/${repo}/actions/jobs/${job}/logs`, true, done, options);
+  log(job: number, done: (r: Result<Excerpt>) => void, options: RequestOptions = {}): void {
+    const blocked = this.gateError();
+    if (blocked) return done({ error: blocked, complete: false });
+    this.queue.run("ci-trace", this.worktree, [String(job)], outcome => {
+      this.observe(outcome);
+      const error = processError(outcome);
+      if (error) return done({ error: /\b(?:404|410)\b|not found/i.test(error) ? "Logs unavailable or expired (GitLab 404)." : error, complete: false });
+      const out = outcome.result!;
+      const headCut = out.truncated || out.stdout.length >= 262144;
+      done({ value: { ...excerpt(out.stdout, headCut), fetchedAt: this.now() }, complete: !out.truncated });
+    }, { ...options, ready: this.ready });
+  }
+  retryJob(id: number, done: (error?: string) => void): void { this.write(`jobs/${id}/retry`, done); }
+  retryPipeline(id: number, done: (error?: string) => void): void { this.write(`pipelines/${id}/retry`, done); }
+  private write(rest: string, done: (error?: string) => void): void {
+    this.queue.run("retry", this.worktree, [endpoint(this.project, rest)], outcome => { this.observe(outcome); done(processError(outcome)); }, { priority: true });
   }
   private normalize<T>(r: Result<any>, parse: (v: unknown) => T, done: (r: Result<T>) => void): void {
     if (r.error) return done({ error: r.error, complete: false });
