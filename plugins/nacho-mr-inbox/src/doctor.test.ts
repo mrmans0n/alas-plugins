@@ -92,3 +92,22 @@ test("the brief names the MR and pipeline; the cache round-trips only on its hos
   assert.equal(restoreCache(packed, HOST).length, 1);
   assert.equal(restoreCache(packed, "gitlab.com").length, 0);
 });
+
+test("a retried job (attempt 2) still resolves its pipeline in brief and classification", () => {
+  const e = evidence();
+  const retry = { ...e.attempts[0].jobs[0], attempt: 2 };
+  e.attempts[0].jobs = [retry];
+  const text = brief(e, retry, "Why?");
+  assert.match(text, /Pipeline: Merged results pipeline\nPipeline 500, job 30 \(attempt 2\): unit/);
+  assert.match(text, new RegExp(`Recorded pipeline SHA/ref: ${SHA} / refs/merge-requests/12/merge`));
+  assert.doesNotMatch(text, /Unknown|unknown \/ unknown/);
+  const run = e.runs[0];
+  e.logs["30"] = { text: "x", truncated: false, signature: "error:boom happened" };
+  e.observations = [{ side: "base", run: { ...run, id: 400, sha: "d".repeat(40) }, job: { ...retry, id: 31, run: 400, attempt: 1 }, excerpt: { text: "x", truncated: false, signature: "error:boom happened" } }];
+  assert.equal(classifyEvidence(e, retry).kind, "recurring failure");
+  const failedFirst = { ...retry, id: 29, attempt: 1 };
+  e.attempts[0].jobs = [failedFirst, retry];
+  e.logs["29"] = { text: "x", truncated: false };
+  e.observations = [{ side: "pr", run, job: { ...retry, conclusion: "success", status: "completed" } }];
+  assert.match(classifyEvidence(e, failedFirst).text, /later attempt passed/i);
+});

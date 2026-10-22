@@ -114,7 +114,7 @@ export function excerpt(raw: string, headCut: boolean): Excerpt {
 const INFRA_REASONS = ["runner_system_failure", "stuck_or_timeout_failure", "scheduler_failure", "api_failure", "runner_unsupported", "data_integrity_failure"];
 export function classifyEvidence(e: Evidence, job: Job): Suggestion {
   const log = e.logs[String(job.id)];
-  const same = e.observations.filter(o => o.run.workflow === e.attempts.find(a => a.run.id === job.run && a.run.attempt === job.attempt)?.run.workflow && o.job.name === job.name && !(o.job.id === job.id && o.run.id === job.run));
+  const same = e.observations.filter(o => o.run.workflow === e.attempts.find(a => a.run.id === job.run)?.run.workflow && o.job.name === job.name && !(o.job.id === job.id && o.run.id === job.run));
   const match = log?.signature && same.find(o => failed(o.job.conclusion) && o.excerpt?.signature === log.signature);
   if (match) return { kind: "recurring failure", text: `The same failure signature was also observed on ${match.side === "base" ? "the base branch" : "the MR"} at ${match.run.sha}, run ${match.run.id}, attempt ${match.job.attempt}. This is a bounded observation, not a flake diagnosis.`, links: [job.url, match.job.url] };
   const infra = log?.infrastructure ?? (INFRA_REASONS.includes(job.reason) ? `GitLab failure_reason ${job.reason}` : undefined);
@@ -133,7 +133,7 @@ export function remoteRepo(line: string, host: string): string | undefined {
   return m && validRepo(m[1]) ? m[1].toLowerCase() : undefined;
 }
 export function brief(e: Evidence, job: Job, question: string, verification = "Checkout verification pending"): string {
-  const run = e.attempts.find(a => a.run.id === job.run && a.run.attempt === job.attempt)?.run;
+  const run = e.attempts.find(a => a.run.id === job.run)?.run;
   const log = e.logs[String(job.id)];
   const suggestion = classifyEvidence(e, job);
   const data = JSON.stringify({ excerpt: log?.text ?? "Unavailable", truncated: log?.truncated ?? false, error: log?.error, comparisons: e.observations.map(o => ({ side: o.side, sha: o.run.sha, pipeline: o.run.id, attempt: o.job.attempt, job: o.job.name, conclusion: o.job.conclusion, url: o.job.url, signature: o.excerpt?.signature })) }, null, 2);
