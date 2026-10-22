@@ -72,6 +72,11 @@ test("Retry posts the job retry and refreshes the pipelines", () => {
   answer("retry", ok({ id: 32 }));
   assert.equal(doctor.state.retrying, undefined);
   assert.ok(calls.some((c) => /merge_requests\/12$/.test(c.args[0])), "the doctor reloads after a retry");
+  answer(/merge_requests\/12$/, ok(mr));
+  answer(/merge_requests\/12\/pipelines/, ok([p(500, { status: "running", updated_at: "2026-10-20T10:20:00Z" })]));
+  answer(/pipelines\/500$/, ok(p(500, { status: "running", updated_at: "2026-10-20T10:20:00Z" })));
+  answer(/pipelines\/500\/jobs/, ok([j(32, "unit", 500, { status: "running" }), j(30, "unit", 500)]));
+  assert.deepEqual(doctorModel(doctor.state).jobs.map((x) => [x.id, x.name]), [[32, "unit (retry 1)"], [30, "unit"]]);
 });
 
 test("a failed retry shows GitLab's message", () => {

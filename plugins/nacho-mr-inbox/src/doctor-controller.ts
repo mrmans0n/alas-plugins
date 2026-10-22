@@ -126,7 +126,7 @@ export class DoctorController {
     this.state.selectedAttempt = attemptKey(id, run.attempt);
     this.state.selectedJob = undefined; this.state.dispatch = undefined; this.state.historyLoading = false;
     const cached = e.attempts.find(a => a.run.id === id);
-    if (cached && cached.run.status === "completed" && !this.state.cached) { this.state.loading = false; return this.changed(); }
+    if (cached && cached.run.status === "completed" && cached.run.updated === run.updated && run.status === "completed" && !this.state.cached) { this.state.loading = false; return this.changed(); }
     this.state.loading = true; this.changed();
     this.loadAttempt(e, run, result => {
       this.state.loading = false;
@@ -206,7 +206,7 @@ export class DoctorController {
         }
         details(index + 1);
       };
-      const cached = task.side === "pr" && e.attempts.find(a => a.run.id === task.run.id && a.run.status === "completed" && a.complete);
+      const cached = task.side === "pr" && e.attempts.find(a => a.run.id === task.run.id && a.run.status === "completed" && a.run.updated === task.run.updated && task.run.status === "completed" && a.complete);
       if (cached) consume({ value: cached, complete: true });
       else this.loadAttempt(e, task.run, consume, options);
     };
