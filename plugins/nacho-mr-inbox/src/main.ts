@@ -1,6 +1,6 @@
 import { definePlugin, notify, processRun, request, requestSnapshot, sessionSend, setPanelBadge, setTimer, storageGet, storageSet, webPost, type Event, type Snapshot } from "@alas/plugin";
-import { addMode, classify, parseInbox, parseTrainsEnabled, processError } from "./inbox.ts";
-import { inboxModel, readyMine, type ViewState } from "./view.ts";
+import { addMode, parseInbox, parseTrainsEnabled, processError } from "./inbox.ts";
+import { addCandidates, inboxModel, readyMine, type ViewState } from "./view.ts";
 import { DoctorController } from "./doctor-controller.ts";
 import { endpoint, GitLab, ProcessQueue } from "./doctor-transport.ts";
 import { doctorModel } from "./doctor-view.ts";
@@ -23,6 +23,7 @@ let doctor: DoctorController | undefined;
 let gitlab: GitLab | undefined;
 let cached: unknown;
 let loadCache: number | undefined;
+let loadView: number | undefined;
 let snapshot: Snapshot = { worktrees: [] };
 /** What Add all still has to add, in order. */
 let addQueue: number[] = [];
@@ -125,7 +126,7 @@ function add(iid: number): boolean {
 /** Adds the ready MRs one at a time, each after a fresh list, stopping at the first failure. */
 function addAll(): void {
   if (!state.inbox || state.busy !== undefined || state.addAll) return;
-  addQueue = classify(state.inbox).ready.map((m) => m.iid);
+  addQueue = addCandidates(state).map((m) => m.iid);
   if (addQueue.length === 0) return;
   state.addAll = { total: addQueue.length, done: 0 };
   continueAddAll();
@@ -141,7 +142,7 @@ function continueAddAll(): boolean {
   while (addQueue.length > 0) {
     const iid = addQueue.shift()!;
     const mr = state.inbox?.mrs.find((m) => m.iid === iid);
-    if (mr && addMode(mr) === "now" && classify(state.inbox!).ready.includes(mr)) {
+    if (mr && addMode(mr) === "now" && addCandidates(state).includes(mr)) {
       if (add(iid)) return true;
     }
   }
@@ -191,6 +192,10 @@ function pageMessage(m: PageMessage): void {
     case "refresh": return refresh(true);
     case "add": add(m.iid); return;
     case "addAll": return addAll();
+    case "scope":
+      state.mineOnly = m.mine;
+      storageSet("view-v1", { mineOnly: m.mine });
+      return draw();
     case "retryPipeline": return retryPipeline(m.pipeline);
     case "doctor": {
       const mr = state.inbox?.mrs.find((x) => x.iid === m.iid);
@@ -227,9 +232,11 @@ definePlugin({
         draw();
         requestSnapshot();
         loadCache = storageGet("ci-doctor-v1");
+        loadView = storageGet("view-v1");
         return;
       case "stored":
         if (event.id === loadCache && !event.error) { cached = event.value; doctor?.restore(cached); }
+        if (event.id === loadView && !event.error && object(event.value) && typeof event.value.mineOnly === "boolean") { state.mineOnly = event.value.mineOnly; draw(); }
         return;
       case "snapshot":
       case "workspaceChanged":

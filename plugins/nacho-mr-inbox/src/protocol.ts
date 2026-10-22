@@ -13,6 +13,7 @@ export type PageMessage =
   | { type: "refresh" }
   | { type: "add"; iid: number }
   | { type: "addAll" }
+  | { type: "scope"; mine: boolean }
   | { type: "doctor"; iid: number }
   | { type: "retryPipeline"; pipeline: number }
   | { type: "retryJob"; job: number }
@@ -46,6 +47,8 @@ export function parsePageMessage(message: unknown): PageMessage | undefined {
     case "add":
     case "doctor":
       return id(m.iid) ? { type: m.type, iid: m.iid } : undefined;
+    case "scope":
+      return typeof m.mine === "boolean" ? { type: "scope", mine: m.mine } : undefined;
     case "retryPipeline":
       return id(m.pipeline) ? { type: "retryPipeline", pipeline: m.pipeline } : undefined;
     case "retryJob":

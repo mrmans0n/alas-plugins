@@ -107,3 +107,52 @@ test("loading, errors and merged rows", () => {
   const merged = model({ inbox: { ...inbox([]), merged: [{ iid: 5, title: "M", url: `${WEB}/-/merge_requests/5`, author: "bob", branch: "b", mergedAt: "2026-10-21T12:00:00Z" }] } }).merged;
   assert.deepEqual(merged.map((m) => m.iid), [5]);
 });
+
+const mixed = (extra: Partial<Inbox> = {}): Inbox => ({
+  ...inbox([mr(1), mr(2, { author: "ana" }), mr(3, { author: "bob", status: "NOT_APPROVED" }), mr(4, { draft: true }), mr(5, { author: "ana" }), mr(6, { author: "bob" })],
+    [{ target: "main", cars: [{ iid: 7, status: "FRESH", pipeline: null }, { iid: 8, status: "FRESH", pipeline: null }] }]),
+  merged: [
+    { iid: 20, title: "A", url: `${WEB}/-/merge_requests/20`, author: "nacho", branch: "a", mergedAt: "2026-10-21T12:00:00Z" },
+    { iid: 21, title: "B", url: `${WEB}/-/merge_requests/21`, author: "ana", branch: "b", mergedAt: "2026-10-21T11:00:00Z" },
+  ],
+  ...extra,
+});
+
+test("Mine shows only your MRs in groups, counts and merged, and says how many it hides", () => {
+  const all = model({ inbox: mixed() });
+  assert.deepEqual(all.scope, { mineOnly: false, available: true, hidden: 0 });
+  const m = model({ inbox: mixed(), mineOnly: true });
+  assert.deepEqual(m.sections.map((s) => [s.key, s.rows.map((r) => r.iid)]), [["ready", [1]], ["drafts", [4]]]);
+  assert.deepEqual(m.counts, { ready: 1, blocked: 0, failing: 0, drafts: 1 });
+  assert.deepEqual(m.merged.map((x) => x.iid), [20]);
+  assert.deepEqual(m.scope, { mineOnly: true, available: true, hidden: 5 });
+});
+
+test("Mine leaves the train strip complete and the Yours list as it was", () => {
+  const trains: Train[] = [{ target: "main", cars: [
+    { iid: 7, status: "MERGING", pipeline: null }, { iid: 8, status: "FRESH", pipeline: null }, { iid: 9, status: "FRESH", pipeline: null },
+  ] }];
+  const state = { inbox: inbox([mr(7, { author: "ana" }), mr(8), mr(9, { author: "bob" }), mr(3), mr(4, { author: "ana" })], trains) };
+  const off = model(state);
+  const on = model({ ...state, mineOnly: true });
+  assert.deepEqual(on.trains, off.trains);
+  assert.deepEqual(on.trains[0].cars.map((c) => [c.iid, c.mine]), [[7, false], [8, true], [9, false]]);
+  assert.deepEqual(on.mine, off.mine);
+  assert.equal(readyMine({ refreshing: false, errors: {}, ...state, mineOnly: true }), readyMine({ refreshing: false, errors: {}, ...state }));
+});
+
+test("Mine: Add all counts only your ready MRs, and goes away when fewer than two", () => {
+  const state = { inbox: mixed(), trainsEnabled: true };
+  assert.equal(model(state).addAll?.count, 4);
+  assert.equal(model({ ...state, mineOnly: true }).addAll, undefined);
+  const two = { inbox: inbox([mr(1), mr(2), mr(3, { author: "ana" })]), mineOnly: true };
+  assert.deepEqual(model(two).addAll, { count: 2, label: "🚂 Add all 2 to train", disabled: false });
+});
+
+test("an unknown user means no toggle and no filtering", () => {
+  const m = model({ inbox: mixed({ user: "" }), mineOnly: true });
+  assert.deepEqual(m.scope, { mineOnly: false, available: false, hidden: 0 });
+  assert.equal(m.counts.ready, 4);
+  assert.equal(m.merged.length, 2);
+  assert.equal(model({}).scope.available, false);
+});

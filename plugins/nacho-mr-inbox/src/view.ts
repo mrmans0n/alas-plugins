@@ -14,6 +14,8 @@ export interface ViewState {
   /** The last write failure per MR iid. */
   errors: Record<number, string>;
   addAll?: { total: number; done: number };
+  /** Show only the signed-in user's MRs; no effect while the user is unknown. */
+  mineOnly?: boolean;
 }
 
 export type Tone = "accent" | "success" | "warn" | "danger" | "dim";
@@ -52,6 +54,8 @@ export interface InboxModel {
   mine: Row[];
   merged: MergedRow[];
   addAll?: { count: number; label: string; disabled: boolean; progress?: string };
+  /** `available`: the user is known, so the toggle is offered. `hidden`: items the filter hides. */
+  scope: { mineOnly: boolean; available: boolean; hidden: number };
 }
 
 const TITLES: Record<Bucket, string> = { ready: "Ready", blocked: "Blocked", failing: "Failing", drafts: "Drafts" };
@@ -125,13 +129,29 @@ function car(c: Car, inbox: Inbox): CarView {
   return { iid: c.iid, title: mr?.title ?? `!${c.iid}`, ...(mr ? { url: mr.url } : {}), mine: mr?.author === inbox.user, label, tone, ...(c.pipeline?.progress ? { progress: c.pipeline.progress } : {}) };
 }
 
+/** The filter is on and the user is known. */
+const filtering = (state: ViewState): boolean => !!state.mineOnly && !!state.inbox?.user;
+
+/** The ready MRs Add all covers: only yours while the filter is on. */
+export function addCandidates(state: ViewState): MergeRequest[] {
+  const inbox = state.inbox;
+  if (!inbox) return [];
+  const ready = classify(inbox).ready;
+  return filtering(state) ? ready.filter((m) => m.author === inbox.user) : ready;
+}
+
 export function inboxModel(state: ViewState, now: number): InboxModel {
   const inbox = state.inbox;
-  const groups = inbox ? classify(inbox) : { ready: [], blocked: [], failing: [], drafts: [] };
+  const mineOnly = filtering(state);
+  const every = inbox ? classify(inbox) : { ready: [], blocked: [], failing: [], drafts: [] };
+  const groups = mineOnly ? Object.fromEntries(BUCKETS.map((b) => [b, every[b].filter((m) => m.author === inbox!.user)])) as typeof every : every;
+  const allMerged = inbox ? recentMerged(inbox.merged, now) : [];
+  const shownMerged = mineOnly ? allMerged.filter((m) => m.author === inbox!.user) : allMerged;
+  const hidden = BUCKETS.reduce((n, b) => n + every[b].length - groups[b].length, allMerged.length - shownMerged.length);
   const counts = Object.fromEntries(BUCKETS.map((b) => [b, groups[b].length])) as Record<Bucket, number>;
   const trains = state.trainsEnabled !== false;
   const all = state.addAll;
-  const ready = groups.ready.length;
+  const ready = addCandidates(state).length;
   const mine = inbox ? inbox.mrs.filter((m) => m.author === inbox.user && !inTrain(inbox, m)).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).map((m) => row(m, state)) : [];
   return {
     project: inbox?.project, fetchedAt: state.fetchedAt, refreshing: state.refreshing, error: state.error,
@@ -141,7 +161,8 @@ export function inboxModel(state: ViewState, now: number): InboxModel {
     counts,
     sections: BUCKETS.filter((b) => groups[b].length > 0).map((b) => ({ key: b, title: TITLES[b], tone: TONES[b], rows: groups[b].map((m) => row(m, state)) })),
     mine,
-    merged: inbox ? recentMerged(inbox.merged, now).map(({ iid, title, url, branch, author, avatar, mergedAt }) => ({ iid, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })) : [],
+    merged: shownMerged.map(({ iid, title, url, branch, author, avatar, mergedAt }) => ({ iid, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })),
+    scope: { mineOnly, available: !!inbox?.user, hidden },
     ...(ready >= 2 || all ? { addAll: {
       count: ready, label: trains ? `🚂 Add all ${ready} to train` : `Merge all ${ready} when green`, disabled: state.busy !== undefined,
       ...(all ? { progress: `Adding ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}),
