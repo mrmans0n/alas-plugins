@@ -117,3 +117,9 @@ test("time labels are unchanged from pr-inbox", () => {
   assert.equal(updatedLabel(0, 30_000), "Updated just now");
   assert.equal(agoLabel("1970-01-01T00:00:00Z", 7_200_000), "2h ago");
 });
+
+test("a project path that is not a plain group/project path is rejected", () => {
+  const withPath = (fullPath: string) => JSON.stringify({ data: { project: { fullPath, webUrl: WEB, mergeTrains: { nodes: [] }, mergeRequests: { nodes: [node(1)] }, merged: { nodes: [] } } } });
+  for (const bad of ["acme/../shop", "acme/shop; rm", "acme/my shop", "shop"]) assert.equal(parseInbox(withPath(bad)), "glab returned an unexpected reply.", bad);
+  assert.equal((parseInbox(withPath("acme/team/sub/shop")) as Inbox).project, "acme/team/sub/shop");
+});

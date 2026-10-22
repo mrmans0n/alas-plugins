@@ -65,3 +65,22 @@ test("start: list and project, then add, add all, auto-merge fallback, retry and
   page({ type: "retryPipeline", pipeline: 999 });
   assert.equal(proc(testHost.takeSent(), "retry"), undefined, "only the head pipeline of a listed MR is retried");
 });
+
+test("a failed re-list stops Add all instead of adding from stale data", () => {
+  // Same plugin instance as the test above, whose last retry is still running and holds one process slot.
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2)])));
+  testHost.takeSent();
+  page({ type: "addAll" });
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done("", 1, "glab: 500 Server Error (HTTP 500)"));
+  sent = testHost.takeSent();
+  assert.equal(proc(sent, "add"), undefined, "no add from a stale list");
+  assert.equal(posted(sent).inbox.addAll?.progress, undefined, "Add all is no longer running");
+  assert.ok(posted(sent).inbox.error);
+});

@@ -1,4 +1,5 @@
 import type { Outcome, ProcessResult } from "@alas/plugin";
+import { validRepo } from "./doctor.ts";
 
 export interface Progress { done: number; running: number; total: number }
 export interface Pipeline { id: number; status: string; sha: string; progress: Progress | null }
@@ -146,7 +147,7 @@ export function parseInbox(stdout: string): Inbox | string {
   const project = json?.data?.project;
   if (!isObject(project)) return "GitLab returned no project. Check that glab can read it.";
   const host = /^https:\/\/([a-z0-9.-]+(?::\d{1,5})?)\/[^\s]+$/i.exec(str(project.webUrl) ?? "")?.[1]?.toLowerCase();
-  if (!host || typeof project.fullPath !== "string" || !Array.isArray(project.mergeRequests?.nodes)) return "glab returned an unexpected reply.";
+  if (!host || !validRepo(project.fullPath) || !Array.isArray(project.mergeRequests?.nodes)) return "glab returned an unexpected reply.";
   const base = `https://${host}/`;
   const mrs = new Map<number, MergeRequest>();
   for (const n of project.mergeRequests.nodes) {

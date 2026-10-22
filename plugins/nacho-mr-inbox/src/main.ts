@@ -69,6 +69,7 @@ function refresh(manual = false): void {
       doctor?.updateInbox(parsed.project, parsed.mrs.map((m) => ({ number: m.iid, title: m.title, url: m.url, branch: m.branch })));
     }
     if (again) { again = false; refresh(); }
+    else if (typeof parsed === "string") { stopAddAll(); draw(); }
     else if (!continueAddAll()) draw();
   }, { priority: true });
 }
