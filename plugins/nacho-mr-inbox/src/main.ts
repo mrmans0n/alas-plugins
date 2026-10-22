@@ -1,8 +1,8 @@
 import { definePlugin, notify, processRun, request, requestSnapshot, sessionSend, setPanelBadge, setTimer, storageGet, storageSet, webPost, type Event, type Snapshot } from "@alas/plugin";
-import { canMerge, classify, isReady, parseInbox, processError } from "./inbox.ts";
-import { inboxModel, readyCount, type ViewState } from "./view.ts";
+import { addMode, classify, parseInbox, parseTrainsEnabled, processError } from "./inbox.ts";
+import { inboxModel, readyMine, type ViewState } from "./view.ts";
 import { DoctorController } from "./doctor-controller.ts";
-import { GitHub, ProcessQueue } from "./doctor-transport.ts";
+import { endpoint, GitLab, ProcessQueue } from "./doctor-transport.ts";
 import { doctorModel } from "./doctor-view.ts";
 import { object } from "./doctor.ts";
 import { parsePageMessage, type PageMessage, type PluginMessage } from "./protocol.ts";
@@ -13,19 +13,19 @@ const REFRESH_SECONDS = 60;
 const HIDDEN_REFRESH_SECONDS = 300;
 
 let worktree: string | undefined;
-const state: ViewState = { refreshing: false, mergeErrors: {} };
+const state: ViewState = { refreshing: false, errors: {} };
 let listing = false;
 /** A refresh asked for while one was running, so its data may predate a merge. */
 let again = false;
 let tabShown = false;
 let panelShown = false;
 let doctor: DoctorController | undefined;
-let github: GitHub | undefined;
+let gitlab: GitLab | undefined;
 let cached: unknown;
 let loadCache: number | undefined;
 let snapshot: Snapshot = { worktrees: [] };
-/** What Merge all still has to merge, in order. */
-let mergeQueue: number[] = [];
+/** What Add all still has to add, in order. */
+let addQueue: number[] = [];
 /** The ready count the rail badge shows. */
 let badge = 0;
 const queue = new ProcessQueue((id, wt, args, done) => processRun(id, wt, { args: args.length ? args : undefined }, done));
@@ -35,89 +35,129 @@ const draw = () => {
   const message: PluginMessage = { type: "state", inbox: inboxModel(state, Date.now()), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
   webPost(TAB, message);
   webPost(PANEL, message);
-  const ready = readyCount(state);
+  const ready = readyMine(state);
   if (ready !== badge) setPanelBadge(PANEL, ready > 0 ? { count: ready, tone: "success" } : null);
   badge = ready;
 };
 
 function refresh(manual = false): void {
-  if (manual) github?.retry();
+  if (manual) gitlab?.retry();
   if (!worktree) return;
-  if (listing) {
-    again = true;
-    return;
+  if (manual || state.trainsEnabled === undefined) {
+    queue.run("project", worktree, [], (outcome) => {
+      const enabled = processError(outcome) === undefined ? parseTrainsEnabled(outcome.result!.stdout) : undefined;
+      state.trainsEnabled = enabled ?? false;
+      draw();
+    }, { priority: true });
   }
+  if (listing) { again = true; return; }
   listing = true;
   state.refreshing = true;
   draw();
   queue.run("list", worktree, [], (outcome) => {
-    github?.observe(outcome);
+    gitlab?.observe(outcome);
     listing = false;
     state.refreshing = false;
     const failure = processError(outcome);
-    const inbox = failure === undefined ? parseInbox(outcome.result!.stdout) : undefined;
-    if (inbox) {
-      state.inbox = inbox;
+    const parsed = failure === undefined ? (outcome.result!.truncated ? "The MR list did not fit in glab's output limit." : parseInbox(outcome.result!.stdout)) : failure;
+    if (typeof parsed === "string") state.error = parsed;
+    else {
+      state.inbox = parsed;
       state.fetchedAt = Date.now();
       state.error = undefined;
-      doctor?.updateInbox(inbox.repo, inbox.pulls);
-    } else {
-      state.error = failure ?? (outcome.result?.truncated ? "The pull request list did not fit in gh's output limit." : "gh returned an unexpected reply.");
+      ensureDoctor();
+      doctor?.updateInbox(parsed.project, parsed.mrs.map((m) => ({ number: m.iid, title: m.title, url: m.url, branch: m.branch })));
     }
-    if (again) {
-      again = false;
-      refresh();
-    } else if (!continueMergeAll()) draw();
+    if (again) { again = false; refresh(); }
+    else if (!continueAddAll()) draw();
   }, { priority: true });
 }
 
-function merge(number: number): void {
-  const pull = state.inbox?.pulls.find((p) => p.number === number);
-  if (!worktree || state.merging !== undefined || !pull || !canMerge(pull)) return;
-  state.merging = number;
-  delete state.mergeErrors[number];
+/** CI Doctor needs the project and host, which the first list reply gives. */
+function ensureDoctor(): void {
+  const inbox = state.inbox;
+  if (!inbox || !worktree || (gitlab && gitlab.project === inbox.project && gitlab.host === inbox.host)) return;
+  gitlab = new GitLab(queue, worktree, inbox.project, inbox.host, Date.now, seconds => setTimer("ci-backoff", seconds));
+  doctor = new DoctorController(gitlab, queue, {
+    changed: draw,
+    now: Date.now,
+    save: value => { storageSet("ci-doctor-v1", value); },
+    snapshot: done => { request("workspace/snapshot", {}, ({ result, error }) => done(!error && object(result) && result.snapshot && Array.isArray(result.snapshot.worktrees) ? result.snapshot as Snapshot : { worktrees: [] })); },
+    send: (session, text, done) => { sessionSend(session, text, ({ error }) => done(error?.message)); },
+  });
+  doctor.updateSnapshot(snapshot);
+  if (cached) doctor.restore(cached);
+}
+
+const SHA = /^[0-9a-f]{40,64}$/;
+
+function add(iid: number): void {
+  const inbox = state.inbox;
+  const mr = inbox?.mrs.find((m) => m.iid === iid);
+  const when = mr && addMode(mr);
+  if (!worktree || !inbox || !mr || !when || state.busy !== undefined || !SHA.test(mr.sha)) return;
+  state.busy = iid;
+  delete state.errors[iid];
   draw();
-  queue.run("merge", worktree, [String(number)], (outcome) => {
-    github?.observe(outcome);
-    state.merging = undefined;
+  const trains = state.trainsEnabled !== false;
+  const id = trains ? "add" : "automerge";
+  const args = trains
+    ? [endpoint(inbox.project, `merge_trains/merge_requests/${iid}`), "-f", `sha=${mr.sha}`, ...(when === "whenGreen" ? ["-f", "auto_merge=true"] : [])]
+    : [endpoint(inbox.project, `merge_requests/${iid}/merge`), "-f", `sha=${mr.sha}`, "-f", "auto_merge=true", "-f", "merge_when_pipeline_succeeds=true"];
+  queue.run(id, worktree, args, (outcome) => {
+    gitlab?.observe(outcome);
+    state.busy = undefined;
     const failure = processError(outcome);
-    if (failure === undefined) notify(`Merged #${number}`);
-    else state.mergeErrors[number] = failure;
-    if (state.mergeAll) {
-      if (failure === undefined) state.mergeAll.done++;
-      else stopMergeAll();
+    if (failure === undefined) notify(trains ? `Added !${iid} to the merge train` : `!${iid} merges when green`);
+    else state.errors[iid] = failure;
+    if (state.addAll) {
+      if (failure === undefined) state.addAll.done++;
+      else stopAddAll();
     }
     refresh();
   }, { priority: true });
 }
 
-/** Merges the ready pull requests one at a time, each after a fresh list, stopping at the first failure. */
-function mergeAll(): void {
-  if (!state.inbox || state.merging !== undefined || state.mergeAll) return;
-  mergeQueue = classify(state.inbox.pulls).ready.map((p) => p.number);
-  if (mergeQueue.length === 0) return;
-  state.mergeAll = { total: mergeQueue.length, done: 0 };
-  continueMergeAll();
+/** Adds the ready MRs one at a time, each after a fresh list, stopping at the first failure. */
+function addAll(): void {
+  if (!state.inbox || state.busy !== undefined || state.addAll) return;
+  addQueue = classify(state.inbox).ready.map((m) => m.iid);
+  if (addQueue.length === 0) return;
+  state.addAll = { total: addQueue.length, done: 0 };
+  continueAddAll();
 }
 
-function stopMergeAll(): void {
-  mergeQueue = [];
-  state.mergeAll = undefined;
+function stopAddAll(): void {
+  addQueue = [];
+  state.addAll = undefined;
 }
 
-/** Starts Merge all's next merge that is still ready on the current list; `false` when there is none to start. */
-function continueMergeAll(): boolean {
-  if (!state.mergeAll || state.merging !== undefined) return false;
-  while (mergeQueue.length > 0) {
-    const number = mergeQueue.shift()!;
-    const pull = state.inbox?.pulls.find((p) => p.number === number);
-    if (pull && isReady(pull)) {
-      merge(number);
+function continueAddAll(): boolean {
+  if (!state.addAll || state.busy !== undefined) return false;
+  while (addQueue.length > 0) {
+    const iid = addQueue.shift()!;
+    const mr = state.inbox?.mrs.find((m) => m.iid === iid);
+    if (mr && addMode(mr) === "now" && classify(state.inbox!).ready.includes(mr)) {
+      add(iid);
       return true;
     }
   }
-  stopMergeAll();
+  stopAddAll();
   return false;
+}
+
+/** Only a listed MR's failing head pipeline. */
+function retryPipeline(id: number): void {
+  const mr = state.inbox?.mrs.find((m) => m.pipeline?.id === id && (m.pipeline.status === "FAILED" || m.pipeline.status === "CANCELED"));
+  if (!mr || !gitlab || state.retrying !== undefined) return;
+  state.retrying = id;
+  delete state.errors[mr.iid];
+  draw();
+  gitlab.retryPipeline(id, (error) => {
+    state.retrying = undefined;
+    if (error) state.errors[mr.iid] = error;
+    refresh();
+  });
 }
 
 /** Refreshes every minute while the tab or the panel is shown, and every 5 minutes otherwise to keep the data current. */
@@ -137,16 +177,6 @@ function useSnapshot(next: Snapshot): void {
   const first = worktree === undefined;
   worktree = (snapshot.worktrees.find((w) => w.main) ?? snapshot.worktrees[0])?.id;
   if (!first || !worktree) return;
-  github = new GitHub(queue, worktree, Date.now, seconds => setTimer("ci-backoff", seconds));
-  doctor = new DoctorController(github, queue, {
-    changed: draw,
-    now: Date.now,
-    save: value => { storageSet("ci-doctor-v1", value); },
-    snapshot: done => { request("workspace/snapshot", {}, ({ result, error }) => done(!error && object(result) && result.snapshot && Array.isArray(result.snapshot.worktrees) ? result.snapshot as Snapshot : { worktrees: [] })); },
-    send: (session, text, done) => { sessionSend(session, text, ({ error }) => done(error?.message)); },
-  });
-  doctor.updateSnapshot(snapshot);
-  if (cached) doctor.restore(cached);
   // Shown already: `setShown` set the minute timer.
   if (!(tabShown || panelShown)) setTimer("refresh", HIDDEN_REFRESH_SECONDS, true);
   refresh();
@@ -156,11 +186,12 @@ function pageMessage(m: PageMessage): void {
   switch (m.type) {
     case "ready": return draw();
     case "refresh": return refresh(true);
-    case "merge": return merge(m.number);
-    case "mergeAll": return mergeAll();
+    case "add": return add(m.iid);
+    case "addAll": return addAll();
+    case "retryPipeline": return retryPipeline(m.pipeline);
     case "doctor": {
-      const pull = state.inbox?.pulls.find((p) => p.number === m.number);
-      if (pull && state.inbox) doctor?.open(state.inbox.repo, pull);
+      const mr = state.inbox?.mrs.find((x) => x.iid === m.iid);
+      if (mr && state.inbox) doctor?.open(state.inbox.project, { number: mr.iid, title: mr.title, url: mr.url, branch: mr.branch });
       return;
     }
   }
@@ -168,6 +199,7 @@ function pageMessage(m: PageMessage): void {
   if (!d?.state.target) return;
   const token = d.state.dispatch?.token;
   switch (m.type) {
+    case "retryJob": return d.retryJob(m.job);
     case "back": return d.close();
     case "doctorRefresh": return d.refresh();
     case "run": {

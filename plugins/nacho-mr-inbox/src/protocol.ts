@@ -11,9 +11,11 @@ export type PluginMessage = { type: "state"; inbox: InboxModel; doctor?: DoctorM
 export type PageMessage =
   | { type: "ready" }
   | { type: "refresh" }
-  | { type: "merge"; number: number }
-  | { type: "mergeAll" }
-  | { type: "doctor"; number: number }
+  | { type: "add"; iid: number }
+  | { type: "addAll" }
+  | { type: "doctor"; iid: number }
+  | { type: "retryPipeline"; pipeline: number }
+  | { type: "retryJob"; job: number }
   | { type: "back" }
   | { type: "doctorRefresh" }
   | { type: "run"; run: number }
@@ -35,15 +37,19 @@ export function parsePageMessage(message: unknown): PageMessage | undefined {
   switch (m.type) {
     case "ready":
     case "refresh":
-    case "mergeAll":
+    case "addAll":
     case "back":
     case "doctorRefresh":
     case "acknowledge":
     case "send":
       return { type: m.type };
-    case "merge":
+    case "add":
     case "doctor":
-      return id(m.number) ? { type: m.type, number: m.number } : undefined;
+      return id(m.iid) ? { type: m.type, iid: m.iid } : undefined;
+    case "retryPipeline":
+      return id(m.pipeline) ? { type: "retryPipeline", pipeline: m.pipeline } : undefined;
+    case "retryJob":
+      return id(m.job) ? { type: "retryJob", job: m.job } : undefined;
     case "run":
       return id(m.run) ? { type: "run", run: m.run } : undefined;
     case "attempt":
