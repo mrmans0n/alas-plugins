@@ -142,9 +142,10 @@ function merged(nodes: unknown, base: string): Merged[] {
 export function parseInbox(stdout: string): Inbox | string {
   let json: any;
   try { json = JSON.parse(stdout); } catch { return "glab returned an unexpected reply."; }
-  const firstError = Array.isArray(json?.errors) ? str(json.errors[0]?.message) : null;
-  if (firstError) return `GitLab: ${firstError.slice(0, 300)}`;
   const project = json?.data?.project;
+  // Partial errors beside data (e.g. the EE-only mergeTrains field) are tolerated.
+  const firstError = Array.isArray(json?.errors) ? str(json.errors[0]?.message) : null;
+  if (firstError && !isObject(project)) return `GitLab: ${firstError.slice(0, 300)}`;
   if (!isObject(project)) return "GitLab returned no project. Check that glab can read it.";
   const host = /^https:\/\/([a-z0-9.-]+(?::\d{1,5})?)\/[^\s]+$/i.exec(str(project.webUrl) ?? "")?.[1]?.toLowerCase();
   if (!host || !validRepo(project.fullPath) || !Array.isArray(project.mergeRequests?.nodes)) return "glab returned an unexpected reply.";

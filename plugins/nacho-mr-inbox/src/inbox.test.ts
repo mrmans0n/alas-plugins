@@ -79,6 +79,16 @@ test("GraphQL errors and malformed replies become messages", () => {
   assert.equal(parseInbox("nope"), "glab returned an unexpected reply.");
 });
 
+test("partial GraphQL errors beside data are tolerated; errors without data still show", () => {
+  const errors = [{ message: "The resource that you are attempting to access does not exist or you don't have permission" }];
+  const base = JSON.parse(reply([node(1)]));
+  const withErrors = parseInbox(JSON.stringify({ ...base, errors })) as Inbox;
+  assert.deepEqual(withErrors.mrs.map((m) => m.iid), [1]);
+  base.data.project.mergeTrains = null;
+  assert.deepEqual((parseInbox(JSON.stringify({ ...base, errors })) as Inbox).trains, []);
+  assert.equal(parseInbox(JSON.stringify({ data: null, errors })), `GitLab: ${errors[0].message}`);
+});
+
 test("buckets: drafts, failing, ready, blocked; train MRs are left out", () => {
   const inbox = parsed([node(1, { draft: true }), node(2, { headPipeline: { id: "gid://gitlab/Ci::Pipeline/2", status: "FAILED", sha: "a".repeat(40), ...jobs(2, 2, 0) } }), node(3), node(4, { detailedMergeStatus: "NOT_APPROVED" }), node(5)], { trains: [{ targetBranch: "main", cars: { nodes: [{ status: "IDLE", mergeRequest: { iid: "5" }, pipeline: null }] } }] });
   assert.deepEqual(inbox.mrs.map(bucketOf), ["drafts", "failing", "ready", "blocked", "ready"]);
