@@ -3,7 +3,9 @@
 The GitLab counterpart of Nacho's PR Inbox: a tab listing the project's open
 merge requests by what they need, with its merge train on top and buttons to add
 the ready ones to the train. Anyone who uses the GitLab CLI can install it; it
-reuses your `glab` login and asks for no token. It uses plugin API 15: the tab
+reuses your `glab` login and asks for no token. It is shown only in projects with a recognized GitLab remote (gitlab.com or a
+host named gitlab.*, as Alas detects it), never in plain folders, and needs an
+Alas with plugin API 17. It uses plugin API 17: the tab
 and the sidebar panel are web pages (`ui.js`) the plugin feeds its state, the
 sidebar icon carries a badge, and `glab` runs through `process.exec`. On an SSH
 project it runs `glab` on the host (`remote`), so `glab` must be installed and

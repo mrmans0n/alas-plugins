@@ -30,3 +30,7 @@ Alas against a real project; write down failures here.
 - [ ] Rail: train + Yours, badge count, 240-point width, light and dark
 - [ ] Not signed in (`glab auth logout`): sign-in message; repo with only a GitHub remote: no-remote message
 - [ ] SSH project: runs `glab` on the host
+
+## API 17 change
+
+The `requires` visibility change (API 17, panel icon) was verified only by typecheck, tests and build, not yet inside an Alas build with API 17.

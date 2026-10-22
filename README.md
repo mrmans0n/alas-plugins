@@ -15,8 +15,8 @@ Plugins are experimental, and the API may still change.
 | [Linear](plugins/linear-bridge) | 5 | Your assigned Linear issues in a panel. Starting one runs an agent and comments back. |
 | [Prompt Library](plugins/prompt-library) | 9 | Slash prompts for reviews, explanations, tests, commit messages and fixes, plus your own, managed in a Configure… sheet. |
 | [Notion Context](plugins/notion-context) | 7 | Adds a Notion page's content to every prompt sent to the project's agents. |
-| [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 15 | The repository's open pull requests by what they need, with squash-merge for the ready ones, and the recently merged ones, through `gh`, locally or on an SSH host. |
-| [Nacho's MR Inbox](plugins/nacho-mr-inbox) | 15 | The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI, through `glab`, locally or on an SSH host. |
+| [Nacho's PR Inbox](plugins/nacho-pr-inbox) | 17 | The repository's open pull requests by what they need, with squash-merge for the ready ones, and the recently merged ones, through `gh`, locally or on an SSH host. |
+| [Nacho's MR Inbox](plugins/nacho-mr-inbox) | 17 | The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI, through `glab`, locally or on an SSH host. |
 | [Worktree Setup](plugins/worktree-setup) | 11 | Copies files like `.env` from the main worktree into each new worktree and runs your setup command there, locally or on an SSH host. |
 | [Agent Usage](plugins/agent-usage) | 15 | A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree. |
 | [Test & Benchmark Explorer](plugins/test-benchmark-explorer) | 16 | Structured test and benchmark artifacts, comparisons and captured source freshness. Requires the API 16 Alas companion. |
@@ -64,7 +64,7 @@ handle(event: Event) {
 ```
 
 The manifest has a type too: `Manifest` (with `TabDecl`, `CommandDecl`, `PanelDecl`,
-`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 15, and
+`PromptDecl`, `SettingDecl`, `ProcessDecl`, `Capability` and the rest) covers API 4 to 17, and
 the SDK's tests check every `plugins/*/plugin.json` against it.
 
 ## Web tabs (API 12)
@@ -171,7 +171,7 @@ The release workflow builds the plugin, publishes `plugin.json` and `plugin.js` 
 it. Without a page it is the v1 hash; with one it is v2, which frames each file with its
 name and length. Versions released for the WebAssembly runtime stay in
 the index with a `wasm` URL and `api` 1 to 3; Alas skips any version without `entry` or with
-an `api` it does not support (Alas supports API 4 to 15).
+an `api` it does not support (Alas supports API 4 to 17).
 
 ## License
 

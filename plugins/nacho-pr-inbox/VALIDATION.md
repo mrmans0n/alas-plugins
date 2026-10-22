@@ -108,3 +108,7 @@ Remaining manual gates:
 - To stay below 2,000 native nodes, the list shows five failed steps per job and
   links to all steps on GitHub. Logs and briefs are quoted as literal data in
   bounded selectable blocks, including hostile Markdown fences.
+
+## API 17 change
+
+The `requires` visibility change (API 17, panel icon) was verified only by typecheck, tests and build, not yet inside an Alas build with API 17.
