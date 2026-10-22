@@ -156,3 +156,15 @@ test("an unknown user means no toggle and no filtering", () => {
   assert.equal(m.merged.length, 2);
   assert.equal(model({}).scope.available, false);
 });
+
+test("Mine lists your merges even when others' newer ones would fill the recent list", () => {
+  const hour = 3600_000;
+  const at = (h: number) => new Date(NOW - h * hour).toISOString();
+  const m = (iid: number, author: string, h: number) => ({ iid, title: `M${iid}`, url: `${WEB}/-/merge_requests/${iid}`, author, branch: "b", mergedAt: at(h) });
+  const others = Array.from({ length: 5 }, (_, i) => m(30 + i, "ana", (i + 1) * 0.1));
+  const state = { inbox: { ...inbox([]), merged: [...others, m(9, "nacho", 100)] } };
+  assert.deepEqual(model(state).merged.map((r) => r.iid), [30, 31, 32, 33, 34]);
+  const on = model({ ...state, mineOnly: true });
+  assert.deepEqual(on.merged.map((r) => r.iid), [9]);
+  assert.equal(on.scope.hidden, 5, "hides the five recent ones of others");
+});

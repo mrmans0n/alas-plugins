@@ -145,9 +145,10 @@ export function inboxModel(state: ViewState, now: number): InboxModel {
   const mineOnly = filtering(state);
   const every = inbox ? classify(inbox) : { ready: [], blocked: [], failing: [], drafts: [] };
   const groups = mineOnly ? Object.fromEntries(BUCKETS.map((b) => [b, every[b].filter((m) => m.author === inbox!.user)])) as typeof every : every;
-  const allMerged = inbox ? recentMerged(inbox.merged, now) : [];
-  const shownMerged = mineOnly ? allMerged.filter((m) => m.author === inbox!.user) : allMerged;
-  const hidden = BUCKETS.reduce((n, b) => n + every[b].length - groups[b].length, allMerged.length - shownMerged.length);
+  // Your merges first, then the usual trim, so a quiet project still lists them; `hidden` counts what the recent list loses to the filter.
+  const merges = inbox?.merged ?? [];
+  const shownMerged = recentMerged(mineOnly ? merges.filter((m) => m.author === inbox!.user) : merges, now);
+  const hidden = BUCKETS.reduce((n, b) => n + every[b].length - groups[b].length, mineOnly ? recentMerged(merges, now).filter((m) => m.author !== inbox!.user).length : 0);
   const counts = Object.fromEntries(BUCKETS.map((b) => [b, groups[b].length])) as Record<Bucket, number>;
   const trains = state.trainsEnabled !== false;
   const all = state.addAll;

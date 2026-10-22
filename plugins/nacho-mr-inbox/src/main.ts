@@ -24,6 +24,8 @@ let gitlab: GitLab | undefined;
 let cached: unknown;
 let loadCache: number | undefined;
 let loadView: number | undefined;
+/** The user clicked the toggle: a stored value that arrives later is older than that. */
+let scopeTouched = false;
 let snapshot: Snapshot = { worktrees: [] };
 /** What Add all still has to add, in order. */
 let addQueue: number[] = [];
@@ -193,6 +195,7 @@ function pageMessage(m: PageMessage): void {
     case "add": add(m.iid); return;
     case "addAll": return addAll();
     case "scope":
+      scopeTouched = true;
       state.mineOnly = m.mine;
       storageSet("view-v1", { mineOnly: m.mine });
       return draw();
@@ -233,10 +236,11 @@ definePlugin({
         requestSnapshot();
         loadCache = storageGet("ci-doctor-v1");
         loadView = storageGet("view-v1");
+        scopeTouched = false;
         return;
       case "stored":
         if (event.id === loadCache && !event.error) { cached = event.value; doctor?.restore(cached); }
-        if (event.id === loadView && !event.error && object(event.value) && typeof event.value.mineOnly === "boolean") { state.mineOnly = event.value.mineOnly; draw(); }
+        if (event.id === loadView && !event.error && !scopeTouched && object(event.value) && typeof event.value.mineOnly === "boolean") { state.mineOnly = event.value.mineOnly; draw(); }
         return;
       case "snapshot":
       case "workspaceChanged":

@@ -59,7 +59,7 @@ again to show them all.
 
 **All | Mine.** A toggle in the tab's header (not in the sidebar rail) switches
 between every MR and only yours (authored by the `glab` user). With **Mine** on,
-the groups, their counts and **Recently merged** show only your MRs, and an
+the groups, their counts and **Recently merged** show only your MRs (your merges are picked first, then the usual last-24-hours-or-5 trim applies), and an
 empty result says "No open merge requests of yours." **Add all** follows it: it
 covers only your ready MRs, in its count and label and in the re-check before
 each add, so an MR that is not yours is never added while **Mine** is on. The

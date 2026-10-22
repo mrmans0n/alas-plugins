@@ -9,8 +9,8 @@ Alas.
 Run on 2026-10-22 from the repository root with Node 24.13.0.
 
 - `npm run typecheck`: passed.
-- `npm test`: passed, 315 tests across the repository workspaces, zero failures
-  (99 of them in `nacho-mr-inbox`).
+- `npm test`: passed, 328 tests across the repository workspaces, zero failures
+  (102 of them in `nacho-mr-inbox`).
 - `npm run build`: passed for every workspace.
 
 The All | Mine toggle (0.3.0) is covered by `view.test.ts`, `main.test.ts` and

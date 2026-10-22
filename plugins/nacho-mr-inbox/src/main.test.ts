@@ -206,15 +206,31 @@ test("Add all with Mine on adds only your ready MRs, also when the list changes 
   testHost.reply(proc(sent, "list").id, done(reply([node(1, { author: { username: "ana" } }), node(2, { author: { username: "ana" } })])));
   testHost.takeSent();
   page({ type: "addAll" });
-  assert.ok(proc(testHost.takeSent(), "add"), "with All, ana's ready MRs are added too");
+  sent = testHost.takeSent();
+  assert.ok(proc(sent, "add"), "with All, ana's ready MRs are added too");
+  // Finish it, so it frees its process slot for the next test.
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply([])));
+  testHost.takeSent();
 });
 
-test("a stored scope is applied; a malformed one is ignored", () => {
-  // Each activation asks storage again, with a new request id (a reply answers its request once).
-  const viewGet = () => {
-    testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "P" }, grants: [] } });
-    return testHost.takeSent().find((m) => m.method === "storage/get" && m.params.key === "view-v1").id;
-  };
+// Each activation asks storage again, with a new request id (a reply answers its request once).
+const viewGet = () => {
+  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "P" }, grants: [] } });
+  return testHost.takeSent().find((m) => m.method === "storage/get" && m.params.key === "view-v1").id;
+};
+const listed = (nodes: unknown[]) => {
+  page({ type: "refresh" });
+  let sent = testHost.takeSent();
+  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
+  sent = testHost.takeSent();
+  testHost.reply(proc(sent, "list").id, done(reply(nodes)));
+  return testHost.takeSent();
+};
+
+test("a stored scope arriving after the list redraws it filtered; a malformed one is ignored", () => {
+  assert.deepEqual(rowsOf(listed([node(1), node(2, { author: { username: "ana" } })])), [2, 1]);
   for (const bad of [{ mineOnly: "yes" }, {}, null, "x", [true]]) {
     stored(viewGet(), bad);
     const sent = testHost.takeSent();
@@ -223,6 +239,29 @@ test("a stored scope is applied; a malformed one is ignored", () => {
   }
   stored(viewGet(), { mineOnly: true });
   const sent = testHost.takeSent();
+  assert.deepEqual(rowsOf(sent), [1], "redrawn with only mine");
   assert.equal(posted(sent).inbox.scope.mineOnly, true);
   assert.deepEqual(storageSets(sent), [], "applying a stored value does not write it back");
+});
+
+test("a stored scope that arrives after the user clicked the toggle is ignored", () => {
+  const id = viewGet();
+  page({ type: "scope", mine: false });
+  testHost.takeSent();
+  stored(id, { mineOnly: true });
+  assert.deepEqual(testHost.takeSent(), [], "late stored value dropped");
+  page({ type: "ready" });
+  assert.equal(posted(testHost.takeSent()).inbox.scope.mineOnly, false);
+});
+
+test("with Mine on, a row still adds an MR that is not yours", () => {
+  listed([node(1), node(2, { author: { username: "ana" } })]);
+  page({ type: "scope", mine: true });
+  testHost.takeSent();
+  page({ type: "add", iid: 2 });
+  const sent = testHost.takeSent();
+  assert.equal(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/2", "the filter only shapes Add all");
+  testHost.reply(proc(sent, "add").id, done("{}"));
+  testHost.reply(proc(testHost.takeSent(), "list").id, done(reply([node(1)])));
+  testHost.takeSent();
 });
