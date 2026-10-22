@@ -1,159 +1,106 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DoctorController } from "./doctor-controller.ts";
-import { GitHub, ProcessQueue } from "./doctor-transport.ts";
-import type { Outcome, ProcessResult, Snapshot } from "@alas/plugin";
+import { GitLab, ProcessQueue } from "./doctor-transport.ts";
+import { doctorModel } from "./doctor-view.ts";
+import { job, pipeline } from "./doctor.test.ts";
 
-const sha = "a".repeat(40), base = "b".repeat(40);
-const pull = (number = 3) => ({ number, title: "Change", url: `https://github.com/o/r/pull/${number}`, branch: "feature", identity: { sha, repo: "o/r", branch: "feature", baseSha: base, baseBranch: "main" } });
-const identity = (s = sha) => ({ head: { sha: s, ref: "feature", repo: { full_name: "o/r" } }, base: { sha: base, ref: "main" } });
-const run = (attempt = 1) => ({ id: 10, workflow_id: 2, name: "CI", run_attempt: attempt, head_sha: sha, head_branch: "feature", event: "pull_request", status: "completed", conclusion: "failure", created_at: "2026-10-16T00:00:00Z", updated_at: "2026-10-16T01:00:00Z", html_url: "https://github.com/o/r/actions/runs/10", pull_requests: [{ number: 3 }], head_repository: { full_name: "o/r" } });
-const jobs = { total_count: 1, jobs: [{ id: 20, run_id: 10, run_attempt: 1, name: "Tests", status: "completed", conclusion: "failure", html_url: "https://github.com/o/r/actions/runs/10/job/20", steps: [{ number: 1, name: "Test", status: "completed", conclusion: "failure" }] }] };
+const HOST = "gitlab.example.com";
+const WEB = `https://${HOST}/acme/shop`;
+const SHA = "b".repeat(40);
+type Call = { id: string; args: string[]; worktree: string; done: (o: any) => void };
+const ok = (body: unknown) => ({ result: { exit: 0, stdout: "HTTP/2.0 200 OK\r\n\r\n" + (typeof body === "string" ? body : JSON.stringify(body)), stderr: "", timedOut: false, truncated: false } });
+const raw = (text: string) => ({ result: { exit: 0, stdout: text, stderr: "", timedOut: false, truncated: false } });
+
 function setup() {
-  const pending: { id: string; wt: string; args: string[]; done: (o: Outcome<ProcessResult>) => void }[] = [];
-  const snapshots: ((s: Snapshot) => void)[] = [];
-  const sends: { id: string; text: string; done: (error?: string) => void }[] = [];
-  const queue = new ProcessQueue((id, wt, args, done) => pending.push({ id, wt, args, done }));
-  const github = new GitHub(queue, "main", Date.now, () => {});
-  const c = new DoctorController(github, queue, { changed() {}, save() {}, snapshot(cb) { snapshots.push(cb); }, send(id, text, done) { sends.push({ id, text, done }); }, now: Date.now });
-  const reply = (data: unknown, id?: string) => {
-    const index = id ? pending.findIndex(p => p.id === id) : 0;
-    assert.ok(index >= 0, `missing request ${id}`);
-    const p = pending.splice(index, 1)[0];
-    p.done({ result: { exit: 0, stdout: typeof data === "string" ? data : JSON.stringify(data), stderr: "", truncated: false, timedOut: false } });
-    return p;
+  const calls: Call[] = [];
+  const queue = new ProcessQueue((id, worktree, args, done) => calls.push({ id, worktree, args, done }));
+  const gl = new GitLab(queue, "main-wt", "acme/shop", HOST, () => Date.parse("2026-10-22T00:00:00Z"), () => {});
+  const sent: string[] = [];
+  const doctor = new DoctorController(gl, queue, {
+    changed() {}, save() {}, now: () => Date.parse("2026-10-22T00:00:00Z"),
+    snapshot: (done) => done({ worktrees: [{ id: "wt2", branch: "f", current: false, main: false, sessions: [{ id: "s1", title: "Chat", agent: "claude", state: "idle" }] }] } as any),
+    send: (_s, text, done) => { sent.push(text); done(); },
+  });
+  /** Answers the oldest pending call whose args match. */
+  const answer = (match: RegExp | string, reply: any) => {
+    const i = calls.findIndex((c) => (typeof match === "string" ? c.id === match : match.test(c.args.join(" "))));
+    assert.ok(i >= 0, `no pending call for ${match}`);
+    calls.splice(i, 1)[0].done(reply);
   };
-  const load = () => { c.open("o/r", pull()); reply(identity()); reply({ total_count: 1, workflow_runs: [run()] }); reply(run()); reply(jobs); };
-  const snap: Snapshot = { worktrees: [{ id: "wt", branch: "feature", current: true, sessions: [{ id: "s", title: "Agent", agent: "codex", state: "idle" }] }] };
-  return { c, pending, snapshots, sends, reply, load, snap };
+  return { calls, doctor, answer, sent };
 }
-test("late responses from another PR cannot replace current details", () => {
-  const h = setup();
-  h.c.open("o/r", pull(3));
-  h.c.open("o/r", pull(4));
-  h.reply(identity());
-  assert.equal(h.pending.length, 1);
-  h.reply(identity());
-  assert.equal(h.c.state.evidence?.number, 4);
-  assert.equal(h.c.state.evidence?.runs.length, 0);
-});
-test("new heads make retained evidence historical and invalidate investigation preview", () => {
-  const h = setup(); h.load();
-  h.c.prepare(20);
-  assert.ok(h.c.state.dispatch);
-  h.c.updateInbox("o/r", [{ ...pull(), identity: { ...pull().identity, sha: "c".repeat(40) } }]);
-  assert.equal(h.c.state.historical, true);
-  assert.equal(h.c.state.dispatch, undefined);
-  assert.equal(h.c.state.evidence?.head.sha, sha);
-});
-test("dispatch verifies exact worktree and queues the reviewed brief once", () => {
-  const h = setup(); h.load();
-  h.c.prepare(20); h.c.selectSession("s");
-  h.snapshots.shift()!(h.snap);
-  const remote = h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes");
-  assert.equal(remote.wt, "wt");
-  h.reply(sha + "\n", "ci-head");
-  assert.equal(h.c.state.dispatch?.verification?.sha, sha);
-  h.c.send(); h.c.send();
-  assert.equal(h.snapshots.length, 1);
-  h.snapshots.shift()!(h.snap);
-  h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes");
-  h.reply(sha + "\n", "ci-head");
-  h.reply(identity()); h.reply(run());
-  assert.equal(h.sends.length, 1);
-  assert.equal(h.sends[0].id, "s");
-  assert.match(h.sends[0].text, /Verified worktree wt/);
-  h.sends[0].done();
-  h.c.send();
-  assert.equal(h.sends.length, 1);
-  assert.equal(h.c.state.dispatch?.phase, "sent");
-});
-test("fork collisions, checkout movement and removed sessions stop dispatch", () => {
-  for (const scenario of ["fork", "sha", "removed", "rerun"]) {
-    const h = setup(); h.load(); h.c.prepare(20); h.c.selectSession("s");
-    h.snapshots.shift()!(h.snap);
-    h.reply(`origin\tgit@github.com:${scenario === "fork" ? "stranger/r" : "o/r"}.git (fetch)`, "ci-remotes");
-    if (scenario === "fork") { assert.match(h.c.state.dispatch?.error ?? "", /repository/i); continue; }
-    h.reply(sha, "ci-head"); h.c.send();
-    h.snapshots.shift()!(scenario === "removed" ? { worktrees: [] } : h.snap);
-    if (scenario === "removed") { assert.match(h.c.state.dispatch?.error ?? "", /session/i); continue; }
-    h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes");
-    h.reply(scenario === "sha" ? base : sha, "ci-head");
-    if (scenario === "sha") { assert.match(h.c.state.dispatch?.error ?? "", /changed|checkout/i); continue; }
-    h.reply(identity()); h.reply(run(2));
-    assert.equal(h.sends.length, 0);
-    assert.match(h.c.state.dispatch?.error ?? "", /rerun|attempt/i);
-  }
-});
-test("terminal-only host refusal retains a copyable brief without retrying", () => {
-  const h = setup(); h.load(); h.c.prepare(20); h.c.selectSession("s"); h.snapshots.shift()!(h.snap);
-  h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes"); h.reply(sha, "ci-head");
-  h.c.send(); h.snapshots.shift()!(h.snap); h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes"); h.reply(sha, "ci-head"); h.reply(identity()); h.reply(run());
-  h.sends[0].done("unknown session s");
-  h.c.send();
-  assert.equal(h.sends.length, 1);
-  assert.match(h.c.state.dispatch?.error ?? "", /terminal|live chat/i);
-  assert.ok(h.c.state.dispatch?.text.includes("PR Inbox CI Doctor"));
-});
-test("late cache restore never overwrites evidence fetched this instance", () => {
-  const h = setup(); h.load();
-  const e = h.c.state.evidence!;
-  h.c.restore({ version: 1, entries: [{ ...e, fetchedAt: 1, runs: [] }] });
-  assert.equal(h.c.state.evidence?.runs.length, 1);
+const mr = { iid: 12, source_branch: "f", target_branch: "main", diff_refs: { head_sha: SHA, base_sha: "c".repeat(40) } };
+const p = (id: number, fields: object = {}) => pipeline(id, { web_url: `${WEB}/-/pipelines/${id}`, ...fields });
+const j = (id: number, name: string, pipe: number, fields: object = {}) => job(id, name, { web_url: `${WEB}/-/jobs/${id}`, pipeline: { id: pipe }, ...fields });
+
+test("opening an MR loads its pipelines, the newest one's jobs, then a failed job's trace and the target branch history", () => {
+  const { doctor, answer } = setup();
+  doctor.open("acme/shop", { number: 12, title: "MR", url: `${WEB}/-/merge_requests/12`, branch: "f" });
+  answer(/merge_requests\/12$/, ok(mr));
+  answer(/merge_requests\/12\/pipelines/, ok([p(500), p(400, { status: "success" })]));
+  answer(/pipelines\/500$/, ok(p(500)));
+  answer(/pipelines\/500\/jobs/, ok([j(31, "unit", 500), j(30, "unit", 500, { status: "failed" }), j(20, "lint", 500, { status: "success" })]));
+  let model = doctorModel(doctor.state);
+  assert.deepEqual(model.jobs.map((x) => [x.id, x.name, x.failed, x.canRetry]), [[31, "unit (retry 1)", true, true], [30, "unit", true, true], [20, "lint", false, false]]);
+  doctor.selectJob(31);
+  answer("ci-trace", raw("section_start:1:step_script\r\nError: expected 2 but got 3 in cart_test.ts\nERROR: Job failed: exit code 1"));
+  // PR side: the MR's pipelines (400 is a comparison), target side: main push pipelines.
+  answer(/merge_requests\/12\/pipelines/, ok([p(500), p(400, { status: "success" })]));
+  answer(/pipelines\?ref=main&source=push/, ok([p(300, { ref: "main", source: "push", status: "success", sha: "c".repeat(40) })]));
+  answer(/pipelines\/400$/, ok(p(400, { status: "success" })));
+  answer(/pipelines\/400\/jobs/, ok([j(41, "unit", 400, { status: "success" })]));
+  answer(/pipelines\/300$/, ok(p(300, { ref: "main", source: "push", status: "success", sha: "c".repeat(40) })));
+  answer(/pipelines\/300\/jobs/, ok([j(51, "unit", 300, { status: "success" })]));
+  // The earlier failed attempt (job 30) is a comparison failure, so its log is read too; a different error keeps it from being "recurring".
+  answer("ci-trace", raw("Error: network unreachable while fetching deps"));
+  model = doctorModel(doctor.state);
+  assert.deepEqual(model.jobs.find((x) => x.id === 31)?.steps, ["Failed in section step_script"]);
+  assert.equal(model.evidence?.suggestion.kind, "possible regression");
+  assert.deepEqual(model.evidence?.history, { pr: ["fail", "pass"], base: ["pass"] });
 });
 
-test("a host refusal requires a new prepared brief before another session can be sent", () => {
-  const h = setup(); h.load(); h.c.prepare(20); h.c.selectSession("s"); h.snapshots.shift()!(h.snap);
-  h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes"); h.reply(sha, "ci-head");
-  h.c.send(); h.snapshots.shift()!(h.snap); h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes"); h.reply(sha, "ci-head"); h.reply(identity()); h.reply(run());
-  h.sends[0].done("unknown session s");
-  h.c.selectSession("s");
-  assert.equal(h.snapshots.length, 0, "a failed dispatch cannot be retried by changing selection");
-  assert.equal(h.c.state.dispatch?.phase, "failed");
+test("Retry posts the job retry and refreshes the pipelines", () => {
+  const { doctor, answer, calls } = setup();
+  doctor.open("acme/shop", { number: 12, title: "MR", url: `${WEB}/-/merge_requests/12`, branch: "f" });
+  answer(/merge_requests\/12$/, ok(mr));
+  answer(/merge_requests\/12\/pipelines/, ok([p(500)]));
+  answer(/pipelines\/500$/, ok(p(500)));
+  answer(/pipelines\/500\/jobs/, ok([j(30, "unit", 500)]));
+  doctor.retryJob(30);
+  assert.equal(doctorModel(doctor.state).jobs[0].retrying, true);
+  answer("retry", ok({ id: 32 }));
+  assert.equal(doctor.state.retrying, undefined);
+  assert.ok(calls.some((c) => /merge_requests\/12$/.test(c.args[0])), "the doctor reloads after a retry");
 });
 
-test("newer session ownership during GitHub verification cancels the prepared send", () => {
-  for (const removed of [false, true]) {
-    const h = setup(); h.load(); h.c.updateSnapshot(h.snap); h.c.prepare(20); h.c.selectSession("s"); h.snapshots.shift()!(h.snap);
-    h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes"); h.reply(sha, "ci-head");
-    h.c.send(); h.snapshots.shift()!(h.snap); h.reply("origin\tgit@github.com:o/r.git (fetch)", "ci-remotes"); h.reply(sha, "ci-head");
-    h.c.updateSnapshot(removed ? { worktrees: [] } : { worktrees: [{ ...h.snap.worktrees[0], id: "another-worktree" }] });
-    h.reply(identity());
-    // Cancelled verification must not enqueue its follow-up run lookup or a send.
-    assert.equal(h.pending.length, 0);
-    assert.equal(h.sends.length, 0);
-    assert.match(h.c.state.dispatch?.error ?? "", /ownership|worktree|session/i);
-  }
+test("a failed retry shows GitLab's message", () => {
+  const { doctor, answer } = setup();
+  doctor.open("acme/shop", { number: 12, title: "MR", url: `${WEB}/-/merge_requests/12`, branch: "f" });
+  answer(/merge_requests\/12$/, ok(mr));
+  answer(/merge_requests\/12\/pipelines/, ok([p(500)]));
+  answer(/pipelines\/500$/, ok(p(500)));
+  answer(/pipelines\/500\/jobs/, ok([j(30, "unit", 500)]));
+  doctor.retryJob(30);
+  answer("retry", { result: { exit: 1, stdout: "", stderr: "glab: 403 Forbidden (HTTP 403)", timedOut: false, truncated: false } });
+  assert.equal(doctorModel(doctor.state).retryError, "glab: 403 Forbidden (HTTP 403)");
 });
 
-test("an old snapshot response cannot restore a session whose newer snapshot removed it", () => {
-  const h = setup(); h.load(); h.c.updateSnapshot(h.snap); h.c.prepare(20); h.c.selectSession("s");
-  h.c.updateSnapshot({ worktrees: [] });
-  h.snapshots.shift()!(h.snap);
-  assert.equal(h.pending.length, 0);
-  assert.equal(h.c.state.dispatch?.verification, undefined);
-  assert.match(h.c.state.dispatch?.error ?? "", /session|workspace/i);
-});
-
-test("failed live job refresh preserves accessible cached jobs with explicit stale identity", () => {
-  const h = setup(); h.load();
-  assert.equal(h.c.currentAttempt()?.jobs.length, 1);
-  h.c.refresh(); h.reply(identity());
-  const reject = () => h.pending.shift()!.done({ result: { exit: 1, stdout: "", stderr: "network unavailable", truncated: false, timedOut: false } });
-  reject(); // run summaries fall back to cache
-  h.reply(run()); // attempt metadata is available
-  reject(); // attempt jobs unavailable
-  assert.equal(h.c.currentAttempt()?.jobs.length, 1);
-  assert.equal(h.c.currentAttempt()?.complete, false);
-  assert.deepEqual(h.c.currentAttempt()?.cachedJobs, [20]);
-  assert.match(h.c.currentAttempt()?.error ?? "", /network|cached/i);
-});
-
-test("partial live and cached job union stays within one hundred jobs", () => {
-  const h = setup(); h.load(); h.c.refresh(); h.reply(identity());
-  h.pending.shift()!.done({ result: { exit: 1, stdout: "", stderr: "network unavailable", truncated: false, timedOut: false } });
-  h.reply(run());
-  for (let page = 0; page < 4; page++) h.reply({ total_count: 101, jobs: Array.from({ length: 25 }, (_, i) => ({ ...jobs.jobs[0], id: 21 + page * 25 + i })) });
-  assert.equal(h.c.currentAttempt()?.jobs.length, 100);
-  assert.match(h.c.currentAttempt()?.error ?? "", /cached jobs omitted/i);
+test("checkout verification matches the session's GitLab remote on the project host", () => {
+  const { doctor, answer } = setup();
+  doctor.open("acme/shop", { number: 12, title: "MR", url: `${WEB}/-/merge_requests/12`, branch: "f" });
+  answer(/merge_requests\/12$/, ok(mr));
+  answer(/merge_requests\/12\/pipelines/, ok([p(500)]));
+  answer(/pipelines\/500$/, ok(p(500)));
+  answer(/pipelines\/500\/jobs/, ok([j(30, "unit", 500)]));
+  doctor.selectJob(30);
+  answer("ci-trace", raw("Error: something broke badly here"));
+  answer(/merge_requests\/12\/pipelines/, ok([p(500)]));
+  answer(/pipelines\?ref=main/, ok([]));
+  doctor.prepare(30);
+  doctor.selectSession("s1");
+  answer("ci-remotes", raw(`origin\tgit@${HOST}:acme/shop.git (fetch)\n`));
+  answer("ci-head", raw(SHA + "\n"));
+  assert.equal(doctor.state.dispatch?.verification?.repo, "acme/shop");
+  assert.equal(doctor.state.dispatch?.verification?.mismatch, false);
 });

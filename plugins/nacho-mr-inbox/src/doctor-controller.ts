@@ -1,7 +1,7 @@
 import type { Snapshot } from "@alas/plugin";
 import { processError } from "./inbox.ts";
-import { attemptKey, attemptNumbers, brief, evidenceKey, failed, packCache, remoteRepo, restoreCache, validRepo, validSHA, type Attempt, type Evidence, type Job, type Observation, type PullIdentity, type Run } from "./doctor.ts";
-import { GitHub, ProcessQueue, type RequestOptions, type Result } from "./doctor-transport.ts";
+import { attemptKey, brief, evidenceKey, failed, packCache, remoteRepo, restoreCache, validRepo, validSHA, type Attempt, type Evidence, type Job, type Observation, type PullIdentity, type Run } from "./doctor.ts";
+import { GitLab, ProcessQueue, type RequestOptions, type Result } from "./doctor-transport.ts";
 
 export interface DoctorPull { number: number; title: string; url: string; branch: string; identity?: PullIdentity }
 export interface Verification { worktree: string; sha: string; repo: string; at: number; mismatch: boolean }
@@ -12,7 +12,7 @@ export interface Dispatch {
 export interface DoctorState {
   target?: { repo: string; pull: DoctorPull }; evidence?: Evidence; loading: boolean; historyLoading: boolean;
   cached: boolean; historical: boolean; error?: string; selectedAttempt?: string; selectedJob?: number;
-  snapshot: Snapshot; dispatch?: Dispatch;
+  snapshot: Snapshot; dispatch?: Dispatch; retrying?: number; retryError?: string;
 }
 interface Hooks {
   changed(): void; save(value: unknown): void; snapshot(done: (s: Snapshot) => void): void;
@@ -20,14 +20,14 @@ interface Hooks {
 }
 export class DoctorController {
   readonly state: DoctorState = { loading: false, historyLoading: false, cached: false, historical: false, snapshot: { worktrees: [] } };
-  private github: GitHub;
+  private gitlab: GitLab;
   private queue: ProcessQueue;
   private hooks: Hooks;
   private generation = 0;
   private dispatchToken = 0;
   private snapshotRevision = 0;
   private cache = new Map<string, Evidence>();
-  constructor(github: GitHub, queue: ProcessQueue, hooks: Hooks) { this.github = github; this.queue = queue; this.hooks = hooks; }
+  constructor(gitlab: GitLab, queue: ProcessQueue, hooks: Hooks) { this.gitlab = gitlab; this.queue = queue; this.hooks = hooks; }
   private changed(persist = false): void {
     if (persist && this.state.evidence) {
       this.cache.set(this.state.evidence.key, this.state.evidence);
@@ -38,7 +38,7 @@ export class DoctorController {
     this.hooks.changed();
   }
   restore(value: unknown): void {
-    for (const e of restoreCache(value)) if (!this.cache.has(e.key)) this.cache.set(e.key, e);
+    for (const e of restoreCache(value, this.gitlab.host)) if (!this.cache.has(e.key)) this.cache.set(e.key, e);
     const t = this.state.target;
     if (t?.pull.identity && !this.state.evidence) {
       const e = this.cache.get(evidenceKey(t.repo, t.pull.number, t.pull.identity.sha));
@@ -69,15 +69,26 @@ export class DoctorController {
     }
   }
   close(): void { this.generation++; this.state.target = undefined; this.state.dispatch = undefined; this.state.loading = false; this.state.historyLoading = false; this.changed(); }
-  refresh(): void { if (this.state.target) { this.generation++; this.github.retry(); this.open(this.state.target.repo, this.state.target.pull); } }
+  refresh(): void { if (this.state.target) { this.generation++; this.gitlab.retry(); this.open(this.state.target.repo, this.state.target.pull); } }
+  retryJob(id: number): void {
+    const job = this.state.evidence?.attempts.flatMap(a => a.jobs).find(j => j.id === id);
+    if (!job || !failed(job.conclusion) || this.state.retrying !== undefined) return;
+    this.state.retrying = id; this.state.retryError = undefined; this.changed();
+    this.gitlab.retryJob(id, error => {
+      this.state.retrying = undefined;
+      this.state.retryError = error;
+      if (error) return this.changed();
+      this.refresh();
+    });
+  }
   open(repo: string, pull: DoctorPull): void {
     if (!validRepo(repo)) return;
     const gen = ++this.generation;
     const options = { alive: () => gen === this.generation };
     const old = pull.identity && this.cache.get(evidenceKey(repo, pull.number, pull.identity.sha));
-    Object.assign(this.state, { target: { repo, pull }, evidence: old, loading: true, cached: !!old, historical: false, historyLoading: false, error: undefined, selectedAttempt: undefined, selectedJob: undefined, dispatch: undefined });
+    Object.assign(this.state, { target: { repo, pull }, evidence: old, loading: true, cached: !!old, historical: false, historyLoading: false, error: undefined, selectedAttempt: undefined, selectedJob: undefined, dispatch: undefined, retryError: undefined, retrying: undefined });
     this.changed();
-    this.github.identity(repo, pull.number, r => {
+    this.gitlab.identity(pull.number, r => {
       if (!r.value) { this.state.loading = false; this.state.error = r.error; return this.changed(); }
       const head = r.value;
       const key = evidenceKey(repo, pull.number, head.sha);
@@ -88,12 +99,12 @@ export class DoctorController {
       this.state.cached = !!cached;
       this.state.target!.pull = { ...pull, identity: head };
       this.changed();
-      this.github.runs(repo, { branch: head.branch, since: e.since, until: e.until }, runs => {
+      this.gitlab.runs({ mr: pull.number, since: e.since }, runs => {
         this.state.loading = false;
         if (runs.error) { e.error = runs.error; this.state.error = runs.error; e.runs = cached?.runs ?? []; }
         else {
           e.fetchedAt = this.hooks.now(); this.state.cached = false;
-          // Branch alone is never a PR identity. REST PR association or exact repository+SHA is required.
+          // The MR pipelines endpoint is the identity; the SHA fallback covers pipelines on the head commit.
           e.runs = (runs.value ?? []).filter(run => this.isPR(run, e));
         }
         if (!runs.complete) e.coverage.push(runs.warning ?? runs.error ?? "Run history incomplete.");
@@ -103,20 +114,21 @@ export class DoctorController {
     }, options);
   }
   private isPR(run: Run, e: Evidence): boolean {
-    return run.prs.includes(e.number) || (run.headRepo.toLowerCase() === e.head.repo.toLowerCase() && run.sha === e.head.sha);
+    return run.prs.includes(e.number) || run.sha === e.head.sha;
   }
-  selectAttempt(id: number, attempt: number): void {
+  /** One pipeline is one attempt; the second argument is kept for page compatibility and ignored. */
+  selectAttempt(id: number, _attempt?: number): void {
     const e = this.state.evidence;
     const run = e?.runs.find(r => r.id === id);
-    if (!e || !run || !attemptNumbers(run.attempt).includes(attempt)) return;
+    if (!e || !run) return;
     const gen = ++this.generation;
     const options = { alive: () => gen === this.generation };
-    this.state.selectedAttempt = attemptKey(id, attempt);
+    this.state.selectedAttempt = attemptKey(id, run.attempt);
     this.state.selectedJob = undefined; this.state.dispatch = undefined; this.state.historyLoading = false;
-    const cached = e.attempts.find(a => a.run.id === id && a.run.attempt === attempt);
+    const cached = e.attempts.find(a => a.run.id === id);
     if (cached && cached.run.status === "completed" && !this.state.cached) { this.state.loading = false; return this.changed(); }
     this.state.loading = true; this.changed();
-    this.loadAttempt(e, run, attempt, result => {
+    this.loadAttempt(e, run, result => {
       this.state.loading = false;
       if (result.value) this.keepAttempt(e, result.value);
       if (result.error) this.state.error = result.error;
@@ -124,14 +136,14 @@ export class DoctorController {
     }, options);
   }
   private keepAttempt(e: Evidence, a: Attempt): void {
-    const i = e.attempts.findIndex(x => x.run.id === a.run.id && x.run.attempt === a.run.attempt);
+    const i = e.attempts.findIndex(x => x.run.id === a.run.id);
     if (i < 0) e.attempts.push(a); else e.attempts[i] = a;
   }
-  private loadAttempt(e: Evidence, run: Run, attempt: number, done: (r: Result<Attempt>) => void, options: RequestOptions): void {
-    this.github.run(e.repo, run.id, attempt, metadata => {
-      if (!metadata.value || metadata.value.id !== run.id || metadata.value.attempt !== attempt || metadata.value.workflow !== run.workflow) return done({ error: metadata.error ?? "Run attempt identity changed; refresh details.", complete: false });
-      this.github.jobs(e.repo, run.id, attempt, jobs => {
-        const previous = e.attempts.find(a => a.run.id === run.id && a.run.attempt === attempt);
+  private loadAttempt(e: Evidence, run: Run, done: (r: Result<Attempt>) => void, options: RequestOptions): void {
+    this.gitlab.run(run.id, metadata => {
+      if (!metadata.value || metadata.value.id !== run.id) return done({ error: metadata.error ?? "Pipeline identity changed; refresh details.", complete: false });
+      this.gitlab.jobs(run.id, jobs => {
+        const previous = e.attempts.find(a => a.run.id === run.id);
         const live = jobs.value ?? [];
         const stale = !jobs.complete ? (previous?.jobs ?? []).filter(j => !live.some(l => l.id === j.id)) : [];
         const retained = stale.slice(0, Math.max(0, 100 - live.length));
@@ -153,7 +165,7 @@ export class DoctorController {
     this.changed();
     const history = () => this.history(e, a.run, job, options);
     if (e.logs[String(id)] && !e.logs[String(id)].error && a.run.status === "completed") return history();
-    this.github.log(e.repo, id, log => {
+    this.gitlab.log(id, log => {
       const old = e.logs[String(id)];
       e.logs[String(id)] = log.value ?? { ...(old ?? { text: "", truncated: false }), error: log.error ?? "Logs unavailable" };
       this.changed(true); history();
@@ -162,22 +174,19 @@ export class DoctorController {
   currentAttempt(): Attempt | undefined { return this.state.evidence?.attempts.find(a => attemptKey(a.run.id, a.run.attempt) === this.state.selectedAttempt); }
   currentJob(): Job | undefined { return this.currentAttempt()?.jobs.find(j => j.id === this.state.selectedJob); }
   private history(e: Evidence, selected: Run, job: Job, options: RequestOptions): void {
-    const sources: { side: "pr" | "base"; branch: string }[] = [{ side: "pr", branch: e.head.branch }, { side: "base", branch: e.head.baseBranch }];
-    const tasks: { side: "pr" | "base"; run: Run; attempt: number }[] = [];
+    const sources: { side: "pr" | "base" }[] = [{ side: "pr" }, { side: "base" }];
+    const tasks: { side: "pr" | "base"; run: Run }[] = [];
     const warn = (s: string) => { if (!e.coverage.includes(s)) e.coverage.push(s); };
     const summaries = (index: number) => {
       if (index >= sources.length) return details(0);
       const source = sources[index];
-      this.github.runs(e.repo, { branch: source.branch, workflow: selected.workflow, since: e.since, until: e.until }, r => {
+      const filter = source.side === "pr" ? { mr: e.number, since: e.since } : { ref: e.head.baseBranch, since: e.since };
+      this.gitlab.runs(filter, r => {
         if (!r.complete) warn(`${source.side} history: ${r.error ?? r.warning ?? "incomplete"}`);
-        const candidates = (r.value ?? []).filter(run => run.workflow === selected.workflow && (source.side === "pr" ? this.isPR(run, e) : run.branch === e.head.baseBranch && run.event === "push" && run.headRepo.toLowerCase() === e.repo.toLowerCase()));
-        if (candidates.length > 5) warn(`${source.side}: examined only the latest 5 matching runs of ${candidates.length} summaries.`);
-        if (!candidates.length) warn(`${source.side}: no comparable runs in the observation window.`);
-        for (const run of candidates.slice(0, 5)) {
-          const attempts = attemptNumbers(run.attempt);
-          if (run.attempt > 5) warn(`Run ${run.id}: attempts between 2 and ${run.attempt - 4} omitted.`);
-          for (const attempt of attempts) tasks.push({ side: source.side, run, attempt });
-        }
+        const candidates = (r.value ?? []).filter(run => source.side === "pr" ? this.isPR(run, e) : run.branch === e.head.baseBranch && run.event === "push");
+        if (candidates.length > 5) warn(`${source.side}: examined only the latest 5 matching pipelines of ${candidates.length} summaries.`);
+        if (!candidates.length) warn(`${source.side}: no comparable pipelines in the observation window.`);
+        for (const run of candidates.slice(0, 5)) tasks.push({ side: source.side, run });
         summaries(index + 1);
       }, options);
     };
@@ -185,11 +194,11 @@ export class DoctorController {
       if (index >= tasks.length) return logs(0, e.observations.filter(o => failed(o.job.conclusion)).slice(0, 4));
       const task = tasks[index];
       const consume = (r: Result<Attempt>) => {
-        if (!r.complete) warn(`Run ${task.run.id} attempt ${task.attempt}: ${r.error ?? r.value?.error ?? "incomplete jobs"}`);
+        if (!r.complete) warn(`Pipeline ${task.run.id}: ${r.error ?? r.value?.error ?? "incomplete jobs"}`);
         if (r.value) {
           if (task.side === "pr") this.keepAttempt(e, r.value);
           const matching = r.value.jobs.filter(j => j.name === job.name);
-          if (!matching.length) warn(`Run ${task.run.id} attempt ${task.attempt}: comparable job absent.`);
+          if (!matching.length) warn(`Pipeline ${task.run.id}: comparable job absent.`);
           for (const j of matching) if (j.id !== job.id) {
             if (e.observations.length < 100) e.observations.push({ side: task.side, run: r.value.run, job: j });
             else warn("Comparison observations incomplete: stopped at 100 matching jobs.");
@@ -197,9 +206,9 @@ export class DoctorController {
         }
         details(index + 1);
       };
-      const cached = task.side === "pr" && e.attempts.find(a => a.run.id === task.run.id && a.run.attempt === task.attempt && a.run.status === "completed" && a.complete);
+      const cached = task.side === "pr" && e.attempts.find(a => a.run.id === task.run.id && a.run.status === "completed" && a.complete);
       if (cached) consume({ value: cached, complete: true });
-      else this.loadAttempt(e, task.run, task.attempt, consume, options);
+      else this.loadAttempt(e, task.run, consume, options);
     };
     const logs = (index: number, failures: Observation[]): void => {
       if (index >= failures.length) {
@@ -208,7 +217,7 @@ export class DoctorController {
         this.state.historyLoading = false; return this.changed(true);
       }
       const o = failures[index];
-      this.github.log(e.repo, o.job.id, r => {
+      this.gitlab.log(o.job.id, r => {
         o.excerpt = r.value ?? { text: "", truncated: false, error: r.error };
         if (!r.complete) warn(`Comparison job ${o.job.id}: ${r.error ?? "log truncated"}`);
         logs(index + 1, failures);
@@ -243,7 +252,7 @@ export class DoctorController {
     });
   }
   private verificationText(v?: Verification): string {
-    return v ? `Verified worktree ${v.worktree} at ${v.sha}, repository ${v.repo}, ${new Date(v.at).toISOString()}. ${v.mismatch ? "Checkout differs from PR head; user acknowledgement required." : "Checkout matches PR head."} Verification is an observation, not an atomic lock on checkout.` : "Checkout verification pending";
+    return v ? `Verified worktree ${v.worktree} at ${v.sha}, repository ${v.repo}, ${new Date(v.at).toISOString()}. ${v.mismatch ? "Checkout differs from MR head; user acknowledgement required." : "Checkout matches MR head."} Verification is an observation, not an atomic lock on checkout.` : "Checkout verification pending";
   }
   private verify(d: Dispatch, done: (r: Result<Verification>) => void): void {
     const e = this.state.evidence;
@@ -261,10 +270,10 @@ export class DoctorController {
       this.queue.run("ci-remotes", worktree.id, [], remotes => {
         const error = processError(remotes);
         if (error || remotes.result?.truncated) return done({ error: "Cannot verify session repository. " + (error ?? "Remote output truncated."), complete: false });
-        const repositories = remotes.result!.stdout.split("\n").map(remoteRepo).filter((v): v is string => !!v);
+        const repositories = remotes.result!.stdout.split("\n").map(line => remoteRepo(line, this.gitlab.host)).filter((v): v is string => !!v);
         const head = e.head.repo.toLowerCase(), base = e.repo.toLowerCase();
         const repo = repositories.includes(head) ? head : repositories.includes(base) ? base : undefined;
-        if (!repo) return done({ error: "Selected session repository does not match the PR head or base repository. Branch names cannot verify ownership. Copy the brief.", complete: false });
+        if (!repo) return done({ error: "Selected session repository does not match the MR project. Branch names cannot verify ownership. Copy the brief.", complete: false });
         this.queue.run("ci-head", worktree.id, [], out => {
           const error = processError(out), sha = out.result?.stdout.trim();
           if (error || out.result?.truncated || !validSHA(sha)) return done({ error: "Cannot verify session checkout SHA. " + (error ?? "HEAD unavailable."), complete: false });
@@ -285,13 +294,13 @@ export class DoctorController {
       if (!r.value) return fail(r.error ?? "Session verification unavailable.");
       if (r.value.worktree !== before.worktree || r.value.sha !== before.sha || r.value.repo !== before.repo) return fail("Selected worktree checkout or repository changed since preview.");
       const verification = r.value;
-      this.github.identity(e.repo, e.number, identity => {
-        if (!identity.value || identity.value.sha !== e.head.sha || identity.value.repo !== e.head.repo || identity.value.baseSha !== e.head.baseSha) return fail(identity.error ?? "PR head/base changed since preview; refresh details.");
+      this.gitlab.identity(e.number, identity => {
+        if (!identity.value || identity.value.sha !== e.head.sha || identity.value.baseSha !== e.head.baseSha) return fail(identity.error ?? "MR head/target changed since preview; refresh details.");
         const job = e.attempts.flatMap(a => a.jobs).find(j => j.id === d.job);
         const known = e.runs.find(run => run.id === job?.run);
-        if (!job || !known) return fail("Selected run is unavailable.");
-        this.github.run(e.repo, job.run, undefined, run => {
-          if (!run.value || run.value.attempt !== known.attempt || run.value.sha !== known.sha || run.value.updated !== known.updated || run.value.status !== known.status) return fail(run.error ?? "Run or rerun attempt changed since preview; refresh details.");
+        if (!job || !known) return fail("Selected pipeline is unavailable.");
+        this.gitlab.run(job.run, run => {
+          if (!run.value || run.value.sha !== known.sha || run.value.updated !== known.updated || run.value.status !== known.status) return fail(run.error ?? "Pipeline changed since preview; refresh details.");
           d.verification = verification;
           // Keep the reviewed prompt byte-for-byte. Fresh verification only confirms its identities.
           d.phase = "sending"; this.changed();
