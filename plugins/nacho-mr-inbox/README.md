@@ -123,8 +123,9 @@ select a session explicitly, and **Send investigation** queues it once after
 re-checking the checkout (the selected worktree's remotes and HEAD) and the MR
 and pipeline identity. GitLab logs are only the last 256 KiB, because GitLab
 ignores range requests and failures are at the end; a cut head is labelled
-truncated. Expired logs show as unavailable. Authentication failures and rate
-limits pause CI Doctor until an explicit Retry or Refresh.
+truncated. Expired logs show as unavailable. A rate limit pauses every `glab` call except
+the git ones until GitLab's retry time (60 seconds when it gives none), then they
+resume by themselves; an authentication failure pauses them until Retry or Refresh.
 
 ## Commands it runs
 
@@ -146,8 +147,10 @@ appended argument itself and checks it against a strict pattern first.
 
 ## Limits
 
-- One write (add, merge when green, retry) at a time. At most two processes
-  across all commands, list and writes first, with shared duplicate requests.
+- One add (or merge when green) at a time, and one pipeline retry at a time; a
+  CI Doctor job retry is limited to one at a time on its own. At most two
+  processes across all commands, list and writes first, with shared duplicate
+  requests.
 - 50 open MRs and 50 merged candidates per list; at most 20 cars per train.
 - Avatars load only from gitlab.com and Gravatar; elsewhere, initials.
 - The tab is tested against GitLab 19.4 (gitlab.com is always current). A GitLab
