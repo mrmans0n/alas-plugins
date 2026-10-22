@@ -47,6 +47,12 @@ test("MR identity from the REST merge request", () => {
   assert.throws(() => parseIdentity({ ...mr, diff_refs: null }, "acme/shop"));
 });
 
+test("a harmless early 'failed' line does not anchor the excerpt before the real error", () => {
+  const raw = ["Tests: 120 passed, 0 failed", ...Array.from({ length: 300 }, (_, i) => `noise ${i}`), "Error: connection refused by the cache", "tail"].join("\n");
+  assert.match(excerpt(raw, false).text, /Error: connection refused by the cache/);
+  assert.match(excerpt("build\nFAILED: compile step\nmore", false).text, /FAILED: compile step/, "uppercase FAILED still anchors");
+});
+
 test("excerpts strip ANSI and section markers and name the failing section", () => {
   const raw = [
     "\x1b[0Ksection_start:1:prepare_executor\r\x1b[0KPreparing", "\x1b[0Ksection_end:2:prepare_executor\r\x1b[0K",

@@ -97,8 +97,8 @@ export function excerpt(raw: string, headCut: boolean): Excerpt {
   const section = open[open.length - 1] ?? last;
   const clean = raw.replace(SECTION, "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r(?!\n)/g, "\n").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
   const lines = clean.split("\n");
-  const marker = /(?:Test Case .+ failed|Test .+ failed|[✘✖].+|\berror:|Error:|fatal:|FAILED|ENOTFOUND|ECONNRESET|No space left on device|ERROR: Job failed)/i;
-  let at = lines.findIndex(l => marker.test(l));
+  const marker = /(?:Test Case .+ failed|Test .+ failed|[✘✖].+|\berror:|Error:|fatal:|ENOTFOUND|ECONNRESET|No space left on device|ERROR: Job failed)/i;
+  let at = lines.findIndex(l => marker.test(l) || /\bFAILED\b/.test(l));
   if (at < 0) at = Math.max(0, lines.length - 100);
   const start = Math.max(0, at - 3);
   const selected = lines.slice(start, start + 100).join("\n");
