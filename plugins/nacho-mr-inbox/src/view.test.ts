@@ -1,119 +1,100 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Merged, Pull } from "./inbox.ts";
-import { inboxModel, readyCount, type ViewState } from "./view.ts";
+import type { Inbox, MergeRequest, Train } from "./inbox.ts";
+import { chips, inboxModel, readyMine, type ViewState } from "./view.ts";
 
-const pull = (number: number, fields: Partial<Pull> = {}): Pull => ({
-  number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, isDraft: false, author: "nacho",
-  branch: `nacho/pr-${number}`, updatedAt: `2026-09-${String(number).padStart(2, "0")}T00:00:00Z`, reviewDecision: null,
-  mergeable: "MERGEABLE", ci: "SUCCESS", checks: null, codexThumbsUp: true, codexReviewing: false, ...fields,
+const WEB = "https://gitlab.example.com/acme/shop";
+const mr = (iid: number, fields: Partial<MergeRequest> = {}): MergeRequest => ({
+  iid, title: `MR ${iid}`, url: `${WEB}/-/merge_requests/${iid}`, draft: false, author: "nacho", branch: `b${iid}`, target: "main", sha: "a".repeat(40),
+  updatedAt: `2026-10-${String(10 + iid).padStart(2, "0")}T00:00:00Z`, status: "MERGEABLE", conflicts: false, approvalsLeft: 0, approvalsRequired: 1,
+  changesRequestedBy: [], unresolved: 0, pipeline: { id: 100 + iid, status: "SUCCESS", sha: "a".repeat(40), progress: { done: 3, running: 0, total: 3 } }, ...fields,
 });
-const NOW = 1_000_000_000;
-const model = (fields: Partial<ViewState>) => inboxModel({ refreshing: false, mergeErrors: {}, ...fields }, NOW);
-const inbox = (pulls: Pull[], merged: Merged[] = []) => ({ repo: "o/r", pulls, merged });
-const rowOf = (fields: Partial<Pull>) => model({ inbox: inbox([pull(1, fields)]) }).sections[0].rows[0];
+const inbox = (mrs: MergeRequest[], trains: Train[] = []): Inbox => ({ project: "acme/shop", webUrl: WEB, host: "gitlab.example.com", user: "nacho", mrs, trains, merged: [] });
+const NOW = Date.parse("2026-10-22T00:00:00Z");
+const model = (fields: Partial<ViewState>) => inboxModel({ refreshing: false, errors: {}, ...fields }, NOW);
+const texts = (m: MergeRequest) => chips(m).map((c) => `${c.tone}:${c.text}`);
 
-test("buckets come in order with their counts, skipping empty ones", () => {
-  const m = model({ inbox: inbox([pull(1, { isDraft: true }), pull(2, { ci: "FAILURE" }), pull(3), pull(4, { ci: "ERROR" }), pull(5, { ci: "PENDING" })]), fetchedAt: NOW });
-  assert.deepEqual(m.sections.map((s) => [s.title, s.tone, s.rows.map((r) => r.number)]), [
-    ["Ready to merge", "success", [3]], ["Waiting", "warn", [5]], ["Failing", "danger", [4, 2]], ["Drafts", "dim", [1]],
+test("sections come in order, skip empty ones, and count", () => {
+  const m = model({ inbox: inbox([mr(1, { draft: true }), mr(2, { status: "NOT_APPROVED", approvalsLeft: 1 }), mr(3), mr(4, { pipeline: { id: 4, status: "FAILED", sha: "", progress: null } })]) });
+  assert.deepEqual(m.sections.map((s) => [s.key, s.title, s.tone, s.rows.map((r) => r.iid)]), [
+    ["ready", "Ready", "success", [3]], ["blocked", "Blocked", "warn", [2]], ["failing", "Failing", "danger", [4]], ["drafts", "Drafts", "dim", [1]],
   ]);
-  assert.deepEqual(m.counts, { ready: 1, waiting: 1, failing: 2, drafts: 1 });
-  assert.equal(m.repo, "o/r");
-  assert.equal(m.fetchedAt, NOW);
-  assert.equal(m.sections[3].rows[0].merge, undefined, "drafts do not merge");
-  assert.equal(m.sections[2].rows[0].url, "https://github.com/o/r/pull/4");
+  assert.deepEqual(m.counts, { ready: 1, blocked: 1, failing: 1, drafts: 1 });
 });
 
-test("while one pull request merges, every merge button is disabled and it shows progress", () => {
-  const rows = model({ inbox: inbox([pull(1), pull(2)]), merging: 2, mergeErrors: { 1: "not mergeable" } }).sections[0].rows;
-  const byNumber = Object.fromEntries(rows.map((r) => [r.number, r]));
-  assert.equal(byNumber[1].merge!.disabled, true);
-  assert.equal(byNumber[2].merge!.disabled, true);
-  assert.ok(byNumber[2].merge!.busy && !byNumber[1].merge!.busy);
-  assert.equal(byNumber[1].error, "not mergeable");
+test("chips say why an MR is blocked", () => {
+  assert.deepEqual(texts(mr(1, { status: "REQUESTED_CHANGES", changesRequestedBy: ["ana", "bob"] })), ["success:✓ pipeline", "danger:changes requested · @ana, @bob", "success:✓ approved"]);
+  assert.deepEqual(texts(mr(1, { status: "REQUESTED_CHANGES" })), ["success:✓ pipeline", "danger:changes requested", "success:✓ approved"]);
+  assert.deepEqual(texts(mr(1, { status: "DISCUSSIONS_NOT_RESOLVED", unresolved: 3 })), ["success:✓ pipeline", "warn:💬 3 unresolved", "success:✓ approved"]);
+  assert.deepEqual(texts(mr(1, { status: "NOT_APPROVED", approvalsLeft: 2, approvalsRequired: 2 })), ["success:✓ pipeline", "warn:needs 2 approvals"]);
+  assert.deepEqual(texts(mr(1, { status: "CONFLICT", conflicts: true, approvalsRequired: 0 })), ["success:✓ pipeline", "warn:conflicts"]);
+  assert.deepEqual(texts(mr(1, { status: "NEED_REBASE", approvalsRequired: 0 })), ["success:✓ pipeline", "warn:needs rebase"]);
+  assert.deepEqual(texts(mr(1, { status: "JIRA_ASSOCIATION_MISSING", approvalsRequired: 0 })), ["success:✓ pipeline", "warn:jira association missing"]);
+  assert.deepEqual(texts(mr(1, { status: "CHECKING", approvalsRequired: 0 })), ["success:✓ pipeline", "dim:checking…"]);
+  assert.deepEqual(texts(mr(1, { status: "CI_MUST_PASS", pipeline: null, approvalsRequired: 0 })), ["warn:no pipeline"]);
+  assert.deepEqual(texts(mr(1, { pipeline: { id: 1, status: "FAILED", sha: "", progress: null }, approvalsRequired: 0 })), ["danger:✗ pipeline"]);
+  assert.deepEqual(texts(mr(1, { status: "CI_STILL_RUNNING", pipeline: { id: 1, status: "RUNNING", sha: "", progress: { done: 1, running: 1, total: 4 } }, approvalsRequired: 0 })), [], "the progress bar says it");
 });
 
-test("placeholders: loading before the first list, nothing more once the first list failed", () => {
-  assert.equal(model({ refreshing: true }).loading, true);
-  const failed = model({ error: "This repository has no GitHub remote." });
-  assert.equal(failed.loading, false);
-  assert.equal(failed.error, "This repository has no GitHub remote.");
-  const clear = model({ inbox: inbox([]) });
-  assert.deepEqual([clear.sections, clear.merged, clear.loading], [[], [], false]);
+test("ready rows add to the train; running ones add when green; trains off means merge when green", () => {
+  const ready = model({ inbox: inbox([mr(1)]) }).sections[0].rows[0];
+  assert.deepEqual(ready.add, { when: "now", look: "go", label: "🚂 Add to train", short: "Add", disabled: false, busy: false });
+  const running = model({ inbox: inbox([mr(2, { status: "CI_STILL_RUNNING", pipeline: { id: 2, status: "RUNNING", sha: "", progress: { done: 1, running: 1, total: 4 } } })]) }).sections[0].rows[0];
+  assert.deepEqual(running.add, { when: "whenGreen", look: "plain", label: "🚂 Add when green", short: "When green", disabled: false, busy: false });
+  assert.deepEqual(running.progress, { done: 1, running: 1, total: 4, failed: false });
+  const off = model({ inbox: inbox([mr(1)]), trainsEnabled: false }).sections[0].rows[0];
+  assert.equal(off.add?.label, "Merge when green");
+  assert.equal(model({ inbox: inbox([mr(1, { status: "NOT_APPROVED" })]) }).sections[0].rows[0].add, undefined);
 });
 
-test("the Codex chip shows 👍, else 👀 while it reviews, else nothing", () => {
-  const codex = (fields: Partial<Pull>) => rowOf(fields).chips.find((c) => c.text.startsWith("Codex"))?.text;
-  assert.equal(codex({ codexReviewing: true }), "Codex 👍");
-  assert.equal(codex({ codexThumbsUp: false, codexReviewing: true }), "Codex 👀");
-  assert.equal(codex({ codexThumbsUp: false }), undefined);
+test("while one write runs, every add is disabled and the busy one shows it", () => {
+  const rows = model({ inbox: inbox([mr(1), mr(2)]), busy: 2, errors: { 1: "Not mergeable" } }).sections[0].rows;
+  const by = Object.fromEntries(rows.map((r) => [r.iid, r]));
+  assert.equal(by[2].add?.busy, true);
+  assert.equal(by[1].add?.disabled, true);
+  assert.equal(by[1].error, "Not mergeable");
 });
 
-test("chips name checks, review and conflicts", () => {
-  const texts = (fields: Partial<Pull>) => rowOf(fields).chips.map((c) => `${c.text}:${c.tone}`);
-  assert.deepEqual(texts({ checks: { done: 9, running: 0, total: 9 }, reviewDecision: "APPROVED" }), ["✓ CI 9/9:success", "✓ Approved:success", "Codex 👍:success"]);
-  assert.deepEqual(texts({ ci: "FAILURE", reviewDecision: "CHANGES_REQUESTED", mergeable: "CONFLICTING", codexThumbsUp: false }), ["✗ CI:danger", "Changes requested:warn", "Conflicts:warn"]);
-  assert.deepEqual(texts({ ci: "PENDING", checks: { done: 1, running: 1, total: 4 }, reviewDecision: "REVIEW_REQUIRED" }), ["Review needed:dim", "Codex 👍:success"], "the bar stands for running checks");
-  assert.deepEqual(texts({ ci: null }), ["Codex 👍:success"]);
+test("failing rows offer retry of the head pipeline and CI Doctor", () => {
+  const row = model({ inbox: inbox([mr(1, { pipeline: { id: 77, status: "FAILED", sha: "", progress: null } })]), retrying: 77 }).sections[0].rows[0];
+  assert.deepEqual(row.retry, { pipeline: 77, busy: true, disabled: true });
+  assert.equal(row.doctor, true);
+  assert.equal(model({ inbox: inbox([mr(1, { pipeline: null })]) }).sections[0].rows[0].doctor, false);
 });
 
-test("a Codex 👍 gets a merge button that looks as safe as the checks are", () => {
-  const look = (fields: Partial<Pull>) => {
-    const m = rowOf(fields).merge;
-    return m && `${m.look} ${m.label} ${m.short}`;
-  };
-  assert.equal(look({}), "go Squash & merge Merge");
-  assert.equal(look({ ci: "PENDING" }), "plain Squash & merge Merge");
-  assert.equal(look({ ci: null }), "plain Squash & merge Merge");
-  assert.equal(look({ ci: "FAILURE" }), "risk Merge anyway Anyway");
-  assert.equal(look({ ci: "ERROR" }), "risk Merge anyway Anyway");
-  assert.equal(look({ codexThumbsUp: false }), undefined);
-  assert.equal(look({ codexThumbsUp: false, author: "renovate" }), "go Squash & merge Merge");
-  assert.equal(look({ mergeable: "CONFLICTING" }), undefined);
+test("train strip: cars in order with status, yours marked, MRs in a train leave the groups", () => {
+  const trains: Train[] = [{ target: "main", cars: [
+    { iid: 7, status: "MERGING", pipeline: { status: "SUCCESS", progress: null } },
+    { iid: 8, status: "FRESH", pipeline: { status: "RUNNING", progress: { done: 14, running: 2, total: 22 } } },
+    { iid: 9, status: "FRESH", pipeline: { status: "FAILED", progress: null } },
+    { iid: 10, status: "STALE", pipeline: { status: "RUNNING", progress: null } },
+    { iid: 11, status: "IDLE", pipeline: null },
+  ] }];
+  const m = model({ inbox: inbox([mr(7, { author: "ana" }), mr(8), mr(9, { author: "bob" }), mr(10, { author: "bob" }), mr(3)], trains) });
+  assert.deepEqual(m.trains[0].cars.map((c) => [c.iid, c.label, c.tone, c.mine]), [
+    [7, "merging ✓", "success", false], [8, "⏳ 14/22", "warn", true], [9, "failed", "danger", false], [10, "restarting", "dim", false], [11, "queued", "dim", false],
+  ]);
+  assert.equal(m.trains[0].cars[4].url, undefined, "a car whose MR is not in the list has no link");
+  assert.deepEqual(m.sections.flatMap((s) => s.rows.map((r) => r.iid)), [3]);
+  assert.equal(m.trainsEnabled, true);
 });
 
-test("checks still running give a bar of done, running and left, failed once one failed", () => {
-  assert.deepEqual(rowOf({ ci: "PENDING", checks: { done: 3, running: 2, total: 10 } }).checks, { done: 3, running: 2, total: 10, failed: false });
-  assert.equal(rowOf({ ci: "FAILURE", checks: { done: 3, running: 2, total: 10 } }).checks!.failed, true);
-  assert.equal(rowOf({ checks: { done: 10, running: 0, total: 10 } }).checks, undefined);
-  assert.equal(rowOf({ ci: null }).checks, undefined);
+test("Yours lists your MRs outside the train, newest first, and the badge counts your ready ones", () => {
+  const state: Partial<ViewState> = { inbox: inbox([mr(1), mr(2, { author: "ana" }), mr(3, { status: "NOT_APPROVED" }), mr(4)], [{ target: "main", cars: [{ iid: 4, status: "IDLE", pipeline: null }] }]) };
+  assert.deepEqual(model(state).mine.map((r) => [r.iid, r.mine]), [[3, true], [1, true]]);
+  assert.equal(readyMine({ refreshing: false, errors: {}, ...state }), 1);
 });
 
-test("Merge all is offered from two ready pull requests and shows its progress", () => {
-  assert.equal(model({ inbox: inbox([pull(1), pull(2, { ci: "PENDING" })]) }).mergeAll, undefined);
-  assert.deepEqual(model({ inbox: inbox([pull(1), pull(2)]) }).mergeAll, { count: 2, disabled: false });
-  assert.deepEqual(model({ inbox: inbox([pull(2)]), merging: 2, mergeAll: { total: 3, done: 1 } }).mergeAll, { count: 1, disabled: true, progress: "Merging 2 of 3…" });
-  assert.equal(readyCount({ refreshing: false, mergeErrors: {}, inbox: inbox([pull(1), pull(2), pull(3, { isDraft: true })]) }), 2);
-  assert.equal(readyCount({ refreshing: false, mergeErrors: {} }), 0);
+test("Add all: offered from two ready, with progress while it runs", () => {
+  assert.equal(model({ inbox: inbox([mr(1)]) }).addAll, undefined);
+  assert.deepEqual(model({ inbox: inbox([mr(1), mr(2)]) }).addAll, { count: 2, label: "🚂 Add all 2 to train", disabled: false });
+  assert.deepEqual(model({ inbox: inbox([mr(1), mr(2)]), busy: 1, addAll: { total: 2, done: 0 } }).addAll, { count: 2, label: "🚂 Add all 2 to train", disabled: true, progress: "Adding 1 of 2…" });
+  assert.equal(model({ inbox: inbox([mr(1), mr(2)]), trainsEnabled: false }).addAll?.label, "Merge all 2 when green");
 });
 
-const merged = (number: number, mergedAt: string): Merged => ({
-  number, title: `Merged ${number}`, url: `https://github.com/o/r/pull/${number}`, author: "nacho", branch: `nacho/m-${number}`, mergedAt,
-});
-
-test("recently merged pull requests come in the order given, with when and who", () => {
-  const m = model({ inbox: inbox([pull(1)], [merged(9, new Date(NOW - 2 * 3600_000).toISOString()), merged(8, new Date(NOW - 3 * 24 * 3600_000).toISOString())]) });
-  assert.deepEqual(m.merged.map((r) => [r.number, r.author, r.url]), [[9, "nacho", "https://github.com/o/r/pull/9"], [8, "nacho", "https://github.com/o/r/pull/8"]]);
-});
-
-test("rows carry the author's avatar when there is one", () => {
-  const avatar = "https://avatars.githubusercontent.com/u/1?v=4";
-  const m = model({ inbox: inbox([pull(1, { avatar }), pull(2)], [{ ...merged(9, new Date(NOW).toISOString()), avatar }]) });
-  assert.deepEqual(m.sections[0].rows.map((r) => r.avatar), [undefined, avatar]);
-  assert.equal(m.merged[0].avatar, avatar);
-  assert.ok(!("avatar" in m.sections[0].rows[0]));
-});
-
-test("recently merged lists the last day's, or the last 5 when fewer", () => {
-  const hour = 3600_000;
-  const numbers = (list: Merged[]) => model({ inbox: inbox([], list) }).merged.map((r) => r.number);
-  // One every 2 hours: 12 within the day (2h … 24h), the rest older.
-  const busy = numbers(Array.from({ length: 20 }, (_, i) => merged(100 - i, new Date(NOW - (i + 1) * 2 * hour).toISOString())));
-  assert.equal(busy.length, 12);
-  assert.equal(busy.at(-1), 89);
-  // One every 10 hours: 2 within the day, filled up to 5 with older ones.
-  const quiet = numbers(Array.from({ length: 8 }, (_, i) => merged(50 - i, new Date(NOW - (i + 1) * 10 * hour).toISOString())));
-  assert.deepEqual(quiet, [50, 49, 48, 47, 46]);
-  assert.deepEqual(numbers([merged(9, new Date(NOW - 100 * hour).toISOString())]), [9]);
+test("loading, errors and merged rows", () => {
+  assert.equal(model({}).loading, true);
+  assert.equal(model({ error: "x" }).loading, false);
+  const merged = model({ inbox: { ...inbox([]), merged: [{ iid: 5, title: "M", url: `${WEB}/-/merge_requests/5`, author: "bob", branch: "b", mergedAt: "2026-10-21T12:00:00Z" }] } }).merged;
+  assert.deepEqual(merged.map((m) => m.iid), [5]);
 });
