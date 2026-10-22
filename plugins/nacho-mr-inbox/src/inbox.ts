@@ -1,193 +1,201 @@
 import type { Outcome, ProcessResult } from "@alas/plugin";
-import { validRepo, validSHA, type PullIdentity } from "./doctor.ts";
 
-export interface Pull {
-  identity?: PullIdentity;
-  number: number;
+export interface Progress { done: number; running: number; total: number }
+export interface Pipeline { id: number; status: string; sha: string; progress: Progress | null }
+
+export interface MergeRequest {
+  iid: number;
   title: string;
   url: string;
-  isDraft: boolean;
+  draft: boolean;
   author: string;
-  /** The author's GitHub avatar, when it is on the host the page may load images from. */
+  /** Only from the manifest's `network` hosts; others fall back to initials. */
   avatar?: string;
   branch: string;
+  target: string;
+  /** `diffHeadSha`. */
+  sha: string;
   /** ISO 8601, so it sorts as text. */
   updatedAt: string;
-  /** `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or `null` when the repository requires no review. */
-  reviewDecision: string | null;
-  /** `MERGEABLE`, `CONFLICTING` or `UNKNOWN`. */
-  mergeable: string;
-  /** The head commit's check rollup: `SUCCESS`, `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`, or `null` without checks. */
-  ci: string | null;
-  /** The head commit's checks by progress, or `null` without checks. */
-  checks: Checks | null;
-  codexThumbsUp: boolean;
-  /** Codex left 👀 on the description: its review is in progress. */
-  codexReviewing: boolean;
+  /** GitLab's `detailedMergeStatus`, such as `MERGEABLE`, `NOT_APPROVED` or `CI_STILL_RUNNING`. */
+  status: string;
+  conflicts: boolean;
+  approvalsLeft: number;
+  approvalsRequired: number;
+  /** Reviewers whose review state is `REQUESTED_CHANGES`. */
+  changesRequestedBy: string[];
+  /** Resolvable threads not yet resolved. */
+  unresolved: number;
+  pipeline: Pipeline | null;
 }
 
-export interface Checks {
-  done: number;
-  running: number;
-  total: number;
-}
+export interface Car { iid: number; status: string; pipeline: { status: string; progress: Progress | null } | null }
+export interface Train { target: string; cars: Car[] }
 
-export interface Merged {
-  number: number;
-  title: string;
-  url: string;
-  author: string;
-  avatar?: string;
-  branch: string;
-  /** ISO 8601, so it sorts as text. */
-  mergedAt: string;
-}
+export interface Merged { iid: number; title: string; url: string; author: string; avatar?: string; branch: string; mergedAt: string }
 
 export interface Inbox {
-  /** `owner/name`. */
-  repo: string;
-  pulls: Pull[];
+  /** `group/sub/project`. */
+  project: string;
+  webUrl: string;
+  /** From `webUrl`: every link must be on it. */
+  host: string;
+  /** The `glab` user. "Yours" means authored by them. */
+  user: string;
+  mrs: MergeRequest[];
+  /** Non-empty trains, cars in merge order. */
+  trains: Train[];
   /** The most recently merged first. */
   merged: Merged[];
 }
 
-/** The tab lists the pull requests merged this long ago at most… */
 export const MERGED_RECENT_MS = 24 * 3600_000;
-/** …or, when fewer, this many of the most recent. */
 export const MERGED_MIN = 5;
 
-/** The part of `merged`, the most recent first, the tab lists: those of the last day, or the last few when fewer. */
 export function recentMerged(merged: Merged[], now: number): Merged[] {
   const older = merged.findIndex((m) => !(now - Date.parse(m.mergedAt) <= MERGED_RECENT_MS));
   return merged.slice(0, Math.max(MERGED_MIN, older === -1 ? merged.length : older));
 }
 
-export type Bucket = "ready" | "failing" | "waiting" | "drafts";
-export const BUCKETS: Bucket[] = ["ready", "waiting", "failing", "drafts"];
+export type Bucket = "ready" | "blocked" | "failing" | "drafts";
+export const BUCKETS: Bucket[] = ["ready", "blocked", "failing", "drafts"];
 
-export const SIGN_IN = "Sign in with `gh auth login` in a terminal, then Refresh.";
-export const NO_REMOTE = "This repository has no GitHub remote.";
+export const SIGN_IN = "Sign in with `glab auth login --hostname <host>` in a terminal, then Refresh.";
+export const NO_REMOTE = "This repository has no GitLab remote glab knows. For self-managed GitLab, run `glab auth login --hostname <host>` first.";
+export const NO_GLAB = "glab is not installed on this host. Install it, sign in with `glab auth login`, then Refresh.";
 
-const CODEX = new Set(["chatgpt-codex-connector[bot]", "chatgpt-codex-connector"]);
-/** Bots whose pull requests need no Codex 👍. */
-const TRUSTED = new Set(["renovate[bot]", "renovate"]);
+const isObject = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
+const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const count = (v: any): number => (Number.isInteger(v?.count) && v.count > 0 ? v.count : 0);
+const nat = (v: unknown): number => (Number.isInteger(v) && (v as number) > 0 ? (v as number) : 0);
+/** GraphQL iids are strings. */
+const iidOf = (v: unknown): number | undefined => (typeof v === "string" && /^[1-9]\d{0,9}$/.test(v) ? Number(v) : undefined);
 
-function isObject(value: unknown): value is Record<string, any> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** `gid://gitlab/Ci::Pipeline/235387` → 235387. */
+export function pipelineId(gid: unknown): number | undefined {
+  const m = typeof gid === "string" ? /^gid:\/\/gitlab\/Ci::Pipeline\/([1-9]\d{0,15})$/.exec(gid) : null;
+  return m ? Number(m[1]) : undefined;
 }
 
-const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
-
-/**
- * `{ avatar }` when `author` has an avatar on avatars.githubusercontent.com, the manifest's only `network` host
- * and so the only one the page may show images from; others, such as GitHub Enterprise ones, fall back to initials.
- */
+// No `URL` in the plugin runtime: strict patterns, so no userinfo, port or other host slips in.
+const AVATAR = /^https:\/\/(?:secure\.gravatar\.com\/avatar\/|gitlab\.com\/uploads\/)[A-Za-z0-9/?=&%._-]*$/;
 function avatar(author: any): { avatar?: string } {
   const url = str(author?.avatarUrl);
-  // No `URL` in the plugin runtime: a strict pattern, so no userinfo, port or other host can slip in.
-  return url !== null && url.length <= 512 && /^https:\/\/avatars\.githubusercontent\.com\/[A-Za-z0-9/?=&%._-]*$/.test(url) ? { avatar: url } : {};
+  return url !== null && url.length <= 512 && AVATAR.test(url) ? { avatar: url } : {};
 }
 
-/** The sum of the `{state, count}` entries whose state is in `states`. */
-function countOf(entries: unknown, states: string[]): number {
-  if (!Array.isArray(entries)) return 0;
-  return entries.reduce((sum, e) => sum + (states.includes(e?.state) && Number.isInteger(e.count) && e.count > 0 ? e.count : 0), 0);
+function progress(p: any): Progress | null {
+  const total = count(p?.jobs);
+  if (total === 0) return null;
+  const running = Math.min(total, count(p.running));
+  return { done: Math.min(total - running, count(p.done)), running, total };
 }
 
-/** Check runs in progress and pending commit statuses run; queued and expected ones wait; the rest are done. */
-function checks(contexts: any): Checks | null {
-  const total = contexts?.totalCount;
-  if (!Number.isInteger(total) || total <= 0) return null;
-  const running = Math.min(total, countOf(contexts.checkRunCountsByState, ["IN_PROGRESS"]) + countOf(contexts.statusContextCountsByState, ["PENDING"]));
-  const waiting = countOf(contexts.checkRunCountsByState, ["QUEUED", "PENDING", "WAITING", "REQUESTED"]) + countOf(contexts.statusContextCountsByState, ["EXPECTED"]);
-  return { done: Math.max(0, total - running - waiting), running, total };
-}
-
-function pull(node: unknown): Pull | undefined {
+function mergeRequest(node: unknown, base: string): MergeRequest | undefined {
   if (!isObject(node)) return undefined;
-  const { number, title, url, isDraft, headRefName, updatedAt } = node;
-  if (!Number.isInteger(number) || number <= 0 || typeof title !== "string" || typeof url !== "string" || !url.startsWith("https://")) return undefined;
-  if (typeof isDraft !== "boolean" || typeof headRefName !== "string" || typeof updatedAt !== "string") return undefined;
-  const commit = node.commits?.nodes?.[0]?.commit;
-  const byCodex = (reactions: any) => Array.isArray(reactions?.nodes) && reactions.nodes.some((r: any) => CODEX.has(r?.user?.login));
+  const iid = iidOf(node.iid);
+  const { title, webUrl, draft, updatedAt, sourceBranch, targetBranch } = node;
+  if (iid === undefined || typeof title !== "string" || typeof webUrl !== "string" || !webUrl.startsWith(base)) return undefined;
+  if (typeof draft !== "boolean" || typeof updatedAt !== "string" || typeof sourceBranch !== "string" || typeof targetBranch !== "string") return undefined;
+  const p = node.headPipeline;
+  const id = pipelineId(p?.id);
+  const reviewers = Array.isArray(node.reviewers?.nodes) ? node.reviewers.nodes : [];
   return {
-    number,
-    title,
-    url,
-    isDraft,
-    author: str(node.author?.login) ?? "ghost",
-    ...avatar(node.author),
-    branch: headRefName,
-    updatedAt,
-    reviewDecision: str(node.reviewDecision),
-    mergeable: str(node.mergeable) ?? "UNKNOWN",
-    ci: isObject(commit) ? str(commit.statusCheckRollup?.state) : null,
-    checks: isObject(commit) ? checks(commit.statusCheckRollup?.contexts) : null,
-    codexThumbsUp: byCodex(node.reactions),
-    codexReviewing: byCodex(node.eyes),
-    ...(validSHA(node.headRefOid) && validSHA(node.baseRefOid) && validRepo(node.headRepository?.nameWithOwner) && typeof node.baseRefName === "string" ? { identity: { sha: node.headRefOid, repo: node.headRepository.nameWithOwner, branch: headRefName, baseSha: node.baseRefOid, baseBranch: node.baseRefName } } : {}),
+    iid, title, url: webUrl, draft,
+    author: str(node.author?.username) ?? "ghost", ...avatar(node.author),
+    branch: sourceBranch, target: targetBranch, sha: str(node.diffHeadSha) ?? "", updatedAt,
+    status: str(node.detailedMergeStatus) ?? "UNCHECKED",
+    conflicts: node.conflicts === true,
+    approvalsLeft: nat(node.approvalsLeft), approvalsRequired: nat(node.approvalsRequired),
+    changesRequestedBy: reviewers.filter((r: any) => r?.mergeRequestInteraction?.reviewState === "REQUESTED_CHANGES" && typeof r.username === "string").map((r: any) => r.username),
+    unresolved: Math.max(0, nat(node.resolvableDiscussionsCount) - nat(node.resolvedDiscussionsCount)),
+    pipeline: id !== undefined && typeof p.status === "string" ? { id, status: p.status, sha: str(p.sha) ?? "", progress: progress(p) } : null,
   };
 }
 
-function merged(node: unknown): Merged | undefined {
-  if (!isObject(node)) return undefined;
-  const { number, title, url, headRefName, mergedAt } = node;
-  if (!Number.isInteger(number) || number <= 0 || typeof title !== "string" || typeof url !== "string" || !url.startsWith("https://")) return undefined;
-  if (typeof headRefName !== "string" || typeof mergedAt !== "string") return undefined;
-  return { number, title, url, author: str(node.author?.login) ?? "ghost", ...avatar(node.author), branch: headRefName, mergedAt };
+function trains(nodes: unknown): Train[] {
+  if (!Array.isArray(nodes)) return [];
+  return nodes.flatMap((t: any) => {
+    if (typeof t?.targetBranch !== "string" || !Array.isArray(t.cars?.nodes)) return [];
+    const cars: Car[] = t.cars.nodes.flatMap((c: any) => {
+      const iid = iidOf(c?.mergeRequest?.iid);
+      if (iid === undefined || typeof c.status !== "string") return [];
+      return [{ iid, status: c.status, pipeline: typeof c.pipeline?.status === "string" ? { status: c.pipeline.status, progress: progress(c.pipeline) } : null }];
+    });
+    return cars.length ? [{ target: t.targetBranch, cars }] : [];
+  });
 }
 
-/** The merged pull requests, the most recent first. GitHub cannot order by merge time, so the query fetches the recently updated ones and this sorts them. */
-function recentlyMerged(nodes: unknown): Merged[] {
+function merged(nodes: unknown, base: string): Merged[] {
   if (!Array.isArray(nodes)) return [];
   const out = new Map<number, Merged>();
-  for (const m of nodes.map(merged)) if (m && !out.has(m.number)) out.set(m.number, m);
-  return [...out.values()].sort((a, b) => (a.mergedAt < b.mergedAt ? 1 : a.mergedAt > b.mergedAt ? -1 : 0));
-}
-
-/** The list process's stdout, or `undefined` when it is not the reply the query asks for. Malformed and repeated pull requests are skipped, as view ids must be unique. */
-export function parseInbox(stdout: string): Inbox | undefined {
-  let json: unknown;
-  try {
-    json = JSON.parse(stdout);
-  } catch {
-    return undefined;
+  for (const n of nodes) {
+    const iid = iidOf(n?.iid);
+    if (iid === undefined || out.has(iid) || typeof n.title !== "string" || typeof n.webUrl !== "string" || !n.webUrl.startsWith(base) || typeof n.sourceBranch !== "string" || typeof n.mergedAt !== "string") continue;
+    out.set(iid, { iid, title: n.title, url: n.webUrl, author: str(n.author?.username) ?? "ghost", ...avatar(n.author), branch: n.sourceBranch, mergedAt: n.mergedAt });
   }
-  const repository = isObject(json) && isObject(json.data) ? json.data.repository : undefined;
-  if (!isObject(repository) || typeof repository.nameWithOwner !== "string") return undefined;
-  const nodes = repository.pullRequests?.nodes;
-  if (!Array.isArray(nodes)) return undefined;
-  const pulls = new Map<number, Pull>();
-  for (const p of nodes.map(pull)) if (p && !pulls.has(p.number)) pulls.set(p.number, p);
-  return { repo: repository.nameWithOwner, pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
+  return [...out.values()];
 }
 
-/** Codex approved (or Renovate wrote it) and nothing stops gh from merging; checks may still be running or red. */
-export function canMerge(p: Pull): boolean {
-  // Review state is shown, never required: the Codex 👍 is the approval that counts.
-  return !p.isDraft && (p.codexThumbsUp || TRUSTED.has(p.author)) && p.mergeable !== "CONFLICTING";
+/** The list reply, or the message to show when it is not one. */
+export function parseInbox(stdout: string): Inbox | string {
+  let json: any;
+  try { json = JSON.parse(stdout); } catch { return "glab returned an unexpected reply."; }
+  const firstError = Array.isArray(json?.errors) ? str(json.errors[0]?.message) : null;
+  if (firstError) return `GitLab: ${firstError.slice(0, 300)}`;
+  const project = json?.data?.project;
+  if (!isObject(project)) return "GitLab returned no project. Check that glab can read it.";
+  const host = /^https:\/\/([a-z0-9.-]+(?::\d{1,5})?)\/[^\s]+$/i.exec(str(project.webUrl) ?? "")?.[1]?.toLowerCase();
+  if (!host || typeof project.fullPath !== "string" || !Array.isArray(project.mergeRequests?.nodes)) return "glab returned an unexpected reply.";
+  const base = `https://${host}/`;
+  const mrs = new Map<number, MergeRequest>();
+  for (const n of project.mergeRequests.nodes) {
+    const mr = mergeRequest(n, base);
+    if (mr && !mrs.has(mr.iid)) mrs.set(mr.iid, mr);
+  }
+  return {
+    project: project.fullPath, webUrl: project.webUrl, host, user: str(json.data.currentUser?.username) ?? "",
+    mrs: [...mrs.values()], trains: trains(project.mergeTrains?.nodes), merged: merged(project.merged?.nodes, base),
+  };
 }
 
-export function isReady(p: Pull): boolean {
-  return canMerge(p) && p.ci === "SUCCESS";
+/** `glab api projects/:id`'s `merge_trains_enabled`; `undefined` for an unreadable reply. */
+export function parseTrainsEnabled(stdout: string): boolean | undefined {
+  try {
+    const json = JSON.parse(stdout);
+    return isObject(json) ? json.merge_trains_enabled === true : undefined;
+  } catch { return undefined; }
 }
 
-export function bucketOf(p: Pull): Bucket {
-  if (p.isDraft) return "drafts";
-  if (isReady(p)) return "ready";
-  if (p.ci === "FAILURE" || p.ci === "ERROR") return "failing";
-  return "waiting";
+export function inTrain(inbox: Inbox, mr: MergeRequest): boolean {
+  return inbox.trains.some((t) => t.target === mr.target && t.cars.some((c) => c.iid === mr.iid));
 }
 
-/** Pull requests by bucket, the most recently updated first. */
-export function classify(pulls: Pull[]): Record<Bucket, Pull[]> {
-  const out: Record<Bucket, Pull[]> = { ready: [], failing: [], waiting: [], drafts: [] };
-  const sorted = pulls.slice().sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
-  for (const p of sorted) out[bucketOf(p)].push(p);
+export const isFailing = (mr: MergeRequest) => mr.pipeline?.status === "FAILED" || mr.pipeline?.status === "CANCELED";
+
+/** GitLab already decided: mergeable now, or mergeable once the running pipeline passes. */
+export function addMode(mr: MergeRequest): "now" | "whenGreen" | undefined {
+  if (mr.draft || isFailing(mr)) return undefined;
+  if (mr.status === "MERGEABLE") return "now";
+  if (mr.status === "CI_STILL_RUNNING") return "whenGreen";
+  return undefined;
+}
+
+export function bucketOf(mr: MergeRequest): Bucket {
+  if (mr.draft) return "drafts";
+  if (isFailing(mr)) return "failing";
+  if (mr.status === "MERGEABLE") return "ready";
+  return "blocked";
+}
+
+/** MRs by bucket, newest-updated first, without the ones already in a train. */
+export function classify(inbox: Inbox): Record<Bucket, MergeRequest[]> {
+  const out: Record<Bucket, MergeRequest[]> = { ready: [], blocked: [], failing: [], drafts: [] };
+  const sorted = inbox.mrs.filter((m) => !inTrain(inbox, m)).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  for (const m of sorted) out[bucketOf(m)].push(m);
   return out;
 }
 
-/** Mirrors Alas's gg inbox: "Updated just now", "Updated 5m ago", "Updated 2h ago". */
 export function updatedLabel(fetchedAt: number | undefined, now: number): string | undefined {
   if (fetchedAt === undefined) return undefined;
   const seconds = (now - fetchedAt) / 1000;
@@ -196,7 +204,6 @@ export function updatedLabel(fetchedAt: number | undefined, now: number): string
   return `Updated ${Math.floor(seconds / 3600)}h ago`;
 }
 
-/** How long ago `iso` was: "just now", "5m ago", "2h ago", "3d ago"; `undefined` for an unreadable time. */
 export function agoLabel(iso: string, now: number): string | undefined {
   const at = Date.parse(iso);
   if (Number.isNaN(at)) return undefined;
@@ -207,19 +214,19 @@ export function agoLabel(iso: string, now: number): string | undefined {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-/** The first non-empty line of `text`, cut to 300 characters. */
+/** glab boxes errors in an `ERROR` banner: skip it and blank lines. */
 function firstLine(text: string): string | undefined {
-  const line = text.split("\n").map((l) => l.trim()).find((l) => l !== "");
+  const line = text.split("\n").map((l) => l.trim()).find((l) => l !== "" && l !== "ERROR");
   return line === undefined ? undefined : line.slice(0, 300);
 }
 
-/** Why a gh run failed, for the user; `undefined` when it exited 0. */
 export function processError(outcome: Outcome<ProcessResult>): string | undefined {
-  if (outcome.error) return /command not found/.test(outcome.error.message) ? SIGN_IN : outcome.error.message;
+  if (outcome.error) return /command not found|No such file/i.test(outcome.error.message) ? NO_GLAB : outcome.error.message;
   const { exit, stderr, stdout, timedOut } = outcome.result;
-  if (timedOut) return "gh timed out.";
+  if (timedOut) return "glab timed out.";
   if (exit === 0) return undefined;
-  if (/gh auth login/.test(stderr)) return SIGN_IN;
-  if (/known GitHub host|no git remotes/.test(stderr)) return NO_REMOTE;
-  return firstLine(stderr) ?? firstLine(stdout) ?? `gh exited with ${exit}.`;
+  if (/glab: (?:command )?not found/.test(stderr)) return NO_GLAB;
+  if (/none of the git remotes configured|not a git repository/.test(stderr)) return NO_REMOTE;
+  if (/401 Unauthorized|glab auth login|no token found/i.test(stderr)) return SIGN_IN;
+  return firstLine(stderr) ?? firstLine(stdout) ?? `glab exited with ${exit}.`;
 }

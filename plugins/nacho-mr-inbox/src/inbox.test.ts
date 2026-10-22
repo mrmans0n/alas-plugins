@@ -1,174 +1,119 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agoLabel, bucketOf, classify, NO_REMOTE, parseInbox, processError, SIGN_IN, updatedLabel, type Pull } from "./inbox.ts";
+import { addMode, agoLabel, bucketOf, classify, NO_GLAB, NO_REMOTE, parseInbox, parseTrainsEnabled, processError, SIGN_IN, updatedLabel, type Inbox } from "./inbox.ts";
 
-/** One node as `gh api graphql` returns it for the manifest's query. */
-const node = (number: number, fields: object = {}) => ({
-  number,
-  title: `PR ${number}`,
-  url: `https://github.com/o/r/pull/${number}`,
-  isDraft: false,
-  author: { login: "nacho" },
-  headRefName: `nacho/pr-${number}`,
-  updatedAt: "2026-09-30T21:14:36Z",
-  reviewDecision: null,
-  mergeable: "MERGEABLE",
-  commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
-  reactions: { nodes: [{ user: { login: "chatgpt-codex-connector[bot]" } }] },
+const WEB = "https://gitlab.example.com/acme/shop";
+const jobs = (total: number, done: number, running: number) => ({ jobs: { count: total }, done: { count: done }, running: { count: running } });
+/** One open MR node as the manifest's query returns it. */
+export const node = (iid: number, fields: object = {}) => ({
+  iid: String(iid), title: `MR ${iid}`, webUrl: `${WEB}/-/merge_requests/${iid}`, draft: false, updatedAt: `2026-10-${String(10 + iid).padStart(2, "0")}T00:00:00Z`,
+  author: { username: "nacho", avatarUrl: "https://secure.gravatar.com/avatar/abc?s=80&d=identicon" },
+  sourceBranch: `nacho/mr-${iid}`, targetBranch: "main", diffHeadSha: "a".repeat(40), detailedMergeStatus: "MERGEABLE", conflicts: false,
+  approvalsLeft: 0, approvalsRequired: 1, reviewers: { nodes: [{ username: "ana", mergeRequestInteraction: { reviewState: "APPROVED" } }] },
+  resolvableDiscussionsCount: 2, resolvedDiscussionsCount: 2,
+  headPipeline: { id: `gid://gitlab/Ci::Pipeline/${1000 + iid}`, status: "SUCCESS", sha: "a".repeat(40), ...jobs(4, 4, 0) },
   ...fields,
 });
-const reply = (nodes: unknown[], merged?: unknown[]) =>
-  JSON.stringify({ data: { repository: { nameWithOwner: "o/r", pullRequests: { nodes }, ...(merged && { merged: { nodes: merged } }) } } });
-const mergedNode = (number: number, mergedAt: string, fields: object = {}) => ({
-  number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, author: { login: "nacho" }, headRefName: `nacho/pr-${number}`, mergedAt, ...fields,
-});
+export const reply = (nodes: unknown[], extra: { trains?: unknown[]; merged?: unknown[]; user?: string } = {}) => JSON.stringify({ data: {
+  currentUser: { username: extra.user ?? "nacho" },
+  project: { fullPath: "acme/shop", webUrl: WEB, mergeTrains: { nodes: extra.trains ?? [] }, mergeRequests: { nodes }, merged: { nodes: extra.merged ?? [] } },
+} });
+const parsed = (nodes: unknown[], extra = {}) => parseInbox(reply(nodes, extra)) as Inbox;
 
-test("parses the query's reply, skipping malformed and repeated pull requests and tolerating missing optional parts", () => {
-  const inbox = parseInbox(reply([
-    node(1),
-    node(2, { author: null, commits: { nodes: [] }, reactions: { nodes: [{ user: null }] } }),
-    node(3, { url: "javascript:alert(1)" }),
-    node(4, { number: "4" }),
-    null,
-    node(1, { title: "again" }),
-  ]));
-  assert.equal(inbox?.repo, "o/r");
-  assert.deepEqual(inbox?.pulls.map((p) => p.number), [1, 2]);
-  assert.deepEqual(inbox?.pulls[0], {
-    number: 1, title: "PR 1", url: "https://github.com/o/r/pull/1", isDraft: false, author: "nacho", branch: "nacho/pr-1",
-    updatedAt: "2026-09-30T21:14:36Z", reviewDecision: null, mergeable: "MERGEABLE", ci: "SUCCESS", checks: null, codexThumbsUp: true, codexReviewing: false,
+test("parses MRs, skipping malformed, repeated and off-host ones", () => {
+  const inbox = parsed([node(1), node(2, { author: null, headPipeline: null, reviewers: null }), node(3, { webUrl: "https://evil.example/x" }), node(4, { iid: "x" }), null, node(1, { title: "again" })]);
+  assert.equal(inbox.project, "acme/shop");
+  assert.equal(inbox.host, "gitlab.example.com");
+  assert.equal(inbox.user, "nacho");
+  assert.deepEqual(inbox.mrs.map((m) => m.iid), [1, 2]);
+  assert.deepEqual(inbox.mrs[0], {
+    iid: 1, title: "MR 1", url: `${WEB}/-/merge_requests/1`, draft: false, author: "nacho", avatar: "https://secure.gravatar.com/avatar/abc?s=80&d=identicon",
+    branch: "nacho/mr-1", target: "main", sha: "a".repeat(40), updatedAt: "2026-10-11T00:00:00Z", status: "MERGEABLE", conflicts: false,
+    approvalsLeft: 0, approvalsRequired: 1, changesRequestedBy: [], unresolved: 0,
+    pipeline: { id: 1001, status: "SUCCESS", sha: "a".repeat(40), progress: { done: 4, running: 0, total: 4 } },
   });
-  assert.equal(inbox?.pulls[1].author, "ghost");
-  assert.equal(inbox?.pulls[1].ci, null);
-  assert.equal(inbox?.pulls[1].codexThumbsUp, false);
+  assert.equal(inbox.mrs[1].author, "ghost");
+  assert.equal(inbox.mrs[1].pipeline, null);
 });
 
-test("check counts split into done, running and waiting", () => {
-  const counts = (checkRuns: object[], statuses: object[] = [], totalCount = 10) => parseInbox(reply([node(1, {
-    commits: { nodes: [{ commit: { statusCheckRollup: { state: "PENDING", contexts: { totalCount, checkRunCountsByState: checkRuns, statusContextCountsByState: statuses } } } }] },
-  })]))!.pulls[0].checks;
-  assert.deepEqual(
-    counts([{ state: "SUCCESS", count: 4 }, { state: "FAILURE", count: 1 }, { state: "IN_PROGRESS", count: 2 }, { state: "QUEUED", count: 1 }], [{ state: "PENDING", count: 1 }, { state: "EXPECTED", count: 1 }]),
-    { done: 5, running: 3, total: 10 },
-  );
-  assert.deepEqual(counts([{ state: "IN_PROGRESS", count: 99 }, { state: "QUEUED", count: -3 }]), { done: 0, running: 10, total: 10 });
-  assert.equal(counts([], [], 0), null);
+test("only gitlab.com and Gravatar avatars pass", () => {
+  const avatar = (avatarUrl: string) => parsed([node(1, { author: { username: "n", avatarUrl } })]).mrs[0].avatar;
+  assert.equal(avatar("https://gitlab.com/uploads/-/system/user/avatar/1/avatar.png"), "https://gitlab.com/uploads/-/system/user/avatar/1/avatar.png");
+  assert.equal(avatar("https://gitlab.example.com/uploads/-/system/user/avatar/1/a.png"), undefined);
+  assert.equal(avatar("/uploads/-/system/user/avatar/1/a.png"), undefined);
+  assert.equal(avatar("https://secure.gravatar.com.evil.example/avatar/x"), undefined);
 });
 
-test("CI details retain PR head/base and fork repository identity separately from checks", () => {
-  const p = parseInbox(reply([node(1, { headRefOid: "a".repeat(40), headRepository: { nameWithOwner: "fork/r" }, baseRefOid: "b".repeat(40), baseRefName: "main" })]))!.pulls[0];
-  assert.deepEqual(p.identity, { sha: "a".repeat(40), repo: "fork/r", branch: "nacho/pr-1", baseSha: "b".repeat(40), baseBranch: "main" });
+test("reviewers asking for changes and unresolved threads are counted", () => {
+  const mr = parsed([node(1, { reviewers: { nodes: [
+    { username: "ana", mergeRequestInteraction: { reviewState: "REQUESTED_CHANGES" } },
+    { username: "bob", mergeRequestInteraction: { reviewState: "APPROVED" } },
+    { username: "eve", mergeRequestInteraction: null },
+  ] }, resolvableDiscussionsCount: 5, resolvedDiscussionsCount: 2 })]).mrs[0];
+  assert.deepEqual(mr.changesRequestedBy, ["ana"]);
+  assert.equal(mr.unresolved, 3);
 });
 
-test("a reply that is not the query's shape parses to nothing", () => {
-  for (const stdout of ["", "{\"data\":{\"repo", "{\"data\":{\"repository\":null}}", "[]", reply("x" as any)]) {
-    assert.equal(parseInbox(stdout), undefined, stdout);
-  }
+test("trains keep car order; cars without an iid are dropped", () => {
+  const inbox = parsed([], { trains: [{ targetBranch: "main", cars: { nodes: [
+    { status: "MERGING", mergeRequest: { iid: "7" }, pipeline: { status: "SUCCESS", ...jobs(3, 3, 0) } },
+    { status: "FRESH", mergeRequest: { iid: "8" }, pipeline: { status: "RUNNING", ...jobs(10, 4, 2) } },
+    { status: "IDLE", mergeRequest: null, pipeline: null },
+    { status: "IDLE", mergeRequest: { iid: "9" }, pipeline: null },
+  ] } }, { targetBranch: "release", cars: { nodes: [] } }] });
+  assert.deepEqual(inbox.trains, [{ target: "main", cars: [
+    { iid: 7, status: "MERGING", pipeline: { status: "SUCCESS", progress: { done: 3, running: 0, total: 3 } } },
+    { iid: 8, status: "FRESH", pipeline: { status: "RUNNING", progress: { done: 4, running: 2, total: 10 } } },
+    { iid: 9, status: "IDLE", pipeline: null },
+  ] }], "an empty train is not kept");
 });
 
-const pull = (fields: Partial<Pull> = {}): Pull => ({ ...parseInbox(reply([node(1)]))!.pulls[0], ...fields });
-
-const cases: [string, Partial<Pull>, string][] = [
-  ["green, approved, Codex 👍", { reviewDecision: "APPROVED" }, "ready"],
-  ["green, no review required, Codex 👍", {}, "ready"],
-  ["merge state not computed yet", { mergeable: "UNKNOWN" }, "ready"],
-  ["without Codex 👍", { codexThumbsUp: false }, "waiting"],
-  ["by Renovate, without Codex 👍", { codexThumbsUp: false, author: "renovate" }, "ready"],
-  ["by Renovate[bot], without Codex 👍", { codexThumbsUp: false, author: "renovate[bot]" }, "ready"],
-  ["review required does not block", { reviewDecision: "REVIEW_REQUIRED" }, "ready"],
-  ["changes requested does not block", { reviewDecision: "CHANGES_REQUESTED" }, "ready"],
-  ["conflicting", { mergeable: "CONFLICTING" }, "waiting"],
-  ["checks pending", { ci: "PENDING" }, "waiting"],
-  ["no checks", { ci: null }, "waiting"],
-  ["checks failed", { ci: "FAILURE" }, "failing"],
-  ["checks errored", { ci: "ERROR" }, "failing"],
-  ["a draft, even if otherwise ready", { isDraft: true }, "drafts"],
-  ["a failing draft", { isDraft: true, ci: "FAILURE" }, "drafts"],
-];
-for (const [name, fields, bucket] of cases) {
-  test(`classifies ${name} as ${bucket}`, () => assert.equal(bucketOf(pull(fields)), bucket));
-}
-
-test("the Codex 👍 counts from either of its logins", () => {
-  for (const login of ["chatgpt-codex-connector", "chatgpt-codex-connector[bot]"]) {
-    assert.equal(parseInbox(reply([node(1, { reactions: { nodes: [{ user: { login } }] } })]))!.pulls[0].codexThumbsUp, true);
-  }
-  assert.equal(parseInbox(reply([node(1, { reactions: { nodes: [{ user: { login: "nacho" } }] } })]))!.pulls[0].codexThumbsUp, false);
+test("merged MRs keep the query's merge order and drop repeats", () => {
+  const m = (iid: number, mergedAt: string) => ({ iid: String(iid), title: `M${iid}`, webUrl: `${WEB}/-/merge_requests/${iid}`, sourceBranch: "b", mergedAt, author: { username: "bob" } });
+  assert.deepEqual(parsed([], { merged: [m(5, "2026-10-21T10:00:00Z"), m(4, "2026-10-20T10:00:00Z"), m(5, "x")] }).merged.map((x) => x.iid), [5, 4]);
 });
 
-test("Codex's 👀 marks its review in progress", () => {
-  const reviewing = (eyes: unknown) => parseInbox(reply([node(1, { eyes })]))!.pulls[0].codexReviewing;
-  assert.equal(reviewing({ nodes: [{ user: { login: "chatgpt-codex-connector[bot]" } }] }), true);
-  assert.equal(reviewing({ nodes: [{ user: { login: "nacho" } }] }), false);
-  assert.equal(reviewing(undefined), false);
+test("GraphQL errors and malformed replies become messages", () => {
+  assert.equal(parseInbox(JSON.stringify({ errors: [{ message: "Field 'mergeTrains' doesn't exist on type 'Project'" }] })), "GitLab: Field 'mergeTrains' doesn't exist on type 'Project'");
+  assert.equal(parseInbox(JSON.stringify({ data: { project: null } })), "GitLab returned no project. Check that glab can read it.");
+  assert.equal(parseInbox("nope"), "glab returned an unexpected reply.");
 });
 
-test("buckets list the most recently updated pull request first", () => {
-  const at = (number: number, updatedAt: string, fields: Partial<Pull> = {}) => pull({ number, updatedAt, ...fields });
-  const buckets = classify([at(1, "2026-09-01T00:00:00Z"), at(2, "2026-09-03T00:00:00Z"), at(3, "2026-09-02T00:00:00Z"), at(4, "2026-09-04T00:00:00Z", { isDraft: true })]);
-  assert.deepEqual(buckets.ready.map((p) => p.number), [2, 3, 1]);
-  assert.deepEqual(buckets.drafts.map((p) => p.number), [4]);
-  assert.deepEqual(buckets.failing, []);
+test("buckets: drafts, failing, ready, blocked; train MRs are left out", () => {
+  const inbox = parsed([node(1, { draft: true }), node(2, { headPipeline: { id: "gid://gitlab/Ci::Pipeline/2", status: "FAILED", sha: "a".repeat(40), ...jobs(2, 2, 0) } }), node(3), node(4, { detailedMergeStatus: "NOT_APPROVED" }), node(5)], { trains: [{ targetBranch: "main", cars: { nodes: [{ status: "IDLE", mergeRequest: { iid: "5" }, pipeline: null }] } }] });
+  assert.deepEqual(inbox.mrs.map(bucketOf), ["drafts", "failing", "ready", "blocked", "ready"]);
+  const groups = classify(inbox);
+  assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.map((m) => m.iid)])), { ready: [3], blocked: [4], failing: [2], drafts: [1] });
 });
 
-test("the updated label counts whole minutes, then whole hours", () => {
-  const now = 10_000_000;
-  assert.equal(updatedLabel(undefined, now), undefined);
-  assert.equal(updatedLabel(now - 59_000, now), "Updated just now");
-  assert.equal(updatedLabel(now - 60_000, now), "Updated 1m ago");
-  assert.equal(updatedLabel(now - 3_599_000, now), "Updated 59m ago");
-  assert.equal(updatedLabel(now - 7_300_000, now), "Updated 2h ago");
+test("add mode: now when mergeable, when green while CI runs, never for drafts or failures", () => {
+  const mr = (fields: object) => parsed([node(1, fields)]).mrs[0];
+  assert.equal(addMode(mr({})), "now");
+  assert.equal(addMode(mr({ detailedMergeStatus: "CI_STILL_RUNNING" })), "whenGreen");
+  assert.equal(addMode(mr({ detailedMergeStatus: "NOT_APPROVED" })), undefined);
+  assert.equal(addMode(mr({ draft: true })), undefined);
+  assert.equal(addMode(mr({ detailedMergeStatus: "CI_STILL_RUNNING", headPipeline: { id: "gid://gitlab/Ci::Pipeline/2", status: "FAILED", sha: "a", ...jobs(1, 1, 0) } })), undefined);
 });
 
-test("gh failures become messages the user can act on", () => {
-  const run = (fields: object) => ({ result: { exit: 1, stdout: "", stderr: "", truncated: false, timedOut: false, ...fields } });
-  assert.equal(processError(run({ exit: 0, stderr: "warning" })), undefined);
-  assert.equal(processError({ error: { code: -32003, message: "command not found: gh" } }), SIGN_IN);
-  assert.equal(processError({ error: { code: -32003, message: "too many processes" } }), "too many processes");
-  assert.equal(processError(run({ exit: 4, stderr: "To get started with GitHub CLI, please run:  gh auth login\n" })), SIGN_IN);
-  assert.equal(processError(run({ stderr: "error parsing \"owner\" value: none of the git remotes configured for this repository point to a known GitHub host." })), NO_REMOTE);
-  assert.equal(processError(run({ stderr: "error parsing \"owner\" value: no git remotes found" })), NO_REMOTE);
-  assert.equal(processError(run({ stderr: "\n  GraphQL: Pull request is not mergeable  \nmore" })), "GraphQL: Pull request is not mergeable");
-  assert.equal(processError(run({ exit: 2 })), "gh exited with 2.");
-  assert.equal(processError(run({ exit: 143, timedOut: true })), "gh timed out.");
+test("merge_trains_enabled comes from the project reply", () => {
+  assert.equal(parseTrainsEnabled('{"merge_trains_enabled":true}'), true);
+  assert.equal(parseTrainsEnabled('{"merge_trains_enabled":false}'), false);
+  assert.equal(parseTrainsEnabled("{}"), false, "a GitLab without the field has no trains");
+  assert.equal(parseTrainsEnabled("x"), undefined);
 });
 
-test("recently merged pull requests sort by merge time, skipping malformed and repeated ones", () => {
-  const inbox = parseInbox(reply([], [
-    mergedNode(1, "2026-09-01T00:00:00Z"),
-    mergedNode(2, "2026-09-03T00:00:00Z", { author: null }),
-    mergedNode(3, "2026-09-02T00:00:00Z"),
-    mergedNode(4, "2026-09-04T00:00:00Z", { url: "javascript:alert(1)" }),
-    mergedNode(5, null as any),
-    mergedNode(2, "2026-09-05T00:00:00Z"),
-  ]));
-  assert.deepEqual(inbox?.merged.map((m) => m.number), [2, 3, 1]);
-  assert.deepEqual(inbox?.merged[0], { number: 2, title: "PR 2", url: "https://github.com/o/r/pull/2", author: "ghost", branch: "nacho/pr-2", mergedAt: "2026-09-03T00:00:00Z" });
-  assert.deepEqual(parseInbox(reply([node(1)]))?.merged, []);
+test("glab failures become user messages", () => {
+  const run = (stderr: string, exit = 1) => processError({ result: { exit, stdout: "", stderr, timedOut: false, truncated: false } } as any);
+  assert.equal(run("", 0), undefined);
+  assert.equal(run("\n   ERROR  \n\n  Unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitLab host. Please use `glab auth login`"), NO_REMOTE);
+  assert.equal(run("fatal: not a git repository (or any of the parent directories): .git"), NO_REMOTE);
+  assert.equal(run("\n ERROR \n GET https://gitlab.example.com/api/v4/projects/acme%2Fshop: 401 {message: 401 Unauthorized}"), SIGN_IN);
+  assert.equal(run("\n   ERROR  \n\n  glab: 404 Not found (HTTP 404)"), "glab: 404 Not found (HTTP 404)");
+  assert.equal(processError({ error: { code: 1, message: "sh: glab: command not found" } } as any), NO_GLAB);
+  assert.equal(processError({ result: { exit: 0, stdout: "", stderr: "", timedOut: true, truncated: false } } as any), "glab timed out.");
 });
 
-test("the ago label counts minutes, hours, then days", () => {
-  const now = Date.parse("2026-10-08T12:00:00Z");
-  assert.equal(agoLabel("2026-10-08T11:59:30Z", now), "just now");
-  assert.equal(agoLabel("2026-10-08T12:00:30Z", now), "just now");
-  assert.equal(agoLabel("2026-10-08T11:55:00Z", now), "5m ago");
-  assert.equal(agoLabel("2026-10-08T09:00:00Z", now), "3h ago");
-  assert.equal(agoLabel("2026-10-05T11:00:00Z", now), "3d ago");
-  assert.equal(agoLabel("yesterday", now), undefined);
-});
-
-test("avatars come only from GitHub's avatar host, for open and merged pull requests alike", () => {
-  const person = "https://avatars.githubusercontent.com/u/534307?s=64&u=6cec9fe09d844899433f3b7aae97e8d90e3119f5&v=4";
-  const bot = "https://avatars.githubusercontent.com/in/2740?s=64&v=4";
-  const of = (avatarUrl: unknown) => parseInbox(reply([node(1, { author: { login: "nacho", avatarUrl } })]))!.pulls[0].avatar;
-  assert.equal(of(person), person);
-  assert.equal(of(bot), bot);
-  for (const url of [undefined, null, 7, "http://avatars.githubusercontent.com/u/1", "https://avatars.githubusercontent.com.evil.com/u/1",
-    "https://evil.com/?https://avatars.githubusercontent.com/u/1", "https://avatars.githubusercontent.com@evil.com/u/1",
-    "https://avatars.githubusercontent.com:8443/u/1", "https://ghe.example.com/avatars/u/1", `https://avatars.githubusercontent.com/u/1?${"a".repeat(600)}`,
-    "https://avatars.githubusercontent.com/u/1\"><script>"]) {
-    assert.equal(of(url), undefined, String(url));
-  }
-  const merged = parseInbox(reply([], [mergedNode(9, "2026-10-01T00:00:00Z", { author: { login: "renovate", avatarUrl: bot } })]))!.merged[0];
-  assert.equal(merged.avatar, bot);
+test("time labels are unchanged from pr-inbox", () => {
+  assert.equal(updatedLabel(0, 30_000), "Updated just now");
+  assert.equal(agoLabel("1970-01-01T00:00:00Z", 7_200_000), "2h ago");
 });
