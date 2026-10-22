@@ -141,8 +141,11 @@ One strip per target branch with an active train. Cars in order, left to right:
 iid, then status (`merging ✓`, `⏳ done/total`, `queued`, `failed` in danger).
 Your cars are ringed in the accent color. Clicking a car opens the MR. A failed car
 stays until GitLab drops it. An empty train shows "Train empty".
-If `merge_trains_enabled` is false (or `project` fails), the strip is replaced by
-"Merge trains are off for this project" and the fallback buttons apply.
+If `merge_trains_enabled` is false, the strip is replaced by
+"Merge trains are off for this project" and the fallback buttons apply. A failed or
+unreadable `project` reply changes nothing: the previous value stays, an unknown one
+counts as on (GitLab's train API fails closed if trains are really off), and `project`
+is asked again on the next refresh while the value is unknown.
 
 ## Recently merged
 

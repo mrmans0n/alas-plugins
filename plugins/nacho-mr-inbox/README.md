@@ -81,10 +81,13 @@ blocked MR is never unexplained. Your rows get an accent tint and a `YOU` tag.
 - Merge trains off for the project: a banner says so and the buttons become
   **Merge when green** (and **Merge all N when green**), which set auto-merge
   when the pipeline passes. Whether trains are on is read when the plugin starts
-  and on **Refresh**.
+  and on **Refresh**. The buttons fall back to this only when GitLab reports trains
+  off; if that call fails or is unreadable, the previous answer stays (unknown counts
+  as on) and it is asked again on the next refresh.
 
-A failed write shows GitLab's message under the row. There is no direct merge
-and no removing a car from the train.
+A failed write shows GitLab's message under the row. There is no removing a car
+from the train. With trains on there is no direct merge; with trains off, **Merge
+when green** on an MR whose pipeline already passed merges immediately.
 
 Below the open ones, **Recently merged** lists the MRs merged in the last 24
 hours, or the last 5 when fewer, with branch, when it merged and who wrote it.
@@ -153,7 +156,7 @@ appended argument itself and checks it against a strict pattern first.
   requests.
 - 50 open MRs and 50 merged candidates per list; at most 20 cars per train.
 - Avatars load only from gitlab.com and Gravatar; elsewhere, initials.
-- The tab is tested against GitLab 19.4 (gitlab.com is always current). A GitLab
+- The list query was verified against GitLab 19.4 (gitlab.com is always current). A GitLab
   too old for a field of the fixed query fails the list, and the tab shows
   GitLab's error. Merge trains need GitLab Premium or Ultimate.
 - A 14-day history window, up to 30 pipelines per query in pages of 10, up to five
