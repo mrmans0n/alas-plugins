@@ -12,7 +12,7 @@ type Call = { id: string; args: string[]; worktree: string; done: (o: any) => vo
 const ok = (body: unknown) => ({ result: { exit: 0, stdout: "HTTP/2.0 200 OK\r\n\r\n" + (typeof body === "string" ? body : JSON.stringify(body)), stderr: "", timedOut: false, truncated: false } });
 const raw = (text: string) => ({ result: { exit: 0, stdout: text, stderr: "", timedOut: false, truncated: false } });
 
-function setup() {
+function setup(sendError?: string) {
   const calls: Call[] = [];
   const queue = new ProcessQueue((id, worktree, args, done) => calls.push({ id, worktree, args, done }));
   const gl = new GitLab(queue, "main-wt", "acme/shop", HOST, () => Date.parse("2026-10-22T00:00:00Z"), () => {});
@@ -20,7 +20,7 @@ function setup() {
   const doctor = new DoctorController(gl, queue, {
     changed() {}, save() {}, now: () => Date.parse("2026-10-22T00:00:00Z"),
     snapshot: (done) => done({ worktrees: [{ id: "wt2", branch: "f", current: false, main: false, sessions: [{ id: "s1", title: "Chat", agent: "claude", state: "idle" }] }] } as any),
-    send: (_s, text, done) => { sent.push(text); done(); },
+    send: (_s, text, done) => { sent.push(text); done(sendError); },
   });
   /** Answers the oldest pending call whose args match. */
   const answer = (match: RegExp | string, reply: any) => {
@@ -30,6 +30,7 @@ function setup() {
   };
   return { calls, doctor, answer, sent };
 }
+const remotes = raw(`origin\tgit@${HOST}:acme/shop.git (fetch)\n`);
 const mr = { iid: 12, source_branch: "f", target_branch: "main", diff_refs: { head_sha: SHA, base_sha: "c".repeat(40) } };
 const p = (id: number, fields: object = {}) => pipeline(id, { web_url: `${WEB}/-/pipelines/${id}`, ...fields });
 const j = (id: number, name: string, pipe: number, fields: object = {}) => job(id, name, { web_url: `${WEB}/-/jobs/${id}`, pipeline: { id: pipe }, ...fields });
@@ -108,4 +109,66 @@ test("checkout verification matches the session's GitLab remote on the project h
   answer("ci-head", raw(SHA + "\n"));
   assert.equal(doctor.state.dispatch?.verification?.repo, "acme/shop");
   assert.equal(doctor.state.dispatch?.verification?.mismatch, false);
+});
+
+/** Opens MR 12, investigates job 30 and prepares a send to session s1; leaves the controller in "preview". */
+function previewed(sendError?: string) {
+  const t = setup(sendError);
+  const { doctor, answer } = t;
+  doctor.open("acme/shop", { number: 12, title: "MR", url: `${WEB}/-/merge_requests/12`, branch: "f" });
+  answer(/merge_requests\/12$/, ok(mr)); answer(/merge_requests\/12\/pipelines/, ok([p(500)]));
+  answer(/pipelines\/500$/, ok(p(500))); answer(/pipelines\/500\/jobs/, ok([j(30, "unit", 500)]));
+  doctor.selectJob(30);
+  answer("ci-trace", raw("Error: something broke badly")); answer(/merge_requests\/12\/pipelines/, ok([p(500)])); answer(/pipelines\?ref=main/, ok([]));
+  doctor.prepare(30); doctor.selectSession("s1");
+  answer("ci-remotes", remotes); answer("ci-head", raw(SHA + "\n"));
+  assert.equal(doctor.state.dispatch!.phase, "preview");
+  return t;
+}
+const reverify = (answer: (m: RegExp | string, r: any) => void, pipe: object = p(500), mrReply: object = mr) => {
+  answer("ci-remotes", remotes); answer("ci-head", raw(SHA + "\n"));
+  answer(/merge_requests\/12$/, ok(mrReply)); answer(/pipelines\/500$/, ok(pipe));
+};
+
+test("send re-verifies, then pushes the reviewed text into the session exactly once", () => {
+  const { doctor, answer, sent } = previewed();
+  const reviewed = doctor.state.dispatch!.text;
+  assert.ok(reviewed);
+  doctor.send();
+  assert.equal(sent.length, 0, "nothing is sent before the re-check");
+  reverify(answer);
+  assert.deepEqual(sent, [reviewed]);
+  assert.equal(doctor.state.dispatch!.phase, "sent");
+});
+
+test("send is blocked when the pipeline changed since the preview, and is not retried", () => {
+  const { doctor, answer, sent, calls } = previewed();
+  doctor.send();
+  reverify(answer, p(500, { updated_at: "2026-10-21T00:00:00Z" }));
+  assert.equal(sent.length, 0);
+  assert.equal(doctor.state.dispatch!.phase, "failed");
+  assert.equal(calls.length, 0, "no re-check is started on its own");
+  doctor.send();
+  assert.equal(calls.length, 0, "a failed dispatch does not start another send");
+  assert.equal(sent.length, 0);
+});
+
+test("send is blocked when the MR head changed since the preview", () => {
+  const { doctor, answer, sent } = previewed();
+  doctor.send();
+  answer("ci-remotes", remotes); answer("ci-head", raw(SHA + "\n"));
+  answer(/merge_requests\/12$/, ok({ ...mr, diff_refs: { head_sha: "d".repeat(40), base_sha: "c".repeat(40) } }));
+  assert.equal(sent.length, 0);
+  assert.equal(doctor.state.dispatch!.phase, "failed");
+});
+
+test("a host refusal fails the dispatch with no automatic retry", () => {
+  const { doctor, answer, sent } = previewed("no live session");
+  doctor.send();
+  reverify(answer);
+  assert.equal(sent.length, 1);
+  assert.equal(doctor.state.dispatch!.phase, "failed");
+  assert.match(doctor.state.dispatch!.error ?? "", /no automatic retry/i);
+  doctor.send();
+  assert.equal(sent.length, 1, "a second send() does not call the hook again");
 });
