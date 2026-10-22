@@ -608,7 +608,7 @@ button, select, textarea { font: inherit; color: inherit; }
 .brief { max-height: 260px; }
 .question { width: 100%; min-height: 64px; resize: vertical; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); padding: 8px; }
 
-.train { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.train { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; flex: none; }
 .train .loco { font-size: 18px; }
 .train-cars { display: flex; align-items: center; }
 .coupler { width: 14px; height: 2px; background: var(--line); flex: none; }
