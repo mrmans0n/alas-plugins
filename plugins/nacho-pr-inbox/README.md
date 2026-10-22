@@ -3,7 +3,8 @@
 A personal tool for Nacho's merge workflow: a tab listing the repository's open
 pull requests, sorted by what they need, with a button that squash-merges the
 ones that are ready. Anyone who uses the GitHub CLI can install it; it reuses
-your `gh` login and asks for no token. It uses plugin API 15: the tab and the
+your `gh` login and asks for no token. It is shown only in projects with a recognized GitHub remote, never in plain
+folders, and needs an Alas with plugin API 17. It uses plugin API 17: the tab and the
 sidebar panel are web pages (`ui.js`) the plugin feeds its state, the sidebar
 icon carries a badge with the ready count, and `gh` runs through `process.exec`.
 On an SSH project it runs `gh` on the host (`remote`, API 11), so `gh` must be

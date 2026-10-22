@@ -17,6 +17,9 @@ test("every plugin's plugin.json satisfies Manifest", () => {
     writeFileSync(join(dir, `${name}.ts`), `import type { Manifest } from ${JSON.stringify(sdk)};\nexport default (${json.trim()}) satisfies Manifest;\n`);
   for (const p of plugins) check(p, readFileSync(join(root, "plugins", p, "plugin.json"), "utf8"));
   check("known-bad", JSON.stringify({ id: "a.b", name: "x", version: "1", api: 9, entry: "plugin.js", contributes: { panels: [{ id: "c", title: "C", location: "settings" }] } }));
+  const base = { id: "a.b", name: "x", version: "1", api: 17, entry: "plugin.js" };
+  check("requires-ok", JSON.stringify({ ...base, requires: { codeHost: "github" } }));
+  check("known-bad-host", JSON.stringify({ ...base, requires: { codeHost: "bitbucket" } }));
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
     compilerOptions: { strict: true, noEmit: true, module: "preserve", moduleResolution: "bundler", allowImportingTsExtensions: true, types: [], skipLibCheck: true },
     include: ["*.ts"],
@@ -28,6 +31,6 @@ test("every plugin's plugin.json satisfies Manifest", () => {
     output = `${e.stdout}${e.stderr}`;
   }
   const failing = [...new Set([...output.matchAll(/([\w-]+)\.ts\(\d+/g)].map((m) => m[1]))];
-  assert.deepEqual(failing, ["known-bad"], output);
+  assert.deepEqual(failing.toSorted(), ["known-bad", "known-bad-host"], output);
   assert.ok(plugins.length > 0);
 });

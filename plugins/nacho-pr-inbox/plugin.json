@@ -2,8 +2,9 @@
   "id": "io.nlopez.nacho-pr-inbox",
   "name": "Nacho's PR Inbox",
   "summary": "PR Inbox with on-demand CI failure evidence, bounded history and reviewed agent investigation briefs.",
-  "version": "0.13.1",
-  "api": 15,
+  "version": "0.14.0",
+  "api": 17,
+  "requires": { "codeHost": "github" },
   "entry": "plugin.js",
   "web": "ui.js",
   "capabilities": ["workspace.read", "process.exec", "timers", "notify", "session.write", "network"],
@@ -21,7 +22,7 @@
   ],
   "contributes": {
     "tabs": [{ "id": "inbox", "title": "PR Inbox", "kind": "web" }],
-    "panels": [{ "id": "rail", "title": "PR Inbox", "icon": "arrow.triangle.pull", "location": "right", "kind": "web" }],
+    "panels": [{ "id": "rail", "title": "PR Inbox", "icon": "github", "location": "right", "kind": "web" }],
     "commands": [
       { "id": "open", "title": "PR Inbox", "icon": "arrow.triangle.pull", "slots": ["repo.menu", "palette"], "opens": "inbox" },
       { "id": "rail", "title": "PR Inbox in the Sidebar", "icon": "sidebar.right", "slots": ["palette"], "opens": "rail" }
