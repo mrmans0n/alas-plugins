@@ -105,6 +105,30 @@
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/linear-bridge"
     },
     {
+      "id": "io.nlopez.nacho-mr-inbox",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "api": 15,
+          "capabilities": [
+            "workspace.read",
+            "process.exec",
+            "timers",
+            "notify",
+            "session.write",
+            "network"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.1.0/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.1.0/plugin.js",
+          "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.1.0/ui.js",
+          "hash": "bdc89bb9c82b1f6cff05b4ce6aa547425c1ee3c9f60ff9b4d0af78e41b81644a"
+        }
+      ],
+      "name": "Nacho's MR Inbox",
+      "summary": "The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI.",
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-mr-inbox"
+    },
+    {
       "id": "io.nlopez.nacho-pr-inbox",
       "versions": [
         {
