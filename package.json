@@ -14,7 +14,7 @@
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.0"
   }
