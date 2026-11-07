@@ -4,7 +4,7 @@ import { definePlugin } from "../sdk/alas/src/index.ts";
 import { testHost } from "../sdk/alas/src/test.ts";
 import { InboxStackController, parseStackPageMessage, type StackAdapter } from "./inbox-stack-controller.ts";
 import type { StackReview } from "./inbox-stacks.ts";
-import { buildStacks, stackScope } from "./inbox-stacks.ts";
+import { buildStacks, individualBlocker, stackScope } from "./inbox-stacks.ts";
 import { createStackOperation } from "./stack-operation.ts";
 
 const review = (n: number, fields: Partial<StackReview> = {}): StackReview => ({ identity: { host: "github.com", repo: "o/r", number: n }, sourceRepo: "o/r", branch: `f${n}`, base: n === 1 ? "main" : "f1", sha: String(n).repeat(40), title: `Change ${n}`, url: `https://github.com/o/r/pull/${n}`, author: "nacho", state: "open", ready: true, ...fields });
@@ -74,6 +74,28 @@ test("Stop during an active write waits for settlement and never starts the desc
   assert.equal(f.retargeted, 0);
 });
 
+test("Stop marks its phase before synchronous queued-write cancellation settles", () => {
+  definePlugin({ handle() {} }); testHost.takeSent();
+  let cancel: (() => void) | undefined, releases = 0, refreshes = 0;
+  const controller = new InboxStackController({ mode: "queue",
+    refresh(_ids, done) { refreshes++; done({ reviews: [review(1), review(2)], complete: true }); },
+    submit(_member, done) { cancel = () => done("Pending write stopped"); }, retarget() {}, cancelPendingWrites() { const next = cancel; cancel = undefined; next?.(); },
+  }, () => {});
+  controller.updateProvider({ reviews: [review(1), review(2)], complete: true });
+  const flush = () => {
+    for (let round = 0; round < 20; round++) { const sent = testHost.takeSent(); if (!sent.length) return;
+      for (const m of sent) { if (m.method === "stacks/acquire") testHost.reply(m.id, { token: "owner" });
+        else if (m.method === "stacks/release") { releases++; testHost.reply(m.id, { released: true }); }
+        else if (m.method === "storage/set") testHost.reply(m.id, {}); else assert.fail(m.method); }
+    }
+  };
+  controller.prepare("github.com|o/r#1", false); controller.confirm(); flush();
+  assert.ok(cancel); const before = refreshes;
+  controller.stop(); flush();
+  assert.equal(controller.model().operation?.phase, "stopped");
+  assert.equal(releases, 1); assert.equal(refreshes, before + 1);
+});
+
 test("storage failure or foreign ownership prevents the first provider write", () => {
   for (const flag of [{ failSave: true }, { refuseAcquire: true }]) {
     const f = fixture(); f.start(); f.flush(flag);
@@ -137,6 +159,31 @@ test("malformed stack messages are ignored without coercing hostile JSON objects
   const poison = { toString: "not callable", valueOf: 1 };
   assert.equal(parseStackPageMessage({ type: "stack", action: poison }), undefined);
   assert.equal(parseStackPageMessage({ type: "stack", action: "native", nativeAction: poison }), undefined);
+});
+
+test("partial provider reads preserve missing known dependencies as unknown context", () => {
+  const f = fixture();
+  f.controller.updateProvider({ reviews: [review(2)], complete: false, error: "Next page unavailable" });
+  assert.match(individualBlocker(f.controller.graph, review(2).identity) ?? "", /#1/);
+  f.controller.handle({ type: "stack", action: "open", key: "github.com|o/r#2" });
+  assert.equal(f.controller.model().selected?.entries.find(r => r.identity.number === 1)?.state, "unknown");
+  assert.ok(f.controller.model().badges["github.com|o/r#2"]);
+  f.controller.updateProvider({ reviews: [review(2, { base: "main" })], complete: true });
+  assert.equal(f.controller.model().badges["github.com|o/r#2"], undefined);
+});
+
+test("opening native membership fetches missing context without inferring merged provider facts", () => {
+  definePlugin({ handle() {} }); testHost.takeSent();
+  let requested: number[] = [];
+  const controller = new InboxStackController({ mode: "merge", refresh(ids, done) { requested = ids.map(i => i.number); done({ reviews: [review(1, { state: "merged" }), review(2)], complete: true }); }, retarget() {}, submit() {} }, () => {});
+  controller.updateProvider({ reviews: [review(2)], complete: true });
+  controller.refreshNative(true);
+  const request = testHost.takeSent()[0];
+  testHost.reply(request.id, { inventory: { complete: true, busy: false, stacks: [{ id: "gg", name: "feature", base: "main", host: "github.com", repo: "o/r", fingerprint: "v1", complete: true, actions: ["land"], entries: [1, 2].map(n => ({ id: `e${n}`, position: n, number: n, sha: String(n).repeat(40), title: `Change ${n}`, state: n === 1 ? "merged" : "open" })) }] } });
+  assert.deepEqual(requested, []);
+  controller.handle({ type: "stack", action: "open", key: "github.com|o/r#2" });
+  assert.deepEqual(requested, [1, 2]);
+  assert.equal(controller.model().selected?.entries.find(r => r.identity.number === 1)?.state, "merged");
 });
 
 test("restored work stays interrupted until Continue refreshes and reacquires ownership", () => {

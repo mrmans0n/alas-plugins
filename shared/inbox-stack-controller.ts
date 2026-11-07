@@ -9,6 +9,8 @@ export interface StackAdapter {
   refresh(identities: ReviewIdentity[], done: (snapshot?: StackProviderSnapshot, error?: string) => void): void;
   retarget(member: StackReview, finalBase: string, done: (error?: string) => void): void;
   submit(member: StackReview, done: (error?: string) => void): void;
+  /** Cancel writes that have not started; started processes must still report settlement. */
+  cancelPendingWrites?(): void;
 }
 export type StackPageMessage = { type: "stack"; action: "open" | "close" | "cancel" | "refresh" | "prepare" | "confirm" | "stop" | "continue" | "native"; key?: string; through?: boolean; nativeAction?: NativeStackAction };
 export function parseStackPageMessage(value: unknown): StackPageMessage | undefined {
@@ -57,10 +59,25 @@ export class InboxStackController {
 
   constructor(adapter: StackAdapter, changed: () => void) { this.adapter = adapter; this.changed = changed; }
   get graph(): StackGraph { return this._graph; }
-  get requiredIdentities(): ReviewIdentity[] { return this.operation && this.operation.phase !== "complete" ? this.operation.scope.allMembers.map(r => r.identity) : []; }
+  get requiredIdentities(): ReviewIdentity[] {
+    const ids = this.operation && this.operation.phase !== "complete" ? this.operation.scope.allMembers.map(r => r.identity) : [];
+    const native = this.selected ? this.graph.byReview[this.selected]?.native : undefined;
+    if (native) for (const number of [...native.entries.flatMap(e => e.number ? [e.number] : []), ...(native.reviewNumbers ?? [])]) ids.push({ host: native.host, repo: native.repo, number });
+    return [...new Map(ids.map(id => [reviewKey(id), id])).values()];
+  }
   get busy(): boolean { return active(this.operation) || this.pending || this.individual || this.inventory.busy || this.nativeLoading; }
   private draw(): void { if (!this.disposed) this.changed(); }
   private rebuild(): void { this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete, native: this.inventory.stacks, error: this.provider.error }); }
+  private applyProvider(snapshot: StackProviderSnapshot): void {
+    if (!snapshot.complete) {
+      const incoming = new Map(snapshot.reviews.map(r => [reviewKey(r.identity), r]));
+      for (const old of this.provider.reviews) if (!incoming.has(reviewKey(old.identity))) {
+        incoming.set(reviewKey(old.identity), old.state === "merged" ? old : { ...old, state: "unknown", ready: false, canQueue: false, blockersComplete: false });
+      }
+      snapshot = { ...snapshot, reviews: [...incoming.values()] };
+    }
+    this.provider = snapshot; this.rebuild();
+  }
 
   activate(): void {
     request("storage/get", { key: STORE_KEY, scope: "project" }, reply => {
@@ -76,7 +93,7 @@ export class InboxStackController {
   }
   dispose(): void { this.disposed = true; this.stop(); }
   updateProvider(snapshot: StackProviderSnapshot): void {
-    this.provider = snapshot; this.rebuild(); this.draw();
+    this.applyProvider(snapshot); this.draw();
     if (this.operation?.phase === "waiting" && this.token && !this.pending) this.advance();
   }
   refreshNative(refresh: boolean): void {
@@ -111,7 +128,10 @@ export class InboxStackController {
   handle(message: StackPageMessage): void {
     const key = message.key ?? this.selected;
     switch (message.action) {
-      case "open": if (key && this.graph.byReview[key]) { this.selected = key; this.error = undefined; this.draw(); } return;
+      case "open": if (key && this.graph.byReview[key]) {
+        this.selected = key; this.error = undefined; this.draw();
+        if (this.requiredIdentities.some(id => !this.provider.reviews.some(r => reviewKey(r.identity) === reviewKey(id)))) this.refreshProvider();
+      } return;
       case "close": this.selected = undefined; this.prepared = undefined; if (this.operation?.phase === "complete") this.operation = undefined; this.draw(); return;
       case "cancel": this.prepared = undefined; this.draw(); return;
       case "refresh": this.refreshNative(true); this.refreshProvider(); return;
@@ -141,9 +161,10 @@ export class InboxStackController {
     this.draw(); this.cycle();
   }
   stop(): void {
-    if (!active(this.operation)) return;
+    if (!active(this.operation)) { this.adapter.cancelPendingWrites?.(); return; }
     this.stopping = true; this.operation!.phase = "stopping"; this.draw();
-    if (!this.pending) this.refreshAfterStop();
+    this.adapter.cancelPendingWrites?.();
+    if (this.operation?.phase === "stopping" && !this.pending) this.refreshAfterStop();
   }
   continue(): void {
     if (!this.operation || active(this.operation) || this.busy) return;
@@ -158,8 +179,8 @@ export class InboxStackController {
   private refreshProvider(): void {
     if (this.pending) return;
     this.pending = true;
-    this.adapter.refresh(this.operation?.scope.allMembers.map(r => r.identity) ?? [], (snapshot, error) => {
-      if (snapshot) { this.provider = snapshot; this.rebuild(); }
+    this.adapter.refresh(this.requiredIdentities, (snapshot, error) => {
+      if (snapshot) this.applyProvider(snapshot);
       this.pending = false;
       if (error || !snapshot) {
         this.error = error ?? "The provider refresh failed.";
@@ -181,7 +202,7 @@ export class InboxStackController {
     this.pending = true;
     this.adapter.refresh(this.operation.scope.allMembers.map(r => r.identity), (snapshot, failure) => {
       this.pending = false;
-      if (snapshot) { this.provider = snapshot; this.rebuild(); }
+      if (snapshot) this.applyProvider(snapshot);
       this.stopWithSnapshot(error ?? failure ?? snapshot?.error);
     });
   }
@@ -190,7 +211,7 @@ export class InboxStackController {
     this.pending = true;
     this.adapter.refresh(this.operation!.scope.allMembers.map(r => r.identity), (snapshot, error) => {
       this.pending = false;
-      if (snapshot) { this.provider = snapshot; this.rebuild(); }
+      if (snapshot) this.applyProvider(snapshot);
       if (this.stopping) { this.stopWithSnapshot(error); return; }
       if (error || !snapshot) { this.finish("failed", error ?? "The provider refresh failed."); return; }
       this.advance();
@@ -313,7 +334,7 @@ export class InboxStackController {
     const component = this.selected ? this.graph.byReview[this.selected] : undefined;
     return { busy: this.busy, badges,
       ...(component ? { selected: { key: this.selected!, name: component.name, base: component.finalBase, entries: component.order ?? component.members, ordered: !!component.order || !!component.native?.entries.length && [...component.native.entries].sort((a, b) => a.position - b.position).every((e, i) => e.position === i + 1), issues: component.issues, native: component.native,
-        outsideFilter: mineOnly && viewer ? component.members.filter(r => r.author.toLowerCase() !== viewer.toLowerCase()).map(r => reviewKey(r.identity)) : [],
+        outsideFilter: mineOnly && viewer ? component.members.filter(r => !!r.author && r.author.toLowerCase() !== viewer.toLowerCase()).map(r => reviewKey(r.identity)) : [],
         mode: this.adapter.mode, canPrepare: component.complete && !!component.order && !component.native && !this.busy && !this.nativeLoading
           && (this.adapter.mode !== "merge" || component.members.every(r => r.state === "merged" || r.ready)) } } : {}),
       ...(this.prepared ? { confirmation: { members: this.prepared.scope.members, finalBase: this.prepared.scope.finalBase, mode: this.adapter.mode, through: this.prepared.through } } : {}),
