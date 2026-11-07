@@ -115,7 +115,7 @@ function add(iid: number): boolean {
     adapter!.refresh(stacks!.requiredIdentities, (snapshot, error) => {
       if (snapshot) stacks!.updateProvider(snapshot);
       const fresh = snapshot?.reviews.find(r => reviewKey(r.identity) === reviewKey(member.identity));
-      if (shuttingDown || error || !snapshot?.complete || !fresh || fresh.sha !== member.sha || fresh.sourceRepo !== member.sourceRepo || fresh.branch !== member.branch || fresh.base !== member.base || fresh.state !== "open" || !fresh.canQueue || fresh.queued || blocked() || stacks!.graph.byReview[reviewKey(member.identity)]?.native) return done(error ?? blocked() ?? "MR changed before queueing. Refresh and try again.");
+      if (shuttingDown || stacks!.nativeRefreshing || error || !snapshot?.complete || !fresh || fresh.sha !== member.sha || fresh.sourceRepo !== member.sourceRepo || fresh.branch !== member.branch || fresh.base !== member.base || fresh.state !== "open" || !fresh.canQueue || fresh.queued || blocked() || stacks!.graph.byReview[reviewKey(member.identity)]?.native) return done(error ?? blocked() ?? "MR changed before queueing. Refresh and try again.");
       adapter!.submit(fresh, done);
     });
   }, failure => {

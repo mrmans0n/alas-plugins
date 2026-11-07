@@ -186,7 +186,7 @@ export function stackScope(stack: StackComponent, through?: ReviewIdentity): { s
 /** Individual merge buttons retain their scope. A prefix merge must have a different label. */
 export function individualBlocker(graph: StackGraph, identity: ReviewIdentity): string | undefined {
   const component = graph.byReview[reviewKey(identity)];
-  if (!component) return undefined;
+  if (!component) return graph.complete ? undefined : graph.error ?? "The request list is incomplete.";
   const member = component.members.find(r => reviewKey(r.identity) === reviewKey(identity));
   if (!member) return "Request identity is unavailable.";
   if (component.native && !component.complete) return component.issues[0] ?? "Native stack order is unavailable.";
@@ -201,5 +201,5 @@ export function individualBlocker(graph: StackGraph, identity: ReviewIdentity): 
   }
   if (blockers.length) return `Depends on #${blockers[0].identity.number}. Use the stack action to include its predecessors.`;
   if (member.blockersComplete === false) return "Dependency information is incomplete.";
-  return undefined;
+  return graph.complete ? undefined : graph.error ?? "The request list is incomplete.";
 }

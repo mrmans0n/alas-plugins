@@ -99,6 +99,7 @@ export function chips(mr: MergeRequest): Chip[] {
 }
 
 function addAction(mr: MergeRequest, state: ViewState): AddAction | undefined {
+  if (state.inbox && inTrain(state.inbox, mr)) return undefined;
   const when = addMode(mr);
   if (!when) return undefined;
   const trains = state.trainsEnabled !== false;
@@ -121,7 +122,7 @@ function row(mr: MergeRequest, state: ViewState): Row {
     iid: mr.iid, title: mr.title, url: mr.url, branch: mr.branch, author: mr.author, ...(mr.avatar ? { avatar: mr.avatar } : {}), updatedAt: mr.updatedAt,
     mine: mr.author === state.inbox?.user,
     ...(identity ? { identity, stackAction: !!state.graph?.byReview[reviewKey(identity)]?.native } : {}),
-    chips: chips(mr),
+    chips: [...chips(mr), ...(mr.queued || state.inbox && inTrain(state.inbox, mr) ? [{ text: "queued", tone: "dim" as const }] : [])],
     ...(running ? { progress: { ...p!.progress!, failed: false } } : {}),
     ...(add ? { add } : {}),
     ...(p && isFailing(mr) ? { retry: { pipeline: p.id, busy: state.retrying === p.id, disabled: state.retrying !== undefined || !!state.stackBusy } } : {}),

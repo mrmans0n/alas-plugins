@@ -27,6 +27,7 @@ function installStyle(): void {
     .stack-unordered{list-style:none;padding:0;margin:12px 0}.stack-fallback{padding:8px 0}.stack-fallback a{color:var(--alas-text);text-decoration:none}.stack-fallback a:hover{text-decoration:underline}
     .stack-issue{color:var(--alas-tone-warning);font-size:11px;line-height:1.5;margin:6px 0}.stack-progress{font-size:12px}.stack-confirm{border-color:var(--alas-accent)}.stack-confirm ul{padding-left:18px;font-size:12px;line-height:1.7}
     .stack-copy-fallback{width:100%;font:inherit;color:var(--alas-text);background:var(--alas-background);border:1px solid var(--alas-line);padding:8px}.stack-panel .stack-controls .btn{margin:0}
+    .stack-dependency{font:inherit;color:var(--alas-accent);border:0;background:none;padding:0;cursor:pointer;text-decoration:underline}
     body.compact .stack-panel{padding:10px}body.compact .stack-chain{padding-left:10px;margin-left:3px}body.compact .stack-member:before{left:-17px}body.compact .stack-controls{gap:5px}
   `;
   document.head.append(style);
@@ -99,7 +100,22 @@ export function stackPanel(model: InboxStackModel | undefined, post: Post, rende
       const key = reviewKey(review.identity);
       if (key === selected.key) item.setAttribute("aria-current", "step");
       if (selected.outsideFilter.includes(key)) item.append(element("div", "stack-detail", "Outside this filter"));
-      item.append(renderEntry?.(review) ?? fallback(review, marker)); target.append(item);
+      item.append(renderEntry?.(review) ?? fallback(review, marker));
+      const dependencyKeys = new Set((review.blockers ?? []).map(reviewKey));
+      for (const parent of selected.entries) if (parent.identity.host.toLowerCase() === review.identity.host.toLowerCase() && parent.sourceRepo?.toLowerCase() === review.identity.repo.toLowerCase() && parent.branch && parent.branch === review.base && reviewKey(parent.identity) !== key) dependencyKeys.add(reviewKey(parent.identity));
+      if (dependencyKeys.size) {
+        const dependencies = element("div", "stack-detail", "Depends on ");
+        for (const [index, dependency] of [...dependencyKeys].entries()) {
+          if (index) dependencies.append(document.createTextNode(", "));
+          const parent = selected.entries.find(r => reviewKey(r.identity) === dependency);
+          if (!parent) continue;
+          const sameProject = parent.identity.host.toLowerCase() === review.identity.host.toLowerCase() && parent.identity.repo.toLowerCase() === review.identity.repo.toLowerCase();
+          const link = button(`${sameProject ? "" : `${parent.identity.repo}`}${marker}${parent.identity.number}`, () => post({ type: "stack", action: "open", key: dependency }));
+          link.className = "stack-dependency"; dependencies.append(link);
+        }
+        item.append(dependencies);
+      }
+      target.append(item);
     };
     const numbered = new Map(selected.entries.map(r => [reviewKey(r.identity), r]));
     const otherDependencies: StackReview[] = [];

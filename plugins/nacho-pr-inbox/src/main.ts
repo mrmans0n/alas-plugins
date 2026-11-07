@@ -97,7 +97,8 @@ function merge(number: number): void {
     adapter!.refresh(stacks!.requiredIdentities, (snapshot,error) => {
       if (snapshot) stacks!.updateProvider(snapshot);
       const fresh = snapshot?.reviews.find(r=>reviewKey(r.identity)===reviewKey(member.identity));
-      if (shuttingDown || error || !snapshot?.complete || !fresh || fresh.state!=="open" || fresh.sha!==member.sha || fresh.base!==member.base || !canMerge(state.inbox!.pulls.find(p=>p.number===number) ?? pull) || blocked()) return done(error ?? blocked() ?? "Request changed before merging. Refresh and try again.");
+      const native = stacks!.graph.byReview[reviewKey(member.identity)]?.native;
+      if (shuttingDown || error || !snapshot?.complete || stacks!.nativeRefreshing || native || !fresh || fresh.state!=="open" || fresh.sha!==member.sha || fresh.base!==member.base || fresh.sourceRepo!==member.sourceRepo || fresh.branch!==member.branch || !canMerge(state.inbox!.pulls.find(p=>p.number===number) ?? pull) || blocked()) return done(error ?? blocked() ?? (native ? "This request now belongs to a native gg stack. Use Land this… after refreshing." : "Request or stack inventory changed before merging. Refresh and try again."));
       adapter!.mergeIndividual(fresh, !stacks!.graph.byReview[reviewKey(fresh.identity)], done);
     });
   }, failure => {

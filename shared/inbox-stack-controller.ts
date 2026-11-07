@@ -59,6 +59,7 @@ export class InboxStackController {
 
   constructor(adapter: StackAdapter, changed: () => void) { this.adapter = adapter; this.changed = changed; }
   get graph(): StackGraph { return this._graph; }
+  get nativeRefreshing(): boolean { return this.nativeLoading; }
   get requiredIdentities(): ReviewIdentity[] {
     const ids = this.operation && this.operation.phase !== "complete" ? this.operation.scope.allMembers.map(r => r.identity) : [];
     const native = this.selected ? this.graph.byReview[this.selected]?.native : undefined;
@@ -67,7 +68,12 @@ export class InboxStackController {
   }
   get busy(): boolean { return active(this.operation) || this.pending || this.individual || this.inventory.busy || this.nativeLoading; }
   private draw(): void { if (!this.disposed) this.changed(); }
-  private rebuild(): void { this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete, native: this.inventory.stacks, error: this.provider.error }); }
+  private rebuild(): void {
+    const unmapped = this.inventory.stacks.find(s => !s.complete && !!s.base && !s.entries.some(e => e.number)
+      && s.reviewNumbers === undefined && this.provider.reviews.some(r => r.identity.host.toLowerCase() === s.host.toLowerCase() && r.identity.repo.toLowerCase() === s.repo.toLowerCase()));
+    this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete && !unmapped, native: this.inventory.stacks,
+      error: unmapped ? `Native review mapping for ${unmapped.name} is unavailable. Refresh native stacks before running provider actions.` : this.provider.error });
+  }
   private applyProvider(snapshot: StackProviderSnapshot): void {
     if (!snapshot.complete) {
       const incoming = new Map(snapshot.reviews.map(r => [reviewKey(r.identity), r]));
@@ -99,6 +105,9 @@ export class InboxStackController {
   refreshNative(refresh: boolean): void {
     const generation = ++this.nativeGeneration;
     this.nativeLoading = true;
+    // An inventory invalidation can reveal native ownership after provider preflight.
+    // Cancel queued writes before they acquire a process slot; running ones still settle.
+    this.adapter.cancelPendingWrites?.();
     stackList(refresh, outcome => {
       if (this.disposed || generation !== this.nativeGeneration) return;
       this.nativeLoading = false;
@@ -339,6 +348,6 @@ export class InboxStackController {
           && (this.adapter.mode !== "merge" || component.members.every(r => r.state === "merged" || r.ready)) } } : {}),
       ...(this.prepared ? { confirmation: { members: this.prepared.scope.members, finalBase: this.prepared.scope.finalBase, mode: this.adapter.mode, through: this.prepared.through } } : {}),
       ...(this.operation ? { operation: { phase: this.operation.phase, done: this.operation.completed.length, total: this.operation.scope.members.length, error: this.operation.error, message: this.waitingMessage } } : {}),
-      error: this.error, nativeError: this.nativeError };
+      error: this.error ?? this.graph.error, nativeError: this.nativeError };
   }
 }

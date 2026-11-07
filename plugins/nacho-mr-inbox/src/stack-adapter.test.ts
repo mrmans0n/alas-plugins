@@ -123,6 +123,20 @@ test("a failed later page retains known data with complete false", () => {
   assert.equal(snapshot.complete, false); assert.equal(snapshot.reviews.length, 1);
 });
 
+test("cold-start historical ancestors determine the final base and reject reused branch heads", () => {
+  for (const matches of [true, false]) {
+    const f = fixture(); let snapshot: any;
+    const nodes = [node(2, { targetBranch: "nacho/mr-1" }), node(3, { targetBranch: "nacho/mr-2" })];
+    f.adapter.refresh([], s => { snapshot = s; }); f.answer(JSON.parse(reply(nodes))); f.answer(metadata(nodes));
+    assert.equal(Boolean(snapshot), false, "non-default base must resolve before becoming an executable scope");
+    assert.ok(f.pending[0].args.includes("branch=nacho/mr-1"));
+    f.answer({ data: { project: { repository: { commit: { sha: matches ? "a".repeat(40) : "b".repeat(40) } }, mergeRequests: { nodes: [{ ...node(1), state: "merged", blockingMergeRequests: { totalCount: 0, hiddenCount: 0, visibleMergeRequests: [] } }], pageInfo: { hasNextPage: false } } } } });
+    const graph = buildStacks(snapshot.reviews, snapshot);
+    if (matches) { assert.equal(graph.components[0].finalBase, "main"); assert.equal(graph.components[0].complete, true); }
+    else { assert.equal(snapshot.complete, false); assert.match(snapshot.error, /historical|ancestor|branch/i); }
+  }
+});
+
 test("Stop during retarget preflight starts no edit and queued cancellation settles once", () => {
   const f = fixture(); let snapshot: any, settled = 0;
   f.adapter.refresh([], s => { snapshot = s; }); f.answer(JSON.parse(reply([node(1)]))); f.answer(metadata([node(1)]));

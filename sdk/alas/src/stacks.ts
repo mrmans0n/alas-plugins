@@ -7,7 +7,8 @@ export interface NativeStack {
   id: string; name: string; base: string; host: string; repo: string; worktree?: string;
   fingerprint: string; complete: boolean; entries: NativeStackEntry[]; actions: NativeStackAction[];
   unavailableActions?: Partial<Record<NativeStackAction, string>>;
-  /** Membership only. This list never proves dependency order. */
+  /** Saved local or remote membership only; never proves order. For unmapped local entries,
+   * omitted means unknown; [] confirms no saved published review mapping. */
   reviewNumbers?: number[];
 }
 export interface StackInventory { complete: boolean; busy: boolean; stacks: NativeStack[]; fetchedAt?: number; error?: string }

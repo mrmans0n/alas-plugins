@@ -75,8 +75,28 @@ export class MRStackAdapter implements StackAdapter {
           if (old.identity.host === current.host && old.sourceRepo === child.identity.repo && old.branch === child.base && reviewKey(old.identity) !== reviewKey(child.identity)) required.push(old.identity);
         }
         const missing = required.find(id => !reviews.some(r => reviewKey(r.identity) === reviewKey(id)) && !attempted.has(reviewKey(id)));
-        if (!missing) { finish(); return; }
+        const ancestor = reviews.find(r => r.identity.repo === current.project && r.base && r.base !== current.defaultBranch
+          && !reviews.some(parent => parent.sourceRepo === r.identity.repo && parent.branch === r.base) && !attempted.has(`base:${r.base}`));
+        if (!missing && !ancestor) { finish(); return; }
         if (++reads > 50 || reviews.length >= 550) { finish("Dependency resolution stopped at 50 reads; stack writes are unavailable."); return; }
+        if (!missing) {
+          const branch = ancestor!.base;
+          attempted.add(`base:${branch}`);
+          this.graphql(current.host, current.project, `repository{commit(ref:$ref){sha}} mergeRequests(sourceBranches:[$branch],first:5){nodes{${REVIEW_FIELDS} ${BLOCKERS}} pageInfo{hasNextPage}}`, ["-f", `branch=${branch}`, "-f", `ref=refs/heads/${branch}`], (data, error) => {
+            const connection = data?.project?.mergeRequests, target = data?.project?.repository?.commit?.sha;
+            if (error || !Array.isArray(connection?.nodes) || connection.pageInfo?.hasNextPage !== false || !fullSHA(target)) { finish(error ?? "Historical ancestor branch information is incomplete."); return; }
+            const candidates = connection.nodes.map((raw: unknown) => parseStackReview(raw, current.host, current.project));
+            const matches = candidates.filter((r: StackReview | undefined) => r && r.sourceRepo === current.project && r.branch === branch && r.sha === target && r.state !== "open");
+            if (candidates.some((r: StackReview | undefined) => !r) || connection.nodes.length && matches.length !== 1) { finish("Historical ancestor branch identity is unresolved or ambiguous."); return; }
+            for (const review of matches as StackReview[]) {
+              if (!reviews.some(old => reviewKey(old.identity) === reviewKey(review.identity))) {
+                reviews.push(review); applyDependencies(review, connection.nodes.find((raw: any) => raw.iid === String(review.identity.number))?.blockingMergeRequests);
+              }
+            }
+            next();
+          });
+          return;
+        }
         if (missing.host.toLowerCase() !== current.host.toLowerCase() || !validRepo(missing.repo)) { finish("A dependency host or project cannot be resolved."); return; }
         attempted.add(reviewKey(missing));
         this.graphql(current.host, missing.repo, `mergeRequest(iid:$iid){${REVIEW_FIELDS} ${BLOCKERS}}`, ["-f", `iid=${missing.number}`], (data, error) => {
@@ -131,8 +151,8 @@ export class MRStackAdapter implements StackAdapter {
     page();
   }
   private graphql(host: string, project: string, selection: string, variables: string[], done: (data?: any, error?: string) => void): void {
-    const targeted = variables[1]?.startsWith("iid=");
-    this.driver.run("stack-api", this.worktree, ["--hostname", host, "-F", `fullPath=${project}`, "-f", `query=query($fullPath:ID!,$${targeted ? "iid:String!" : "cursor:String"}){project(fullPath:$fullPath){${selection}}}`, ...variables], outcome => {
+    const declaration = variables[1]?.startsWith("iid=") ? "$iid:String!" : variables[1]?.startsWith("branch=") ? "$branch:String!,$ref:String!" : "$cursor:String";
+    this.driver.run("stack-api", this.worktree, ["--hostname", host, "-F", `fullPath=${project}`, "-f", `query=query($fullPath:ID!,${declaration}){project(fullPath:$fullPath){${selection}}}`, ...variables], outcome => {
       this.observe(outcome); const failure = processError(outcome);
       if (failure || outcome.result?.truncated) return done(undefined, failure ?? "Dependency output was truncated.");
       let json: any;

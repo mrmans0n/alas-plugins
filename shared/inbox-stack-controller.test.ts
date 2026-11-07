@@ -186,6 +186,20 @@ test("opening native membership fetches missing context without inferring merged
   assert.equal(controller.model().selected?.entries.find(r => r.identity.number === 1)?.state, "merged");
 });
 
+test("unreadable local native mapping cannot fall through to generic actions", () => {
+  const f = fixture();
+  f.controller.refreshNative(true); const request = testHost.takeSent()[0];
+  const native = { id: "unmapped", name: "feature", base: "main", host: "github.com", repo: "o/r", fingerprint: "v1", complete: false, actions: ["open"], entries: [{ id: "entry", sha: "1".repeat(40), position: 1, title: "Local entry" }] };
+  testHost.reply(request.id, { inventory: { complete: false, busy: false, stacks: [native], error: "Local mapping unreadable" } });
+  assert.equal(f.controller.graph.complete, false);
+  assert.match(individualBlocker(f.controller.graph, review(1).identity) ?? "", /native|mapping/i);
+  assert.ok(f.controller.model().error);
+  f.controller.refreshNative(true); const fresh = testHost.takeSent()[0];
+  testHost.reply(fresh.id, { inventory: { complete: true, busy: false, stacks: [{ ...native, reviewNumbers: [] }] } });
+  assert.equal(f.controller.graph.complete, true, "explicitly empty mapping is verified unpublished context");
+  assert.equal(individualBlocker(f.controller.graph, review(1).identity), undefined);
+});
+
 test("restored work stays interrupted until Continue refreshes and reacquires ownership", () => {
   const stored = createStackOperation(stackScope(buildStacks([review(1), review(2)], { complete: true }).components[0]).scope!, "queue");
   const f = fixture({ queue: true, stored });
