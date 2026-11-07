@@ -62,12 +62,12 @@ The shared controller exposes view state, selected member, open/close/refresh/na
 
 **Produces:** API 18 wire contract above, native inventory/presentation, shared project reservation.
 
-- [ ] Add tests for request validation, cross-project/foreign token rejection, stale fingerprint, open without mutation, and automatic owner cleanup. Add a gate test that a native action and a plugin reservation cannot overlap across worktrees of one project.
-- [ ] Run the focused tests and capture failure before implementation.
-- [ ] Implement Codable payloads, bounded API validation, API 18 gate, and SDK-independent host closures. Resolve inventory from refreshed gg and configured project identity, including partial/unavailable cases. Never execute local gg for SSH projects.
-- [ ] Present the correct worktree's native action UI. Land resolves the frozen last member, landThrough resolves the selected entry, and both use existing confirmation/progress logic. Validate fingerprint after refresh before presenting. Unsupported actions carry a reason.
-- [ ] Integrate the gate into native coordinator reserve/release and plugin instance lifecycle. Invalidate inventory on native operation/worktree changes.
-- [ ] Run affected AlasCore tests first, then focused app PluginHost/Manifest and gg tests with isolated DerivedData. Record actual test counts and infrastructure blockers.
+- [x] Add tests for request validation, cross-project/foreign token rejection, stale fingerprint, open without mutation, and automatic owner cleanup. Add a gate test that a native action and a plugin reservation cannot overlap across worktrees of one project.
+- [x] Run the focused tests and capture failure before implementation.
+- [x] Implement Codable payloads, bounded API validation, API 18 gate, and SDK-independent host closures. Resolve inventory from refreshed gg and configured project identity, including partial/unavailable cases. Never execute local gg for SSH projects.
+- [x] Present the correct worktree's native action UI. Land resolves the frozen last member, landThrough resolves the selected entry, and both use existing confirmation/progress logic. Validate fingerprint after refresh before presenting. Unsupported actions carry a reason.
+- [x] Integrate the gate into native coordinator reserve/release and plugin instance lifecycle. Invalidate inventory on native operation/worktree changes.
+- [x] Run affected AlasCore tests first, then focused app PluginHost/Manifest and gg tests with isolated DerivedData. Record actual test counts and infrastructure blockers.
 
 ### Task 2: SDK, graph, operation engine, and shared controls
 
@@ -75,12 +75,12 @@ The shared controller exposes view state, selected member, open/close/refresh/na
 
 **Consumes:** API 18 wire contract. **Produces:** normalized graph, operation/runtime controller, shared inspector renderer for both plugin adapters.
 
-- [ ] Write graph tests covering root-to-tip ordering, middle-member full versus prefix scope, fork branch collisions, cycles/branching, conflicting gg metadata, merged versus closed dependencies, hidden members, and incomplete pagination.
-- [ ] Run `node --test shared/*.test.ts`, confirm missing implementation fails, then implement graph construction with no Node/DOM globals.
-- [ ] Write state machine tests for refreshed scope changes, queued-not-merged, retarget transitions, failed writes with possible effects, cancellation during an active request, restart with no automatic replay, and foreign lock ownership. Run red before implementing.
-- [ ] Implement the generic engine and SDK callback transport. Reconcile by provider state, not process exit. Persist only validated bounded operation data. The controller freezes confirmation scope and refreshes before acquiring/advancing writes.
-- [ ] Implement page controls with existing theme variables, text-only provider data, keyboard-accessible badges, full/prefix confirmation, progress/Stop/Continue, and clipboard links. Existing provider row actions are supplied by each page.
-- [ ] Run shared/SDK tests and typecheck. Keep callbacks cancellable through generation/ownership checks.
+- [x] Write graph tests covering root-to-tip ordering, middle-member full versus prefix scope, fork branch collisions, cycles/branching, conflicting gg metadata, merged versus closed dependencies, hidden members, and incomplete pagination.
+- [x] Run `node --test shared/*.test.ts`, confirm missing implementation fails, then implement graph construction with no Node/DOM globals.
+- [x] Write state machine tests for refreshed scope changes, queued-not-merged, retarget transitions, failed writes with possible effects, cancellation during an active request, restart with no automatic replay, and foreign lock ownership. Run red before implementing.
+- [x] Implement the generic engine and SDK callback transport. Reconcile by provider state, not process exit. Persist only validated bounded operation data. The controller freezes confirmation scope and refreshes before acquiring/advancing writes.
+- [x] Implement page controls with existing theme variables, text-only provider data, keyboard-accessible badges, full/prefix confirmation, progress/Stop/Continue, and clipboard links. Existing provider row actions are supplied by each page.
+- [x] Run shared/SDK tests and typecheck. Keep callbacks cancellable through generation/ownership checks.
 
 ### Task 3: PR Inbox adapter and UI
 
@@ -88,11 +88,11 @@ The shared controller exposes view state, selected member, open/close/refresh/na
 
 **Consumes:** Task 2 shared controller and renderer. **Produces:** complete GitHub identity/pagination adapter and stack UI/actions.
 
-- [ ] Extend parser/controller tests for page completion up to 500, partial-page failures, missing source/base/head identity, guarded merges, and exclusion of stack members from Merge all. Existing standalone behaviors remain pinned.
-- [ ] Run focused PR suites red, then add GraphQL cursors/pageInfo, repository host/default identity, source repository, base, head, and state to parsing. Resolve referenced non-open members through bounded targeted reads.
-- [ ] Implement provider snapshot/merge/retarget callbacks. Use `--match-head-commit`, no intermediate branch deletion in stack actions, verify retargeted base and unchanged head, then re-evaluate readiness. Distinguish merge queue acceptance from confirmed merge.
-- [ ] Integrate graph/controller, API 18 inventory invalidation, project lock for individual/bulk actions, stack-aware blocking, stored interrupted scope, protocol validation, and shared inspector. Native gg actions must not invoke gh merge.
-- [ ] Verify individual row actions, Mine/status filters, tab/sidebar inspector, and clipboard behavior. Run PR suites, typecheck, and build.
+- [x] Extend parser/controller tests for page completion up to 500, partial-page failures, missing source/base/head identity, guarded merges, and exclusion of stack members from Merge all. Existing standalone behaviors remain pinned.
+- [x] Run focused PR suites red, then add GraphQL cursors/pageInfo, repository host/default identity, source repository, base, head, and state to parsing. Resolve referenced non-open members through bounded targeted reads.
+- [x] Implement provider snapshot/merge/retarget callbacks. Use `--match-head-commit`, no intermediate branch deletion in stack actions, verify retargeted base and unchanged head, then re-evaluate readiness. Distinguish merge queue acceptance from confirmed merge.
+- [x] Integrate graph/controller, API 18 inventory invalidation, project lock for individual/bulk actions, stack-aware blocking, stored interrupted scope, protocol validation, and shared inspector. Native gg actions must not invoke gh merge.
+- [x] Verify individual row actions, Mine/status filters, tab/sidebar inspector, and clipboard behavior. Run PR suites, typecheck, and build.
 
 ### Task 4: MR Inbox adapter and UI
 
@@ -100,16 +100,20 @@ The shared controller exposes view state, selected member, open/close/refresh/na
 
 **Consumes:** Task 2 shared controller/renderer and Task 3 integration conventions. **Produces:** complete GitLab dependency/pagination adapter and stack UI/actions.
 
-- [ ] Extend tests for source/target project identity, dependency API unsupported/inaccessible, pagination, closed blockers, queued train members, and Add all exclusions. Prove a queued ancestor never advances a child.
-- [ ] Run MR tests red, then implement cursor paging and separate bounded dependency reads, retaining existing list operation if the dependency endpoint is unavailable. Resolve explicitly referenced non-open members without treating closed as merged.
-- [ ] Implement snapshot/queue/retarget callbacks preserving train versus auto-merge semantics and expected-head guards. Advance only after predecessor is confirmed merged. Show incomplete graphs as read-only with reasons.
-- [ ] Integrate shared stack UI, native actions, project mutation ownership, Stop/Continue, and per-item actions. Keep rail Mine behavior and full inspector dependencies.
-- [ ] Run MR suites, shared regression suites, typecheck, and build. Inspect train/inspector coexistence at full and narrow widths.
+- [x] Extend tests for source/target project identity, dependency API unsupported/inaccessible, pagination, closed blockers, queued train members, and Add all exclusions. Prove a queued ancestor never advances a child.
+- [x] Run MR tests red, then implement cursor paging and separate bounded dependency reads, retaining existing list operation if the dependency endpoint is unavailable. Resolve explicitly referenced non-open members without treating closed as merged.
+- [x] Implement snapshot/queue/retarget callbacks preserving train versus auto-merge semantics and expected-head guards. Advance only after predecessor is confirmed merged. Show incomplete graphs as read-only with reasons.
+- [x] Integrate shared stack UI, native actions, project mutation ownership, Stop/Continue, and per-item actions. Keep rail Mine behavior and full inspector dependencies.
+- [x] Run MR suites, shared regression suites, typecheck, and build. Inspect train/inspector coexistence at full and narrow widths.
 
 ### Task 5: Integration and final review
 
-- [ ] Exercise host/SDK payload compatibility and older-plugin behavior. API 18 plugins must be refused by older hosts normally, not fail after loading.
-- [ ] Run plugin focused tests, full repository typecheck/build, and JavaScriptCore validation for the changed bundles. Run the native affected package/app checks from Task 1 after final integration changes.
-- [ ] Render both pages with realistic fixtures at tab/sidebar widths and inspect screenshots. Include a mixed-author stack, incomplete graph, and queued MR.
-- [ ] Review the final two-repository diff against every acceptance item. Fix findings and rerun only affected checks.
-- [ ] Report implemented behavior and exact verification, retaining infrastructure-inconclusive results as such. Offer the corresponding PRs only after local work is reviewable; do not publish or merge without authorization.
+- [x] Exercise host/SDK payload compatibility and older-plugin behavior. API 18 plugins must be refused by older hosts normally, not fail after loading.
+- [x] Run plugin focused tests, full repository typecheck/build, and JavaScriptCore validation for the changed bundles. Run the native affected package/app checks from Task 1 after final integration changes.
+- [x] Render both pages with realistic fixtures at tab/sidebar widths and inspect screenshots. Include a mixed-author stack, incomplete graph, and queued MR.
+- [x] Review the final two-repository diff against every acceptance item. Fix findings and rerun only affected checks.
+- [x] Report implemented behavior and exact verification, retaining infrastructure-inconclusive results as such. Offer the corresponding PRs only after local work is reviewable; do not publish or merge without authorization.
+
+## Completion evidence
+
+Implemented and locally committed in both linked worktrees. See [validation](../specs/2026-11-07-inbox-stack-diffs-validation.md) for exact counts, independent review repairs, browser/JavaScriptCore checks, and the unrelated FSEvents full-suite limitation. The initial native suite and final repair suite are reported separately. No publication, installation, provider mutation, or merge is inferred or authorized.

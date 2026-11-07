@@ -69,7 +69,7 @@ export function stackPanel(model: InboxStackModel | undefined, post: Post, rende
     const header = element("div", "stack-panel-head"); const title = element("div", "");
     title.append(element("div", "stack-panel-title", selected.name));
     const counts = new Map<string, number>();
-    for (const entry of selected.entries) { const status = entry.state !== "open" ? entry.state : entry.status ?? (entry.ready ? "ready" : "waiting"); counts.set(status, (counts.get(status) ?? 0) + 1); }
+    for (const entry of selected.entries) { const status = entry.state !== "open" ? entry.state : entry.queued ? "queued" : entry.status ?? (entry.ready ? "ready" : "waiting"); counts.set(status, (counts.get(status) ?? 0) + 1); }
     title.append(element("div", "stack-detail", `${selected.native ? "gg · " : ""}${selected.base ? `Base: ${selected.base}` : "Base unknown"} · ${[...counts].map(([status, count]) => `${count} ${status}`).join(" · ")}`));
     header.append(title, button("Close", () => post({ type: "stack", action: "close" }))); panel.append(header);
     const controls = element("div", "stack-controls");
