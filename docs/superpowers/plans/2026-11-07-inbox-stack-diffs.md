@@ -40,7 +40,7 @@ Wire contract, JSON camelCase:
 
 - `ReviewIdentity = { host: string; repo: string; number: number }`.
 - `NativeStackEntry = { id: string; sha: string; position: number; number?: number; title: string; state?: string }`.
-- `NativeStack = { id: string; name: string; base: string; host: string; repo: string; worktree?: string; fingerprint: string; complete: boolean; entries: NativeStackEntry[]; actions: NativeStackAction[]; unavailableActions?: Partial<Record<NativeStackAction, string>> }`.
+- `NativeStack = { id: string; name: string; base: string; host: string; repo: string; worktree?: string; fingerprint: string; complete: boolean; entries: NativeStackEntry[]; actions: NativeStackAction[]; unavailableActions?: Partial<Record<NativeStackAction, string>>; reviewNumbers?: number[] }`.
 - `NativeStackAction = "open" | "sync" | "rebase" | "land" | "landThrough"`.
 - `StackInventory = { complete: boolean; busy: boolean; stacks: NativeStack[]; fetchedAt?: number; error?: string }`.
 - `stacks/list { refresh: boolean } -> { inventory: StackInventory }`, `workspace.read`, API 18.

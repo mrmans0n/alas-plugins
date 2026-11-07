@@ -1,5 +1,5 @@
 /**
- * SDK for Alas plugins, API 4 to 17: one `plugin.js` evaluated in a bare JavaScriptCore context.
+ * SDK for Alas plugins, API 4 to 18: one `plugin.js` evaluated in a bare JavaScriptCore context.
  * Handles the JSON-RPC framing, the activation handshake and request ids. API 5 helpers
  * (commands, notify, session events, settings, `fetch`, timers, panels) need `"api": 5`; API 6
  * ones (more command slots, decorations, section panels, git/run/review events, runs, review
@@ -14,7 +14,8 @@
  * `webPost` take a panel id), adds `setPanelBadge` and commands that open a panel, and lets pages load `https` images from
  * `network` hosts. API 16 exports exact ALAS_RUN_ID, ALAS_RUN_SCRIPT_KEY, ALAS_WORKTREE_ID and
  * ALAS_PROJECT_ID to run scripts before execution, for on-host capture wrappers. API 17 adds `requires`, which shows a
- * plugin only in projects with a recognized GitHub or GitLab remote.
+ * plugin only in projects with a recognized GitHub or GitLab remote. API 18 adds project-scoped
+ * stack inventory, native action presentation, and mutation reservations in `@alas/plugin/stacks`.
  * For the page's side, see `@alas/plugin/page`.
  *
  * Inside Alas the only globals are the ECMAScript built-ins and `alas`: no `console`,
@@ -36,7 +37,7 @@ declare global {
 }
 
 /**
- * `plugin.json`, API 4 to 17. Unknown fields are ignored by Alas but rejected here, to catch typos.
+ * `plugin.json`, API 4 to 18. Unknown fields are ignored by Alas but rejected here, to catch typos.
  * Write `export default { ... } satisfies Manifest` to check a manifest against it.
  */
 export interface Manifest {
@@ -46,7 +47,7 @@ export interface Manifest {
   /** One line for the catalog. */
   summary?: string;
   version: string;
-  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17;
+  api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18;
   /** The script, relative to the plugin folder. */
   entry: string;
   /**
@@ -332,6 +333,8 @@ export type Event =
     }
   | { type: "deactivate" }
   | { type: "workspaceChanged"; snapshot: Snapshot }
+  /** API 18: native stack inventory or mutation ownership changed; refresh before relying on it. */
+  | { type: "stacksChanged" }
   /** The reply to `requestSnapshot`. */
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "tick"; dt: number }
@@ -507,7 +510,7 @@ function targetOf(params: any): { tab: number } | { panel: string } | undefined 
 }
 
 /** Sends a request whose reply `decode` turns into `T`; a malformed reply is a -32603 error. */
-function requestDecoded<T>(method: string, params: unknown, decode: (r: Record<string, any>) => T | undefined, callback: (outcome: Outcome<T>) => void): number {
+export function requestDecoded<T>(method: string, params: unknown, decode: (r: Record<string, any>) => T | undefined, callback: (outcome: Outcome<T>) => void): number {
   return request(method, params, ({ result, error }) => {
     if (error) return callback({ error });
     const value = isObject(result) ? decode(result) : undefined;
@@ -1014,6 +1017,8 @@ export function dispatch(plugin: Plugin, json: string): void {
       const number = typeof params.number === "number" ? { number: params.number } : {};
       return plugin.handle({ type: "reviewChanged", worktree: params.worktree, state: params.state, ...number, ...checks });
     }
+    case "stacks/changed":
+      return plugin.handle({ type: "stacksChanged" });
     case "process/exited":
       if (typeof params?.run !== "string" || typeof params.exit !== "number") return;
       return plugin.handle({ type: "processExited", run: params.run, exit: params.exit });
