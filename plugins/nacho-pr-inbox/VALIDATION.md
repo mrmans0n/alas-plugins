@@ -123,3 +123,38 @@ Remaining manual gates:
 ## API 17 change
 
 The `requires` visibility change (API 17, panel icon) was verified only by typecheck, tests and build, not yet inside an Alas build with API 17.
+
+## Stack workflow (API18, 2026-11-07)
+
+The PR Inbox now uses the shared stack controller and inspector. Focused automated
+coverage uses API18 inventory, ownership, storage, and process replies, rather
+than an API15 compatibility path. `main-stack.test.ts` drives the production
+plugin/controller through queued acceptance, periodic refresh, Stop, persisted
+interruption, explicit Continue, base retargeting, and confirmed provider merges.
+No provider write commands were executed during validation; process replies are
+fixture data.
+
+Additional tests cover all ten 50-request pages through the 500 ceiling, a failed
+later page, malformed earlier pages, retained cached identity on failure, missing
+head/source/base, host-qualified full-head merge guards, late verification reads,
+reused historical branch names, missing frozen members, explicit post-edit
+head/base confirmation, native gg presentation, mixed-author Mine context, and
+Merge all exclusion of stack members. Existing CI Doctor tests remain enabled.
+
+Run `npm test -w nacho-pr-inbox`, `npm run typecheck`, and
+`npm run build -w nacho-pr-inbox` from the repository root.
+
+Live Alas rendering, native gg confirmation UI, and actual GitHub merge/retarget
+execution are not claimed by these fixture tests. Clipboard and narrow-rail
+visual verification remain part of the combined host/plugin validation.
+
+Review regressions also exercise a stale pre-merge refresh returning after the
+command completed, Stop while retarget verification is pending, and shutdown
+while a write waits behind two CI reads. Unstarted writes settle once without
+spawning; processes already started retain their callbacks and ownership until
+settlement. The post-review focused suite has 111 passing tests.
+
+Native individual rows retain **Land this…** / **Land…**. The production-main
+native fixture confirms root-entry native presentation, blocked descendants,
+next-member eligibility after a verified merged ancestor, and no raw gh merge.
+The final focused suite has 112 passing tests; whole typecheck and PR build pass.

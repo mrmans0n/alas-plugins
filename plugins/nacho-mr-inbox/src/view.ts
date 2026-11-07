@@ -1,6 +1,10 @@
 import { addMode, BUCKETS, classify, inTrain, isFailing, recentMerged, type Bucket, type Car, type Inbox, type MergeRequest, type Progress } from "./inbox.ts";
+import type { ReviewIdentity } from "@alas/plugin/stacks";
+import { individualBlocker, reviewKey, type StackGraph } from "../../../shared/inbox-stacks.ts";
 
 export interface ViewState {
+  graph?: StackGraph;
+  stackBusy?: boolean;
   inbox?: Inbox;
   fetchedAt?: number;
   refreshing: boolean;
@@ -23,6 +27,8 @@ export interface Chip { text: string; tone: Tone }
 export interface AddAction { when: "now" | "whenGreen"; look: "go" | "plain"; label: string; short: string; disabled: boolean; busy: boolean }
 
 export interface Row {
+  identity?: ReviewIdentity;
+  stackAction?: boolean;
   iid: number; title: string; url: string; branch: string; author: string; avatar?: string; updatedAt: string;
   mine: boolean;
   chips: Chip[];
@@ -36,7 +42,7 @@ export interface Row {
 }
 
 export interface Section { key: Bucket; title: string; tone: Tone; rows: Row[] }
-export interface CarView { iid: number; title: string; url?: string; mine: boolean; label: string; tone: Tone; progress?: Progress }
+export interface CarView { iid: number; title: string; url?: string; mine: boolean; label: string; tone: Tone; progress?: Progress; identity?: ReviewIdentity }
 export interface TrainView { target: string; cars: CarView[] }
 export interface MergedRow { iid: number; title: string; url: string; branch: string; author: string; avatar?: string; mergedAt: string }
 
@@ -52,6 +58,7 @@ export interface InboxModel {
   sections: Section[];
   /** The user's MRs outside the train, newest first: the rail's list. */
   mine: Row[];
+  stackRows: Row[];
   merged: MergedRow[];
   addAll?: { count: number; label: string; disabled: boolean; progress?: string };
   /** `available`: the user is known, so the toggle is offered. `hidden`: items the filter hides. */
@@ -92,25 +99,33 @@ export function chips(mr: MergeRequest): Chip[] {
 }
 
 function addAction(mr: MergeRequest, state: ViewState): AddAction | undefined {
+  if (state.inbox && inTrain(state.inbox, mr)) return undefined;
   const when = addMode(mr);
   if (!when) return undefined;
   const trains = state.trainsEnabled !== false;
   const label = !trains ? "Merge when green" : when === "now" ? "🚂 Add to train" : "🚂 Add when green";
   const short = !trains ? "Merge" : when === "now" ? "Add" : "When green";
-  return { when, look: when === "now" ? "go" : "plain", label, short, disabled: state.busy !== undefined, busy: state.busy === mr.iid };
+  const identity = state.inbox?.reviews?.find(r => r.identity.number === mr.iid && r.identity.repo === state.inbox!.project)?.identity;
+  const component = identity && state.graph?.byReview[reviewKey(identity)];
+  const blocked = identity && state.graph && individualBlocker(state.graph, identity);
+  const native = component?.native;
+  return { when, look: when === "now" ? "go" : "plain", label: native ? "Land this…" : label, short: native ? "Land…" : short,
+    disabled: state.busy !== undefined || !!state.stackBusy || !!blocked || !!native && !native.actions.includes("landThrough"), busy: state.busy === mr.iid };
 }
 
 function row(mr: MergeRequest, state: ViewState): Row {
   const p = mr.pipeline;
   const add = addAction(mr, state);
   const running = p?.progress && p.progress.done < p.progress.total && !isFailing(mr);
+  const identity = state.inbox?.reviews?.find(r => r.identity.number === mr.iid && r.identity.repo === state.inbox!.project)?.identity;
   return {
     iid: mr.iid, title: mr.title, url: mr.url, branch: mr.branch, author: mr.author, ...(mr.avatar ? { avatar: mr.avatar } : {}), updatedAt: mr.updatedAt,
     mine: mr.author === state.inbox?.user,
-    chips: chips(mr),
+    ...(identity ? { identity, stackAction: !!state.graph?.byReview[reviewKey(identity)]?.native } : {}),
+    chips: [...chips(mr), ...(mr.queued || state.inbox && inTrain(state.inbox, mr) ? [{ text: "queued", tone: "dim" as const }] : [])],
     ...(running ? { progress: { ...p!.progress!, failed: false } } : {}),
     ...(add ? { add } : {}),
-    ...(p && isFailing(mr) ? { retry: { pipeline: p.id, busy: state.retrying === p.id, disabled: state.retrying !== undefined } } : {}),
+    ...(p && isFailing(mr) ? { retry: { pipeline: p.id, busy: state.retrying === p.id, disabled: state.retrying !== undefined || !!state.stackBusy } } : {}),
     doctor: p !== null,
     ...(state.errors[mr.iid] === undefined ? {} : { error: state.errors[mr.iid] }),
   };
@@ -126,7 +141,8 @@ function car(c: Car, inbox: Inbox): CarView {
     : (status === "RUNNING" || status === "PENDING") && c.pipeline?.progress ? [`⏳ ${c.pipeline.progress.done}/${c.pipeline.progress.total}`, "warn"]
     : status === "RUNNING" || status === "PENDING" ? ["⏳ running", "warn"]
     : ["queued", "dim"];
-  return { iid: c.iid, title: mr?.title ?? `!${c.iid}`, ...(mr ? { url: mr.url } : {}), mine: mr?.author === inbox.user, label, tone, ...(c.pipeline?.progress ? { progress: c.pipeline.progress } : {}) };
+  const identity = inbox.reviews?.find(r => r.identity.number === c.iid && r.identity.repo === inbox.project)?.identity;
+  return { iid: c.iid, title: mr?.title ?? `!${c.iid}`, ...(mr ? { url: mr.url } : {}), ...(identity ? { identity } : {}), mine: mr?.author === inbox.user, label, tone, ...(c.pipeline?.progress ? { progress: c.pipeline.progress } : {}) };
 }
 
 /** The filter is on and the user is known. */
@@ -137,7 +153,8 @@ export function addCandidates(state: ViewState): MergeRequest[] {
   const inbox = state.inbox;
   if (!inbox) return [];
   const ready = classify(inbox).ready;
-  return filtering(state) ? ready.filter((m) => m.author === inbox.user) : ready;
+  const candidates = ready.filter(m => !m.queued && (!state.graph || !!inbox.complete && !!inbox.reviews?.some(r => r.identity.number === m.iid && r.identity.repo === inbox.project && !state.graph!.blocked[reviewKey(r.identity)])));
+  return filtering(state) ? candidates.filter((m) => m.author === inbox.user) : candidates;
 }
 
 export function inboxModel(state: ViewState, now: number): InboxModel {
@@ -162,10 +179,11 @@ export function inboxModel(state: ViewState, now: number): InboxModel {
     counts,
     sections: BUCKETS.filter((b) => groups[b].length > 0).map((b) => ({ key: b, title: TITLES[b], tone: TONES[b], rows: groups[b].map((m) => row(m, state)) })),
     mine,
+    stackRows: inbox ? inbox.mrs.map(m => row(m, state)) : [],
     merged: shownMerged.map(({ iid, title, url, branch, author, avatar, mergedAt }) => ({ iid, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })),
     scope: { mineOnly, available: !!inbox?.user, hidden },
     ...(ready >= 2 || all ? { addAll: {
-      count: ready, label: trains ? `🚂 Add all ${ready} to train` : `Merge all ${ready} when green`, disabled: state.busy !== undefined,
+      count: ready, label: trains ? `🚂 Add all ${ready} to train` : `Merge all ${ready} when green`, disabled: state.busy !== undefined || !!state.stackBusy,
       ...(all ? { progress: `Adding ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}),
     } } : {}),
   };

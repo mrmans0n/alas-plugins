@@ -1,3 +1,4 @@
+import type { StackReview } from "../../../shared/inbox-stacks.ts";
 import type { Outcome, ProcessResult } from "@alas/plugin";
 import { validRepo, validSHA, type PullIdentity } from "./doctor.ts";
 
@@ -44,6 +45,12 @@ export interface Merged {
 }
 
 export interface Inbox {
+  host?: string;
+  baseHeads?: Record<number,string>;
+  defaultBranch?: string;
+  complete?: boolean;
+  cursor?: string;
+  reviews?: StackReview[];
   /** `owner/name`. */
   repo: string;
   /** The signed-in user's login; empty when the reply has none. */
@@ -162,7 +169,12 @@ export function parseInbox(stdout: string): Inbox | undefined {
   if (!Array.isArray(nodes)) return undefined;
   const pulls = new Map<number, Pull>();
   for (const p of nodes.map(pull)) if (p && !pulls.has(p.number)) pulls.set(p.number, p);
-  return { repo: repository.nameWithOwner, viewer: str(data?.viewer?.login) ?? "", pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
+  const host = /^https:\/\/([A-Za-z0-9.-]+)\//.exec(repository.url ?? "")?.[1];
+  const defaultBranch = str(repository.defaultBranchRef?.name) ?? undefined;
+  const page = repository.pullRequests.pageInfo;
+  const validPage = isObject(page) && typeof page.hasNextPage === "boolean" && (!page.hasNextPage || typeof page.endCursor === "string" && page.endCursor.length > 0);
+  const reviews = host ? nodes.map(n => parseStackReview(n, host, repository.nameWithOwner)).filter((r): r is StackReview => !!r) : [];
+  return { repo: repository.nameWithOwner, host, defaultBranch, baseHeads: Object.fromEntries(nodes.filter(n=>isObject(n) && Number.isSafeInteger(n.number) && validSHA(n.baseRefOid)).map(n=>[n.number,n.baseRefOid])), complete: !!host && !!defaultBranch && validPage && !page.hasNextPage && pulls.size === nodes.length && reviews.length === nodes.length && !jsonHasErrors(json), ...(validPage && page.hasNextPage ? { cursor: page.endCursor } : {}), reviews, viewer: str(data?.viewer?.login) ?? "", pulls: [...pulls.values()], merged: recentlyMerged(repository.merged?.nodes) };
 }
 
 /** Codex approved (or Renovate wrote it) and nothing stops gh from merging; checks may still be running or red. */
@@ -225,4 +237,16 @@ export function processError(outcome: Outcome<ProcessResult>): string | undefine
   if (/gh auth login/.test(stderr)) return SIGN_IN;
   if (/known GitHub host|no git remotes/.test(stderr)) return NO_REMOTE;
   return firstLine(stderr) ?? firstLine(stdout) ?? `gh exited with ${exit}.`;
+}
+
+function jsonHasErrors(value: unknown): boolean { return isObject(value) && Array.isArray(value.errors) && value.errors.length > 0; }
+/** Missing identity is explicit; never infer a fork from its branch name. */
+export function parseStackReview(node: unknown, host: string, repo: string): StackReview | undefined {
+  const p = pull(node);
+  if (!p || !isObject(node)) return undefined;
+  const state = node.state === "OPEN" ? "open" : node.state === "MERGED" ? "merged" : node.state === "CLOSED" ? "closed" : "unknown";
+  const sourceRepo = validRepo(node.headRepository?.nameWithOwner) ? node.headRepository.nameWithOwner : undefined;
+  const base = str(node.baseRefName) ?? "";
+  const sha = validSHA(node.headRefOid) ? node.headRefOid : undefined;
+  return { identity: { host, repo, number: p.number }, sourceRepo, branch: p.branch, base, sha, title: p.title, url: p.url, author: p.author, state, ready: state === "open" && !!sourceRepo && !!base && !!sha && isReady(p), queued: !!node.autoMergeRequest || !!node.mergeQueueEntry, status: bucketOf(p) };
 }

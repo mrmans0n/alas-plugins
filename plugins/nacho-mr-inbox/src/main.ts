@@ -1,5 +1,8 @@
 import { definePlugin, notify, processRun, request, requestSnapshot, sessionSend, setPanelBadge, setTimer, storageGet, storageSet, webPost, type Event, type Snapshot } from "@alas/plugin";
-import { addMode, parseInbox, parseTrainsEnabled, processError } from "./inbox.ts";
+import { addMode, parseTrainsEnabled, processError } from "./inbox.ts";
+import { InboxStackController } from "../../../shared/inbox-stack-controller.ts";
+import { individualBlocker, reviewKey } from "../../../shared/inbox-stacks.ts";
+import { MRStackAdapter } from "./stack-adapter.ts";
 import { addCandidates, inboxModel, readyMine, type ViewState } from "./view.ts";
 import { DoctorController } from "./doctor-controller.ts";
 import { endpoint, GitLab, ProcessQueue } from "./doctor-transport.ts";
@@ -21,6 +24,9 @@ let tabShown = false;
 let panelShown = false;
 let doctor: DoctorController | undefined;
 let gitlab: GitLab | undefined;
+let stacks: InboxStackController | undefined;
+let adapter: MRStackAdapter | undefined;
+let shuttingDown = false;
 let cached: unknown;
 let loadCache: number | undefined;
 let loadView: number | undefined;
@@ -35,7 +41,8 @@ const queue = new ProcessQueue((id, wt, args, done) => processRun(id, wt, { args
 
 /** Sends the state to the tab's and the rail's pages; one that is not shown drops it. */
 const draw = () => {
-  const message: PluginMessage = { type: "state", inbox: inboxModel(state, Date.now()), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
+  state.graph = stacks?.graph; state.stackBusy = stacks?.busy;
+  const message: PluginMessage = { type: "state", stacks: stacks?.model(state.inbox?.user, state.mineOnly), inbox: inboxModel(state, Date.now()), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
   webPost(TAB, message);
   webPost(PANEL, message);
   const ready = readyMine(state);
@@ -45,7 +52,7 @@ const draw = () => {
 
 function refresh(manual = false): void {
   if (manual) gitlab?.retry();
-  if (!worktree) return;
+  if (!worktree || shuttingDown) return;
   if (manual || state.trainsEnabled === undefined) {
     queue.run("project", worktree, [], (outcome) => {
       const enabled = processError(outcome) === undefined ? parseTrainsEnabled(outcome.result!.stdout) : undefined;
@@ -58,24 +65,14 @@ function refresh(manual = false): void {
   listing = true;
   state.refreshing = true;
   draw();
-  queue.run("list", worktree, [], (outcome) => {
-    gitlab?.observe(outcome);
-    listing = false;
-    state.refreshing = false;
-    const failure = processError(outcome);
-    const parsed = failure === undefined ? (outcome.result!.truncated ? "The MR list did not fit in glab's output limit." : parseInbox(outcome.result!.stdout)) : failure;
-    if (typeof parsed === "string") state.error = parsed;
-    else {
-      state.inbox = parsed;
-      state.fetchedAt = Date.now();
-      state.error = undefined;
-      ensureDoctor();
-      doctor?.updateInbox(parsed.project, parsed.mrs.map((m) => ({ number: m.iid, title: m.title, url: m.url, branch: m.branch })));
-    }
+  adapter?.refresh(stacks?.requiredIdentities ?? [], (snapshot, failure) => {
+    listing = false; state.refreshing = false;
+    if (snapshot) stacks?.updateProvider(snapshot);
+    state.error = failure ?? snapshot?.error;
     if (again) { again = false; refresh(); }
-    else if (typeof parsed === "string") { stopAddAll(); draw(); }
+    else if (failure || !snapshot?.complete) { stopAddAll(); draw(); }
     else if (!continueAddAll()) draw();
-  }, { priority: true });
+  });
 }
 
 /** CI Doctor needs the project and host, which the first list reply gives. */
@@ -91,6 +88,10 @@ function ensureDoctor(): void {
     send: (session, text, done) => { sessionSend(session, text, ({ error }) => done(error?.message)); },
   });
   doctor.updateSnapshot(snapshot);
+  gitlab.setMutationRunner((rest, done) => {
+    if (!stacks || !adapter) return done("Stack ownership is unavailable.");
+    stacks.runMutation(settle => adapter!.retry(rest, settle), done);
+  });
   if (cached) doctor.restore(cached);
 }
 
@@ -102,32 +103,35 @@ function add(iid: number): boolean {
   const mr = inbox?.mrs.find((m) => m.iid === iid);
   const when = mr && addMode(mr);
   if (!worktree || !inbox || !mr || !when || state.busy !== undefined || !SHA.test(mr.sha)) return false;
+  const member = inbox.reviews?.find(r => r.identity.number === iid && r.identity.repo === inbox.project);
+  if (!stacks || !adapter || !inbox.complete || !member || stacks.busy) return false;
+  const blocked = () => individualBlocker(stacks!.graph, member.identity);
+  const native = stacks.graph.byReview[reviewKey(member.identity)]?.native;
+  if (blocked()) { state.errors[iid] = blocked()!; draw(); return false; }
+  if (native) { stacks.handle({ type: "stack", action: "native", key: reviewKey(member.identity), nativeAction: "landThrough" }); return true; }
   state.busy = iid;
   delete state.errors[iid];
-  draw();
-  const trains = state.trainsEnabled !== false;
-  const id = trains ? "add" : "automerge";
-  const args = trains
-    ? [endpoint(inbox.project, `merge_trains/merge_requests/${iid}`), "-f", `sha=${mr.sha}`, ...(when === "whenGreen" ? ["-f", "auto_merge=true"] : [])]
-    : [endpoint(inbox.project, `merge_requests/${iid}/merge`), "-f", `sha=${mr.sha}`, "-f", "auto_merge=true", "-f", "merge_when_pipeline_succeeds=true"];
-  queue.run(id, worktree, args, (outcome) => {
-    gitlab?.observe(outcome);
+  stacks.runMutation(done => {
+    adapter!.refresh(stacks!.requiredIdentities, (snapshot, error) => {
+      if (snapshot) stacks!.updateProvider(snapshot);
+      const fresh = snapshot?.reviews.find(r => reviewKey(r.identity) === reviewKey(member.identity));
+      if (shuttingDown || stacks!.nativeRefreshing || error || !snapshot?.complete || !fresh || fresh.sha !== member.sha || fresh.sourceRepo !== member.sourceRepo || fresh.branch !== member.branch || fresh.base !== member.base || fresh.state !== "open" || !fresh.canQueue || fresh.queued || blocked() || stacks!.graph.byReview[reviewKey(member.identity)]?.native) return done(error ?? blocked() ?? "MR changed before queueing. Refresh and try again.");
+      adapter!.submit(fresh, done);
+    });
+  }, failure => {
     state.busy = undefined;
-    const failure = processError(outcome);
-    if (failure === undefined) notify(trains ? `Added !${iid} to the merge train` : `!${iid} merges when green`);
+    if (failure === undefined) notify(state.trainsEnabled !== false ? `Requested !${iid} for the merge train; waiting for GitLab.` : `Requested auto-merge for !${iid}; waiting for GitLab.`);
     else state.errors[iid] = failure;
-    if (state.addAll) {
-      if (failure === undefined) state.addAll.done++;
-      else stopAddAll();
-    }
+    if (state.addAll) { if (failure === undefined) state.addAll.done++; else stopAddAll(); }
     refresh();
-  }, { priority: true });
+  });
+  draw();
   return true;
 }
 
 /** Adds the ready MRs one at a time, each after a fresh list, stopping at the first failure. */
 function addAll(): void {
-  if (!state.inbox || state.busy !== undefined || state.addAll) return;
+  if (!state.inbox?.complete || stacks?.busy || state.busy !== undefined || state.addAll) return;
   addQueue = addCandidates(state).map((m) => m.iid);
   if (addQueue.length === 0) return;
   state.addAll = { total: addQueue.length, done: 0 };
@@ -183,6 +187,11 @@ function useSnapshot(next: Snapshot): void {
   const first = worktree === undefined;
   worktree = (snapshot.worktrees.find((w) => w.main) ?? snapshot.worktrees[0])?.id;
   if (!first || !worktree) return;
+  adapter = new MRStackAdapter(queue, worktree, inbox => {
+    state.inbox = inbox; state.fetchedAt = Date.now(); state.error = undefined;
+    ensureDoctor(); doctor?.updateInbox(inbox.project, inbox.mrs.map(m => ({ number: m.iid, title: m.title, url: m.url, branch: m.branch })));
+  }, () => state.trainsEnabled !== false, outcome => gitlab?.observe(outcome));
+  stacks = new InboxStackController(adapter, draw); stacks.activate();
   // Shown already: `setShown` set the minute timer.
   if (!(tabShown || panelShown)) setTimer("refresh", HIDDEN_REFRESH_SECONDS, true);
   refresh();
@@ -190,6 +199,9 @@ function useSnapshot(next: Snapshot): void {
 
 function pageMessage(m: PageMessage): void {
   switch (m.type) {
+    case "stack":
+      if (m.action === "refresh" || m.action === "continue") gitlab?.retry();
+      return stacks?.handle(m);
     case "ready": return draw();
     case "refresh": return refresh(true);
     case "add": add(m.iid); return;
@@ -238,6 +250,8 @@ definePlugin({
         loadView = storageGet("view-v1");
         scopeTouched = false;
         return;
+      case "deactivate": shuttingDown = true; stacks?.dispose(); adapter?.dispose(); return;
+      case "stacksChanged": stacks?.refreshNative(false); return;
       case "stored":
         if (event.id === loadCache && !event.error) { cached = event.value; doctor?.restore(cached); }
         if (event.id === loadView && !event.error && !scopeTouched && object(event.value) && typeof event.value.mineOnly === "boolean") { state.mineOnly = event.value.mineOnly; draw(); }

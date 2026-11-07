@@ -1,3 +1,4 @@
+import { parseStackPageMessage, type InboxStackModel, type StackPageMessage } from "../../../shared/inbox-stack-controller.ts";
 // The messages between the plugin and its page. The page only draws and asks; every action is checked
 // and run by the plugin, which answers with the whole state again.
 
@@ -5,10 +6,10 @@ import type { DoctorModel } from "./doctor-view.ts";
 import type { InboxModel } from "./view.ts";
 
 /** Plugin → page: the inbox, or CI Doctor while it shows a pull request. */
-export type PluginMessage = { type: "state"; inbox: InboxModel; doctor?: DoctorModel };
+export type PluginMessage = { type: "state"; inbox: InboxModel; doctor?: DoctorModel; stacks?: InboxStackModel };
 
 /** Page → plugin. */
-export type PageMessage =
+export type PageMessage = StackPageMessage
   | { type: "ready" }
   | { type: "refresh" }
   | { type: "merge"; number: number }
@@ -33,6 +34,7 @@ const str = (v: unknown, max: number): v is string => typeof v === "string" && v
 export function parsePageMessage(message: unknown): PageMessage | undefined {
   if (typeof message !== "object" || message === null || Array.isArray(message)) return undefined;
   const m = message as Record<string, unknown>;
+  if (m.type === "stack") return parseStackPageMessage(message);
   switch (m.type) {
     case "ready":
     case "refresh":

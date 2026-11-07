@@ -4,7 +4,7 @@ A personal tool for Nacho's merge workflow: a tab listing the repository's open
 pull requests, sorted by what they need, with a button that squash-merges the
 ones that are ready. Anyone who uses the GitHub CLI can install it; it reuses
 your `gh` login and asks for no token. It is shown only in projects with a recognized GitHub remote, never in plain
-folders, and needs an Alas with plugin API 17. It uses plugin API 17: the tab and the
+folders, and needs an Alas with plugin API 18. It uses plugin API 18: the tab and the
 sidebar panel are web pages (`ui.js`) the plugin feeds its state, the sidebar
 icon carries a badge with the ready count, and `gh` runs through `process.exec`.
 On an SSH project it runs `gh` on the host (`remote`, API 11), so `gh` must be
@@ -31,7 +31,7 @@ approval, so every rebuild that changes it asks again.
 ## Use
 
 Choose **PR Inbox** from the project's context menu or the repo selector. The
-tab lists up to 50 open pull requests of the repository's GitHub remote, the
+tab lists up to 500 open pull requests, in pages of 50, of the repository's GitHub remote, the
 most recently updated first within each group:
 
 | Group | When |
@@ -50,7 +50,7 @@ bar beside the checks badge fills with the finished ones in green (red once
 one failed), the running ones in yellow, and the rest gray, captioned
 `done/total`. Every row with the Codex 👍 (or by Renovate) that is
 not a draft and has no conflicts gets a merge button, which runs
-`gh pr merge --squash --delete-branch <number>`: green with a checkmark when
+`gh pr merge --squash <URL> --match-head-commit <head>` (plus `--delete-branch` for standalone requests): green with a checkmark when
 checks passed, plain while they run, and **Merge anyway** in the warning color
 when they failed. A failure shows under the title.
 
@@ -82,6 +82,29 @@ Without `gh`, or without a login, the tab asks you to run `gh auth login` in a
 terminal on the owning host. List and merge run in the project's main worktree;
 CI API calls name the repository explicitly. Session checkout verification runs
 in the selected session's own worktree, on its local or SSH host.
+
+## Stacks
+
+A stack badge opens the shared inspector in the tab or sidebar. It includes the
+whole chain, including ancestors hidden by Mine or the status filter. Request
+counts remain unchanged. **Merge stack…** confirms every remaining member;
+**Merge through this…** confirms only the selected prefix. Native gg stacks use
+native actions and confirmation instead of raw GitHub merges.
+
+Generic execution freezes membership, order, heads and final base. Descendants
+are retargeted only after their predecessors are confirmed merged, then their
+base, unchanged head and readiness are checked again. Stack actions retain
+intermediate branches. Queue acceptance stays waiting; it never counts as a
+merge. **Stop** waits for the pending command to settle; an interrupted saved
+scope requires explicit **Continue**. Individual actions retain their request
+scope and block when an ancestor must land first. **Merge all** excludes known
+or unresolved stack members.
+
+Incomplete pagination, inaccessible ancestors, missing identity, and stale
+metadata block writes with an explanation. Historical branch candidates must
+match both the target repository and its base commit; a reused branch alone is
+insufficient. Ancestor reads are bounded at 50 per refresh. Individual, bulk,
+stack and native gg mutations share the host's project ownership gate.
 
 ## CI Doctor
 
@@ -130,8 +153,9 @@ need explicit Retry/Refresh; rate limits pause detailed GitHub work until reset.
 | Id | Command |
 |---|---|
 | `list` | `gh api graphql -F owner={owner} -F name={repo} -f query=…`, a fixed query for the open pull requests and the recently merged ones; it also reads the viewer's login for **Mine** |
-| `merge` | `gh pr merge --squash --delete-branch`, plus the pull request number |
-| `ci-api` | `gh api`, plus an explicit repository REST endpoint, GET, response headers and bounded JSON projection |
+| `merge` | `gh pr merge --squash`, plus a host-qualified URL, expected head, and standalone-only branch deletion |
+| `stack-retarget` | `gh pr edit`, plus a host-qualified request URL and explicit final base |
+| `ci-api` | `gh api`, plus an explicit repository REST endpoint or bounded dependency GraphQL read |
 | `ci-remotes` | `git remote -v`, in the explicitly selected session worktree |
 | `ci-head` | `git rev-parse --verify HEAD`, in that same worktree |
 

@@ -1,7 +1,11 @@
+import { individualBlocker, reviewKey, type StackGraph } from "../../../shared/inbox-stacks.ts";
+import type { ReviewIdentity } from "@alas/plugin/stacks";
 import { BUCKETS, canMerge, classify, isReady, recentMerged, type Bucket, type Inbox, type Pull } from "./inbox.ts";
 
 export interface ViewState {
   inbox?: Inbox;
+  graph?: StackGraph;
+  stackBusy?: boolean;
   /** When `inbox` was fetched, in ms since the epoch. */
   fetchedAt?: number;
   refreshing: boolean;
@@ -24,6 +28,7 @@ export interface Chip { text: string; tone: Tone }
 export interface MergeAction { look: "go" | "plain" | "risk"; label: string; short: string; disabled: boolean; busy: boolean }
 
 export interface Row {
+  identity?: ReviewIdentity;
   number: number;
   title: string;
   url: string;
@@ -53,6 +58,7 @@ export interface InboxModel {
   counts: Record<Bucket, number>;
   sections: Section[];
   merged: MergedRow[];
+  stackRows: Row[];
   /** Merges every ready pull request, one at a time; offered from two. */
   mergeAll?: { count: number; disabled: boolean; progress?: string };
   /** `available`: the user is known, so the toggle is offered. `hidden`: items the filter hides. */
@@ -81,15 +87,19 @@ export function chips(p: Pull): Chip[] {
 
 /** Green checks make merging the obvious action, running ones a neutral one, red ones a warning. */
 function mergeAction(p: Pull, state: ViewState): MergeAction | undefined {
+  const review = state.inbox?.reviews?.find(r=>r.identity.number===p.number);
   if (!canMerge(p)) return undefined;
+  const native = review && state.graph?.byReview[reviewKey(review.identity)]?.native;
+  const blocked = !!review && !!state.graph && !!individualBlocker(state.graph,review.identity);
   const look = isReady(p) ? "go" : failing(p) ? "risk" : "plain";
-  const label = look === "risk" ? "Merge anyway" : "Squash & merge";
-  return { look, label, short: look === "risk" ? "Anyway" : "Merge", disabled: state.merging !== undefined, busy: state.merging === p.number };
+  const label = native ? "Land this…" : look === "risk" ? "Merge anyway" : "Squash & merge";
+  return { look, label, short: native ? "Land…" : look === "risk" ? "Anyway" : "Merge", disabled: state.merging !== undefined || !!state.stackBusy || !state.inbox?.complete || blocked || !review?.sha || !review?.base || !review?.sourceRepo || review.state !== "open" || !!review.queued || !!native && !native.actions.includes("landThrough"), busy: state.merging === p.number };
 }
 
 function row(p: Pull, state: ViewState): Row {
   const c = p.checks;
   return {
+    identity: state.inbox?.reviews?.find(r=>r.identity.number===p.number)?.identity,
     number: p.number, title: p.title, url: p.url, branch: p.branch, author: p.author, ...(p.avatar ? { avatar: p.avatar } : {}), updatedAt: p.updatedAt, chips: chips(p),
     ...(c && c.done < c.total ? { checks: { ...c, failed: failing(p) } } : {}),
     ...(canMerge(p) ? { merge: mergeAction(p, state) } : {}),
@@ -105,7 +115,11 @@ const isMine = (state: ViewState, author: string): boolean => author.toLowerCase
 
 /** The ready pull requests Merge all covers: only yours while the filter is on. */
 export function mergeCandidates(state: ViewState): Pull[] {
-  const ready = classify(state.inbox?.pulls ?? []).ready;
+  if (!state.inbox?.complete) return [];
+  const ready = classify(state.inbox?.pulls ?? []).ready.filter(p=>{
+    const review=state.inbox?.reviews?.find(r=>r.identity.number===p.number);
+    return !!review && review.state === "open" && !review.queued && !!review.sha && !!review.base && !!review.sourceRepo && !state.graph?.byReview[reviewKey(review.identity)] && !state.graph?.blocked[reviewKey(review.identity)];
+  });
   return filtering(state) ? ready.filter((p) => isMine(state, p.author)) : ready;
 }
 
@@ -129,9 +143,10 @@ export function inboxModel(state: ViewState, now: number): InboxModel {
     loading: !state.inbox && state.error === undefined,
     counts,
     sections: BUCKETS.filter((b) => buckets[b].length > 0).map((b) => ({ key: b, title: TITLES[b], tone: TONES[b], rows: buckets[b].map((p) => row(p, state)) })),
+    stackRows: (state.inbox?.pulls ?? []).map(p=>row(p,state)),
     merged: shownMerged.map(({ number, title, url, branch, author, avatar, mergedAt }) => ({ number, title, url, branch, author, ...(avatar ? { avatar } : {}), mergedAt })),
     scope: { mineOnly, available: !!state.inbox?.viewer, hidden },
-    ...(ready >= 2 || all ? { mergeAll: { count: ready, disabled: state.merging !== undefined, ...(all ? { progress: `Merging ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}) } } : {}),
+    ...(ready >= 2 || all ? { mergeAll: { count: ready, disabled: state.merging !== undefined || !!state.stackBusy || !state.inbox?.complete, ...(all ? { progress: `Merging ${Math.min(all.done + 1, all.total)} of ${all.total}…` } : {}) } } : {}),
   };
 }
 

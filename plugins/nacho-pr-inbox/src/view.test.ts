@@ -1,3 +1,4 @@
+import type { StackReview } from "../../../shared/inbox-stacks.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Merged, Pull } from "./inbox.ts";
@@ -10,7 +11,7 @@ const pull = (number: number, fields: Partial<Pull> = {}): Pull => ({
 });
 const NOW = 1_000_000_000;
 const model = (fields: Partial<ViewState>) => inboxModel({ refreshing: false, mergeErrors: {}, ...fields }, NOW);
-const inbox = (pulls: Pull[], merged: Merged[] = [], viewer = "nacho") => ({ repo: "o/r", viewer, pulls, merged });
+const inbox = (pulls: Pull[], merged: Merged[] = [], viewer = "nacho") => ({ repo: "o/r", host:"github.com", defaultBranch:"main", complete:true, reviews:pulls.map(p=>({identity:{host:"github.com",repo:"o/r",number:p.number},sourceRepo:"o/r",branch:p.branch,base:"main",sha:String(p.number).padStart(40,"0"),title:p.title,url:p.url,author:p.author,state:"open",ready:true} as StackReview)), viewer, pulls, merged });
 const rowOf = (fields: Partial<Pull>) => model({ inbox: inbox([pull(1, fields)]) }).sections[0].rows[0];
 
 test("buckets come in order with their counts, skipping empty ones", () => {
@@ -157,4 +158,11 @@ test("an unknown viewer means no toggle and no filtering", () => {
   assert.equal(m.counts.ready, 3);
   assert.equal(m.merged.length, 2);
   assert.equal(model({}).scope.available, false);
+});
+
+test('incomplete identity cannot advertise standalone bulk merge eligibility', () => {
+  const malformed = {repo:'o/r',viewer:'nacho',pulls:[pull(1),pull(2)],merged:[]};
+  const m=model({inbox:malformed});
+  assert.equal(m.mergeAll,undefined);
+  assert.equal(m.stackRows[0].merge?.disabled,true);
 });

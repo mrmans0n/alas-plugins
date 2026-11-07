@@ -15,6 +15,6 @@
     "noUncheckedIndexedAccess": false,
     "skipLibCheck": true
   },
-  "include": ["sdk/*/src/**/*.ts", "plugins/*/src/**/*.ts"],
-  "exclude": ["**/*.test.ts", "sdk/alas/src/test.ts"]
+  "include": ["sdk/*/src/**/*.ts", "plugins/*/src/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["**/*.test.ts", "sdk/alas/src/test.ts", "shared/stack-page.ts"]
 }

@@ -4,9 +4,9 @@ import { excerpt, parseIdentity, parseJobs, parseRun, parseRuns, type Excerpt, t
 
 type Done = (o: Outcome<ProcessResult>) => void;
 type Driver = (id: string, worktree: string, args: string[], done: Done) => void;
-interface Listener { done: Done; alive: () => boolean }
+interface Listener { done: Done; alive: () => boolean; started?: () => void }
 interface Task { key: string; id: string; worktree: string; args: string[]; listeners: Listener[]; priority: boolean; ready: () => boolean }
-export interface RequestOptions { alive?: () => boolean; priority?: boolean; ready?: () => boolean }
+export interface RequestOptions { alive?: () => boolean; priority?: boolean; ready?: () => boolean; started?: () => void }
 
 /** The two-process limit belongs to the plugin instance, including its original list/merge. */
 export class ProcessQueue {
@@ -19,7 +19,7 @@ export class ProcessQueue {
   constructor(driver: Driver) { this.driver = driver; }
   run(id: string, worktree: string, args: string[], done: Done, options: RequestOptions = {}): void {
     const key = JSON.stringify([id, worktree, args]);
-    const listener = { done, alive: options.alive ?? (() => true) };
+    const listener = { done, alive: options.alive ?? (() => true), started: options.started };
     const existing = this.shared.get(key);
     if (existing) { existing.listeners.push(listener); existing.priority ||= !!options.priority; return; }
     const task: Task = { key, id, worktree, args, listeners: [listener], priority: !!options.priority, ready: options.ready ?? (() => true) };
@@ -45,6 +45,7 @@ export class ProcessQueue {
         if (index < 0) break;
         const task = this.waiting.splice(index, 1)[0];
         this.active++;
+        for (const listener of task.listeners) listener.started?.();
         this.driver(task.id, task.worktree, task.args, outcome => {
           this.active--;
           this.shared.delete(task.key);

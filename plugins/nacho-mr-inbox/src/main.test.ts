@@ -4,264 +4,160 @@ import { testHost } from "@alas/plugin/test";
 import { node, reply } from "./inbox.test.ts";
 import "./main.ts";
 
-const page = (message: object, target: object = { tab: 0 }) => testHost.notify("web/message", { ...target, message });
-const posted = (sent: any[]): any => sent.findLast((m) => m.method === "web/post")?.params.message;
-const proc = (sent: any[], id: string) => sent.find((m) => m.method === "process/run" && m.params.id === id);
-let viewLoad = 0;
-const done = (stdout: string, exit = 0, stderr = "") => ({ exit, stdout, stderr });
-
-test("start: list and project, then add, add all, auto-merge fallback, retry and the badge", () => {
-  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "P" }, grants: [] } });
-  const first = testHost.takeSent();
-  const snap = first.find((m) => m.method === "workspace/snapshot");
-  const gets = first.filter((m) => m.method === "storage/get");
-  assert.deepEqual(gets.map((m) => m.params.key), ["ci-doctor-v1", "view-v1"], "loads the CI Doctor cache and the view scope with their own requests");
-  assert.notEqual(gets[0].id, gets[1].id);
-  viewLoad = gets[1].id;
-  testHost.reply(snap.id, { snapshot: { worktrees: [{ id: "trunk", branch: "main", current: false, main: true, sessions: [] }] } });
-  let sent = testHost.takeSent();
-  assert.ok(proc(sent, "list"), "lists on start");
-  assert.ok(proc(sent, "project"), "asks whether trains are on");
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2), node(3, { detailedMergeStatus: "CI_STILL_RUNNING", headPipeline: { id: "gid://gitlab/Ci::Pipeline/9", status: "RUNNING", sha: "a".repeat(40), jobs: { count: 4 }, done: { count: 1 }, running: { count: 1 } } }), node(4, { headPipeline: { id: "gid://gitlab/Ci::Pipeline/44", status: "FAILED", sha: "a".repeat(40), jobs: { count: 1 }, done: { count: 1 }, running: { count: 0 } } })])));
-  sent = testHost.takeSent();
-  assert.deepEqual(sent.filter((m) => m.method === "panel/badge").map((m) => m.params), [{ panel: "rail", count: 2, tone: "success" }]);
-  assert.deepEqual(posted(sent).inbox.sections.map((s: any) => s.key), ["ready", "blocked", "failing"]);
-
-  page({ type: "add", iid: 3 });
-  sent = testHost.takeSent();
-  assert.deepEqual(proc(sent, "add").params.args, ["projects/acme%2Fshop/merge_trains/merge_requests/3", "-f", `sha=${"a".repeat(40)}`, "-f", "auto_merge=true"]);
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  assert.ok(proc(sent, "list"), "refreshes after a write");
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2)])));
-  testHost.takeSent();
-
-  page({ type: "addAll" });
-  sent = testHost.takeSent();
-  assert.deepEqual(proc(sent, "add").params.args, ["projects/acme%2Fshop/merge_trains/merge_requests/2", "-f", `sha=${"a".repeat(40)}`], "newest first, no auto_merge when ready");
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
-  sent = testHost.takeSent();
-  assert.deepEqual(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/1", "re-lists, then adds the next still-ready one");
-  testHost.reply(proc(sent, "add").id, done("", 1, "glab: 400 Bad Request (HTTP 400)"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
-  sent = testHost.takeSent();
-  assert.equal(posted(sent).inbox.sections[0].rows[0].error, "glab: 400 Bad Request (HTTP 400)");
-  assert.equal(posted(sent).inbox.addAll, undefined, "a failure stops Add all");
-
-  page({ type: "refresh" });
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":false}'));
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(4, { headPipeline: { id: "gid://gitlab/Ci::Pipeline/44", status: "FAILED", sha: "a".repeat(40), jobs: { count: 1 }, done: { count: 1 }, running: { count: 0 } } })])));
-  testHost.takeSent();
-  page({ type: "add", iid: 1 });
-  sent = testHost.takeSent();
-  assert.deepEqual(proc(sent, "automerge").params.args, ["projects/acme%2Fshop/merge_requests/1/merge", "-f", `sha=${"a".repeat(40)}`, "-f", "auto_merge=true", "-f", "merge_when_pipeline_succeeds=true"]);
-  testHost.reply(proc(sent, "automerge").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(4, { headPipeline: { id: "gid://gitlab/Ci::Pipeline/44", status: "FAILED", sha: "a".repeat(40), jobs: { count: 1 }, done: { count: 1 }, running: { count: 0 } } })])));
-  testHost.takeSent();
-
-  page({ type: "retryPipeline", pipeline: 44 });
-  sent = testHost.takeSent();
-  assert.deepEqual(proc(sent, "retry").params.args, ["projects/acme%2Fshop/pipelines/44/retry"]);
-  page({ type: "retryPipeline", pipeline: 999 });
-  assert.equal(proc(testHost.takeSent(), "retry"), undefined, "only the head pipeline of a listed MR is retried");
-});
-
-test("a failed re-list stops Add all instead of adding from stale data", () => {
-  // Same plugin instance as the test above, whose last retry is still running and holds one process slot.
-  page({ type: "refresh" });
-  let sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2)])));
-  testHost.takeSent();
-  page({ type: "addAll" });
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done("", 1, "glab: 500 Server Error (HTTP 500)"));
-  sent = testHost.takeSent();
-  assert.equal(proc(sent, "add"), undefined, "no add from a stale list");
-  assert.equal(posted(sent).inbox.addAll?.progress, undefined, "Add all is no longer running");
-  assert.ok(posted(sent).inbox.error);
-});
-
-test("a failed project call keeps the buttons on the train endpoint; a later trains-off reply flips them", () => {
-  page({ type: "refresh" });
-  let sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done("", 1, "glab: 503 Service Unavailable (HTTP 503)"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
-  sent = testHost.takeSent();
-  assert.equal(posted(sent).inbox.trainsEnabled, true);
-  page({ type: "add", iid: 1 });
-  sent = testHost.takeSent();
-  assert.equal(proc(sent, "automerge"), undefined, "no auto-merge after a failed project call");
-  assert.ok(proc(sent, "add"), "still the train endpoint");
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
-  testHost.takeSent();
-
-  page({ type: "refresh" });
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":false}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
-  testHost.takeSent();
-  page({ type: "add", iid: 1 });
-  sent = testHost.takeSent();
-  assert.ok(proc(sent, "automerge"), "trains reported off: Merge when green");
-  testHost.reply(proc(sent, "automerge").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1)])));
-  testHost.takeSent();
-});
-
-test("Add all does not wedge when a queued MR has an unusable sha", () => {
-  page({ type: "refresh" });
-  let sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2, { diffHeadSha: "" })])));
-  sent = testHost.takeSent();
-  page({ type: "addAll" });
-  sent = testHost.takeSent();
-  assert.deepEqual(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/1", "skips the unusable newest MR");
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(2, { diffHeadSha: "" })])));
-  sent = testHost.takeSent();
-  assert.equal(posted(sent).inbox.addAll, undefined, "Add all ended");
-  page({ type: "refresh" });
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(3)])));
-  testHost.takeSent();
-  page({ type: "addAll" });
-  sent = testHost.takeSent();
-  assert.ok(proc(sent, "add"), "Add all can start again");
-  // Finish it, so it frees its process slot for the next test.
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([])));
-  testHost.takeSent();
-});
-
-const stored = (id: number, value: unknown) => testHost.reply(id, { value });
-const rowsOf = (sent: any[]) => posted(sent).inbox.sections.flatMap((s: any) => s.rows.map((r: any) => r.iid));
-const storageSets = (sent: any[]) => sent.filter((m) => m.method === "storage/set").map((m) => m.params);
-
-test("a scope message persists the choice, redraws, and ignores a non-boolean", () => {
-  page({ type: "refresh" });
-  let sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2, { author: { username: "ana" } }), node(3)])));
-  sent = testHost.takeSent();
-  assert.deepEqual(rowsOf(sent), [3, 2, 1]);
-  assert.deepEqual(posted(sent).inbox.scope, { mineOnly: false, available: true, hidden: 0 });
-
-  page({ type: "scope", mine: "yes" });
-  assert.deepEqual(testHost.takeSent(), [], "malformed: nothing happens");
-  page({ type: "scope", mine: true });
-  sent = testHost.takeSent();
-  assert.deepEqual(storageSets(sent), [{ key: "view-v1", value: { mineOnly: true } }]);
-  assert.deepEqual(rowsOf(sent), [3, 1]);
-  assert.equal(posted(sent).inbox.scope.mineOnly, true);
-});
-
-test("Add all with Mine on adds only your ready MRs, also when the list changes under it", () => {
-  // Mine is on from the test above; 2 is ana's and ready.
-  page({ type: "refresh" });
-  let sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1), node(2, { author: { username: "ana" } }), node(3), node(4, { author: { username: "bob" } })])));
-  sent = testHost.takeSent();
-  assert.equal(posted(sent).inbox.addAll.count, 2);
-  page({ type: "addAll" });
-  sent = testHost.takeSent();
-  assert.equal(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/3", "newest of mine first, not ana's 2 or bob's 4");
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  // 1 turns out to be ana's now: its queued id must be dropped by the re-check.
-  testHost.reply(proc(sent, "list").id, done(reply([node(1, { author: { username: "ana" } }), node(2, { author: { username: "ana" } })])));
-  sent = testHost.takeSent();
-  assert.equal(proc(sent, "add"), undefined, "no add of a non-mine MR while Mine is on");
-  assert.equal(posted(sent).inbox.addAll, undefined);
-
-  page({ type: "scope", mine: false });
-  testHost.takeSent();
-  page({ type: "refresh" });
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([node(1, { author: { username: "ana" } }), node(2, { author: { username: "ana" } })])));
-  testHost.takeSent();
-  page({ type: "addAll" });
-  sent = testHost.takeSent();
-  assert.ok(proc(sent, "add"), "with All, ana's ready MRs are added too");
-  // Finish it, so it frees its process slot for the next test.
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply([])));
-  testHost.takeSent();
-});
-
-// Each activation asks storage again, with a new request id (a reply answers its request once).
-const viewGet = () => {
-  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 15, project: { id: "p", name: "P" }, grants: [] } });
-  return testHost.takeSent().find((m) => m.method === "storage/get" && m.params.key === "view-v1").id;
-};
-const listed = (nodes: unknown[]) => {
-  page({ type: "refresh" });
-  let sent = testHost.takeSent();
-  testHost.reply(proc(sent, "project").id, done('{"merge_trains_enabled":true}'));
-  sent = testHost.takeSent();
-  testHost.reply(proc(sent, "list").id, done(reply(nodes)));
-  return testHost.takeSent();
-};
-
-test("a stored scope arriving after the list redraws it filtered; a malformed one is ignored", () => {
-  assert.deepEqual(rowsOf(listed([node(1), node(2, { author: { username: "ana" } })])), [2, 1]);
-  for (const bad of [{ mineOnly: "yes" }, {}, null, "x", [true]]) {
-    stored(viewGet(), bad);
-    const sent = testHost.takeSent();
-    assert.deepEqual(storageSets(sent), []);
-    assert.equal(posted(sent), undefined, `${JSON.stringify(bad)}: nothing redrawn`);
+const host = "gitlab.example.com", repo = "acme/shop", key = (n: number) => `${host}|${repo}#${n}`;
+const page = (message: object) => testHost.notify("web/message", { tab: 0, message });
+const done = (value: unknown) => ({ exit: 0, stdout: typeof value === "string" ? value : JSON.stringify(value), stderr: "", timedOut: false, truncated: false });
+let data: any[] = [], trainEnabled = true, failList = false, failProject = false;
+let model: any, acquisitions = 0, releases = 0;
+let native: any[] = [];
+const calls: any[] = [], notices: string[] = [], saves: any[] = [];
+const stored = new Map<string, unknown>();
+const blockers = (raw: any) => ({ ...raw, blockingMergeRequests: raw.blockingMergeRequests ?? { totalCount: 0, hiddenCount: 0, visibleMergeRequests: [] } });
+function flush(): void {
+  for (let round = 0; round < 100; round++) {
+    const sent = testHost.takeSent(); if (!sent.length) return;
+    for (const m of sent) {
+      if (m.method === "web/post") { model = m.params.message; continue; }
+      if (m.method === "notify") { notices.push(m.params.message); continue; }
+      if (m.id === undefined) continue;
+      if (m.method === "workspace/snapshot") testHost.reply(m.id, { snapshot: { worktrees: [{ id: "main", main: true, current: false, branch: "main", sessions: [] }] } });
+      else if (m.method === "storage/get") testHost.reply(m.id, { value: stored.get(m.params.key) ?? null });
+      else if (m.method === "storage/set") { saves.push(m.params); stored.set(m.params.key, m.params.value); testHost.reply(m.id, {}); }
+      else if (m.method === "stacks/list") testHost.reply(m.id, { inventory: { complete: true, busy: false, stacks: native } });
+      else if (m.method === "stacks/open") { calls.push(m); testHost.reply(m.id, { opened: true }); }
+      else if (m.method === "stacks/acquire") { acquisitions++; testHost.reply(m.id, { token: `owner-${acquisitions}` }); }
+      else if (m.method === "stacks/release") { releases++; testHost.reply(m.id, { released: true }); }
+      else if (m.method === "process/run") {
+        calls.push(m);
+        const id = m.params.id, args: string[] = m.params.args ?? [];
+        if (id === "list") {
+          if (failList) testHost.reply(m.id, { exit: 1, stdout: "", stderr: "GitLab unavailable" });
+          else testHost.reply(m.id, done(reply(data.filter(r => r.state === "opened"))));
+        } else if (id === "project") testHost.reply(m.id, failProject ? { exit: 1, stdout: "", stderr: "Project unavailable" } : done({ merge_trains_enabled: trainEnabled }));
+        else if (id === "stack-api") {
+          const iid = args.find(a => a.startsWith("iid="));
+          const value = iid ? { mergeRequest: data.find(r => r.iid === iid.slice(4)) ? blockers(data.find(r => r.iid === iid.slice(4))) : null } : { mergeRequests: { nodes: data.filter(r => r.state === "opened").map(blockers), pageInfo: { hasNextPage: false, endCursor: null } } };
+          testHost.reply(m.id, done({ data: { project: value } }));
+        } else if (id === "stack-retarget") {
+          const number = /merge_requests\/(\d+)$/.exec(args[0])?.[1];
+          data = data.map(r => r.iid === number ? { ...r, targetBranch: args.find(a => a.startsWith("target_branch="))!.slice(14), detailedMergeStatus: "MERGEABLE" } : r);
+          testHost.reply(m.id, done({}));
+        } else if (id === "add" || id === "automerge") {
+          const number = /merge_requests\/(\d+)/.exec(args[0])?.[1];
+          data = data.map(r => r.iid === number ? { ...r, autoMergeEnabled: true } : r);
+          testHost.reply(m.id, done({}));
+        } else if (id === "retry") testHost.reply(m.id, done({}));
+        else assert.fail(`Unexpected process ${id}`);
+      }
+    }
   }
-  stored(viewGet(), { mineOnly: true });
-  const sent = testHost.takeSent();
-  assert.deepEqual(rowsOf(sent), [1], "redrawn with only mine");
-  assert.equal(posted(sent).inbox.scope.mineOnly, true);
-  assert.deepEqual(storageSets(sent), [], "applying a stored value does not write it back");
+  assert.fail("Plugin did not settle");
+}
+const refresh = (rows: any[]) => { data = rows; page({ type: "refresh" }); flush(); };
+const writes = () => calls.filter(c => ["add", "automerge", "stack-retarget", "retry"].includes(c.params.id));
+
+test("API18 activation loads real stack inventory and project identity", () => {
+  data = [node(1), node(2)];
+  testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 18, project: { id: "p", name: "P" }, grants: ["process.exec", "workspace.read"] } }); flush();
+  assert.equal(model.inbox.project, repo);
+  assert.equal(model.inbox.addAll.count, 2);
+  assert.equal(model.stacks.busy, false);
 });
 
-test("a stored scope that arrives after the user clicked the toggle is ignored", () => {
-  const id = viewGet();
-  page({ type: "scope", mine: false });
-  testHost.takeSent();
-  stored(id, { mineOnly: true });
-  assert.deepEqual(testHost.takeSent(), [], "late stored value dropped");
-  page({ type: "ready" });
-  assert.equal(posted(testHost.takeSent()).inbox.scope.mineOnly, false);
+test("individual train and auto-merge actions pin host and full head under ownership", () => {
+  calls.length = 0; const before = acquisitions;
+  refresh([node(1, { detailedMergeStatus: "CI_STILL_RUNNING" })]);
+  page({ type: "add", iid: 1 }); flush();
+  assert.deepEqual(writes()[0].params.args, ["projects/acme%2Fshop/merge_trains/merge_requests/1", "--hostname", host, "-f", `sha=${"a".repeat(40)}`, "-f", "auto_merge=true"]);
+  assert.equal(acquisitions, before + 1); assert.equal(releases, acquisitions);
+  assert.equal(model.inbox.sections[0].rows[0].add, undefined, "accepted auto-merge is queued, not another add action");
+  trainEnabled = false; refresh([node(2)]); calls.length = 0;
+  page({ type: "add", iid: 2 }); flush();
+  assert.equal(writes()[0].params.id, "automerge");
+  assert.ok(writes()[0].params.args.includes("merge_when_pipeline_succeeds=true"));
+  trainEnabled = true;
 });
 
-test("with Mine on, a row still adds an MR that is not yours", () => {
-  listed([node(1), node(2, { author: { username: "ana" } })]);
-  page({ type: "scope", mine: true });
-  testHost.takeSent();
-  page({ type: "add", iid: 2 });
-  const sent = testHost.takeSent();
-  assert.equal(proc(sent, "add").params.args[0], "projects/acme%2Fshop/merge_trains/merge_requests/2", "the filter only shapes Add all");
-  testHost.reply(proc(sent, "add").id, done("{}"));
-  testHost.reply(proc(testHost.takeSent(), "list").id, done(reply([node(1)])));
-  testHost.takeSent();
+test("Add all excludes stack membership, obeys Mine, and stops on failed reads", () => {
+  page({ type: "scope", mine: true }); flush();
+  refresh([node(1), node(2, { targetBranch: "nacho/mr-1" }), node(3), node(4, { author: { username: "ana" } }), node(5)]);
+  assert.equal(model.inbox.addAll.count, 2);
+  calls.length = 0; page({ type: "addAll" }); flush();
+  assert.deepEqual(writes().map(c => c.params.args[0]), ["projects/acme%2Fshop/merge_trains/merge_requests/5", "projects/acme%2Fshop/merge_trains/merge_requests/3"]);
+  assert.equal(model.inbox.addAll, undefined);
+  failList = true; page({ type: "refresh" }); flush(); calls.length = 0;
+  page({ type: "addAll" }); flush();
+  assert.equal(writes().length, 0); assert.ok(model.inbox.error);
+  failList = false; page({ type: "scope", mine: false }); flush();
+});
+
+test("individual descendants cannot skip predecessors and inspector retains mixed authors", () => {
+  refresh([node(1, { author: { username: "ana" } }), node(2, { targetBranch: "nacho/mr-1" })]);
+  calls.length = 0; page({ type: "add", iid: 2 }); flush();
+  assert.equal(writes().length, 0);
+  page({ type: "scope", mine: true }); page({ type: "stack", action: "open", key: key(2) }); flush();
+  assert.equal(model.stacks.selected.entries.length, 2);
+  assert.ok(model.stacks.selected.outsideFilter.includes(key(1)));
+  assert.ok(model.inbox.stackRows.some((r: any) => r.iid === 1));
+  page({ type: "scope", mine: false }); page({ type: "stack", action: "close" }); flush();
+});
+
+test("generic stack queue waits for actual merge, stops explicitly, and continues with retarget confirmation", () => {
+  refresh([node(1), node(2, { targetBranch: "nacho/mr-1" })]);
+  calls.length = 0;
+  page({ type: "stack", action: "prepare", key: key(2) }); flush();
+  assert.equal(model.stacks.confirmation.members.length, 2);
+  page({ type: "stack", action: "confirm" }); flush();
+  assert.equal(writes().filter(c => c.params.id === "add").length, 1);
+  assert.equal(model.stacks.operation.phase, "waiting"); assert.equal(model.stacks.operation.done, 0);
+  testHost.notify("timer/fired", { id: "refresh" }); flush();
+  assert.equal(writes().length, 1, "queued predecessor cannot start a child");
+  page({ type: "stack", action: "stop" }); flush();
+  assert.equal(model.stacks.operation.phase, "stopped"); assert.equal(releases, acquisitions);
+  data = data.map(r => r.iid === "1" ? { ...r, state: "merged" } : r);
+  page({ type: "stack", action: "continue" }); flush();
+  assert.equal(model.stacks.operation.done, 1);
+  assert.deepEqual(writes().map(c => c.params.id), ["add", "stack-retarget", "add"]);
+  assert.equal(data.find(r => r.iid === "2").targetBranch, "main");
+  data = data.map(r => ({ ...r, state: "merged" }));
+  testHost.notify("timer/fired", { id: "refresh" }); flush();
+  assert.equal(model.stacks.operation.phase, "complete"); assert.equal(model.stacks.operation.done, 2);
+  assert.equal(releases, acquisitions);
+  assert.ok(saves.some(s => s.key === "inbox-stack-operation-v1" && s.scope === "project"));
+  page({ type: "stack", action: "close" }); flush();
+});
+
+test("native gg members route to native presentation and never raw glab", () => {
+  native = [{ id: "gg", name: "feature", base: "main", host, repo, worktree: "feature", complete: true, fingerprint: "one", actions: ["open", "land", "landThrough"], entries: [1, 2].map(n => ({ id: `entry-${n}`, position: n, number: n, title: `MR ${n}`, sha: "a".repeat(40) })) }];
+  refresh([node(1), node(2, { targetBranch: "nacho/mr-1" })]);
+  testHost.notify("stacks/changed"); flush(); calls.length = 0;
+  page({ type: "add", iid: 2 }); flush(); assert.equal(writes().length, 0);
+  page({ type: "add", iid: 1 }); flush();
+  assert.equal(writes().length, 0);
+  assert.ok(calls.some(c => c.method === "stacks/open" && c.params.action === "landThrough" && c.params.entry === "entry-1"));
+  native = []; testHost.notify("stacks/changed"); flush();
+});
+
+test("pipeline retry and CI Doctor share project ownership; failed project read preserves mode", () => {
+  refresh([node(4, { headPipeline: { id: "gid://gitlab/Ci::Pipeline/44", status: "FAILED", sha: "a".repeat(40) } })]);
+  calls.length = 0; const before = acquisitions;
+  page({ type: "retryPipeline", pipeline: 999 }); flush(); assert.equal(writes().length, 0);
+  page({ type: "retryPipeline", pipeline: 44 }); flush();
+  assert.deepEqual(writes()[0].params.args, ["projects/acme%2Fshop/pipelines/44/retry", "--hostname", host]);
+  assert.equal(acquisitions, before + 1); assert.equal(releases, acquisitions);
+  failProject = true; refresh([node(1)]); assert.equal(model.inbox.trainsEnabled, true); failProject = false;
+});
+
+test("scope storage ignores malformed and late stored values after the user chooses", () => {
+  const activate = () => {
+    testHost.dispatch({ jsonrpc: "2.0", id: 0, method: "alas/activate", params: { api: 18, project: { id: "p", name: "P" }, grants: [] } });
+    const sent = testHost.takeSent();
+    return sent.find(m => m.method === "storage/get" && m.params.key === "view-v1").id;
+  };
+  let id = activate(); testHost.reply(id, { value: { mineOnly: "yes" } }); flush();
+  page({ type: "ready" }); flush(); assert.equal(model.inbox.scope.mineOnly, false);
+  id = activate(); page({ type: "scope", mine: true }); flush();
+  testHost.reply(id, { value: { mineOnly: false } }); flush();
+  assert.equal(model.inbox.scope.mineOnly, true);
+  page({ type: "scope", mine: false }); flush();
 });

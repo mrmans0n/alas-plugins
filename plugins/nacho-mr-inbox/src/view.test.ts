@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Inbox, MergeRequest, Train } from "./inbox.ts";
 import { chips, inboxModel, readyMine, type ViewState } from "./view.ts";
+import { buildStacks, type StackReview } from "../../../shared/inbox-stacks.ts";
 
 const WEB = "https://gitlab.example.com/acme/shop";
 const mr = (iid: number, fields: Partial<MergeRequest> = {}): MergeRequest => ({
@@ -20,6 +21,18 @@ test("sections come in order, skip empty ones, and count", () => {
     ["ready", "Ready", "success", [3]], ["blocked", "Blocked", "warn", [2]], ["failing", "Failing", "danger", [4]], ["drafts", "Drafts", "dim", [1]],
   ]);
   assert.deepEqual(m.counts, { ready: 1, blocked: 1, failing: 1, drafts: 1 });
+});
+
+test("known stack members leave Add all while individual roots retain their scope", () => {
+  const mrs = [mr(1), mr(2, { target: "b1", author: "ana" }), mr(3), mr(4)];
+  const reviews: StackReview[] = mrs.map(m => ({ identity: { host: "gitlab.example.com", repo: "acme/shop", number: m.iid }, sourceRepo: "acme/shop", branch: m.branch, base: m.target, sha: m.sha, title: m.title, url: m.url, author: m.author, state: "open", ready: true, canQueue: true, blockersComplete: true }));
+  const data = { ...inbox(mrs), complete: true, reviews };
+  const m = model({ inbox: data, graph: buildStacks(reviews, { complete: true }) });
+  assert.equal(m.addAll?.count, 2);
+  assert.equal(m.stackRows.find(r => r.iid === 1)?.add?.disabled, false);
+  assert.equal(m.stackRows.find(r => r.iid === 2)?.add?.disabled, true);
+  const mine = model({ inbox: data, mineOnly: true, graph: buildStacks(reviews, { complete: true }) });
+  assert.ok(mine.stackRows.some(r => r.iid === 2), "inspector retains other authors");
 });
 
 test("chips say why an MR is blocked", () => {
