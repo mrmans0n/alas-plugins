@@ -1,3 +1,4 @@
+import { stackBadge, stackPanel } from "../../../shared/stack-page.ts";
 // The PR Inbox page, in the tab and the rail: draws the state the plugin posts and sends back what the
 // user did. It keeps only view state (the group filter, an unsent question); the plugin runs every action
 // and answers with the whole state again. GitHub data only ever goes in as text, never as HTML.
@@ -200,6 +201,7 @@ const chip = (c: Chip) => el("span", `chip ${tone(c.tone)}`, c.text);
 function row(r: Row, sectionTone: Tone): HTMLElement {
   const now = Date.now();
   const actions = el("div", "actions",
+    r.identity && stackBadge(state?.stacks, r.identity, post),
     button([pulseIcon(), !compact() && "CI Doctor"], () => post({ type: "doctor", number: r.number }), sectionTone === "danger" ? "doctor-hot" : "ghost", false, "CI Doctor"),
     link("↗", r.url, "btn ghost", "Open on GitHub"),
   );
@@ -268,6 +270,14 @@ function inbox(m: InboxModel): HTMLElement[] {
   }
   if (m.repo === undefined) return out;
   const body = el("div", "body");
+  const stacks = state?.stacks;
+  const filteredKeys = filter === undefined ? [] : m.stackRows.filter(r => !m.sections.some(s => s.key === filter && s.rows.some(shown => shown.number === r.number))).flatMap(r => r.identity ? [`${r.identity.host.toLowerCase()}|${r.identity.repo.toLowerCase()}#${r.number}`] : []);
+  const inspectorModel = stacks?.selected ? { ...stacks, selected: { ...stacks.selected, outsideFilter: [...new Set([...stacks.selected.outsideFilter, ...filteredKeys])] } } : stacks;
+  const inspector = stackPanel(inspectorModel, post, review => {
+    const r = m.stackRows.find(r=>r.identity?.host===review.identity.host && r.identity?.repo===review.identity.repo && r.number===review.identity.number);
+    return r ? row(r, "accent") : undefined;
+  });
+  if (inspector) out.push(inspector);
   const sections = m.sections.filter((s) => filter === undefined || filter === s.key);
   const none = m.scope.mineOnly && m.scope.hidden > 0 ? "Nothing of yours is open." : "Inbox is clear.";
   if (m.sections.length === 0 && m.merged.length === 0) body.append(centered(el("div", "clear-icon", "✓"), el("span", "dim", none)));

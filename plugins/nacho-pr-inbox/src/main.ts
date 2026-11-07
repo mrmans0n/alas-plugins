@@ -1,5 +1,8 @@
 import { definePlugin, notify, processRun, request, requestSnapshot, sessionSend, setPanelBadge, setTimer, storageGet, storageSet, webPost, type Event, type Snapshot } from "@alas/plugin";
-import { canMerge, isReady, parseInbox, processError } from "./inbox.ts";
+import { canMerge, isReady } from "./inbox.ts";
+import { InboxStackController } from "../../../shared/inbox-stack-controller.ts";
+import { reviewKey, individualBlocker } from "../../../shared/inbox-stacks.ts";
+import { PRStackAdapter } from "./stack-adapter.ts";
 import { inboxModel, mergeCandidates, readyCount, type ViewState } from "./view.ts";
 import { DoctorController } from "./doctor-controller.ts";
 import { GitHub, ProcessQueue } from "./doctor-transport.ts";
@@ -15,12 +18,16 @@ const HIDDEN_REFRESH_SECONDS = 300;
 let worktree: string | undefined;
 const state: ViewState = { refreshing: false, mergeErrors: {} };
 let listing = false;
+let shuttingDown = false;
 /** A refresh asked for while one was running, so its data may predate a merge. */
 let again = false;
 let tabShown = false;
 let panelShown = false;
 let doctor: DoctorController | undefined;
 let github: GitHub | undefined;
+let stacks: InboxStackController | undefined;
+let adapter: PRStackAdapter | undefined;
+let verifying: number | undefined;
 let cached: unknown;
 let loadCache: number | undefined;
 let loadView: number | undefined;
@@ -35,7 +42,9 @@ const queue = new ProcessQueue((id, wt, args, done) => processRun(id, wt, { args
 
 /** Sends the state to the tab's and the rail's pages; one that is not shown drops it. */
 const draw = () => {
-  const message: PluginMessage = { type: "state", inbox: inboxModel(state, Date.now()), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
+  state.graph = stacks?.graph;
+  state.stackBusy = stacks?.busy;
+  const message: PluginMessage = { type: "state", inbox: inboxModel(state, Date.now()), stacks: stacks?.model(state.inbox?.viewer, state.mineOnly), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
   webPost(TAB, message);
   webPost(PANEL, message);
   const ready = readyCount(state);
@@ -45,58 +54,64 @@ const draw = () => {
 
 function refresh(manual = false): void {
   if (manual) github?.retry();
-  if (!worktree) return;
+  if (!worktree || shuttingDown) return;
   if (listing) {
     again = true;
     return;
   }
+  // Only the batch requested after command settlement owns its verification.
+  const verification = verifying;
   listing = true;
   state.refreshing = true;
   draw();
-  queue.run("list", worktree, [], (outcome) => {
-    github?.observe(outcome);
+  adapter?.refresh([...stacks?.requiredIdentities ?? [], ...(verification && state.inbox?.host ? [{host:state.inbox.host,repo:state.inbox.repo,number:verification}] : [])], (snapshot, failure) => {
     listing = false;
     state.refreshing = false;
-    const failure = processError(outcome);
-    const inbox = failure === undefined ? parseInbox(outcome.result!.stdout) : undefined;
-    if (inbox) {
-      state.inbox = inbox;
-      state.fetchedAt = Date.now();
-      state.error = undefined;
-      doctor?.updateInbox(inbox.repo, inbox.pulls);
-    } else {
-      state.error = failure ?? (outcome.result?.truncated ? "The pull request list did not fit in gh's output limit." : "gh returned an unexpected reply.");
+    if (snapshot) stacks?.updateProvider(snapshot);
+    state.error = failure ?? snapshot?.error;
+    if (verification !== undefined && verifying === verification) {
+      const merged = snapshot?.reviews.find(r=>r.identity.number===verification)?.state === "merged";
+      if (merged && state.mergeAll) state.mergeAll.done++;
+      else if (state.mergeAll) stopMergeAll();
+      if (merged) notify(`Merged #${verification}`);
+      verifying = undefined;
     }
-    if (again) {
-      again = false;
-      refresh();
-    } else if (!continueMergeAll()) draw();
-  }, { priority: true });
+    if (again) { again = false; refresh(); }
+    else if (!continueMergeAll()) draw();
+  });
 }
 
 function merge(number: number): void {
-  const pull = state.inbox?.pulls.find((p) => p.number === number);
-  if (!worktree || state.merging !== undefined || !pull || !canMerge(pull)) return;
-  state.merging = number;
+  const pull = state.inbox?.pulls.find(p => p.number === number);
+  const member = state.inbox?.reviews?.find(r=>r.identity.number===number);
+  if (!worktree || !stacks || !adapter || state.merging !== undefined || verifying !== undefined || !pull || !canMerge(pull) || !member || !state.inbox?.complete) return;
+  const blocked = () => individualBlocker(stacks!.graph,member.identity);
+  if (blocked()) { state.mergeErrors[number] = blocked()!; draw(); return; }
   delete state.mergeErrors[number];
-  draw();
-  queue.run("merge", worktree, [String(number)], (outcome) => {
-    github?.observe(outcome);
+  if (stacks.graph.byReview[reviewKey(member.identity)]?.native) {
+    stacks.handle({type:"stack",action:"native",key:reviewKey(member.identity),nativeAction:"landThrough"});
+    return;
+  }
+  state.merging = number;
+  stacks.runMutation(done => {
+    adapter!.refresh(stacks!.requiredIdentities, (snapshot,error) => {
+      if (snapshot) stacks!.updateProvider(snapshot);
+      const fresh = snapshot?.reviews.find(r=>reviewKey(r.identity)===reviewKey(member.identity));
+      if (shuttingDown || error || !snapshot?.complete || !fresh || fresh.state!=="open" || fresh.sha!==member.sha || fresh.base!==member.base || !canMerge(state.inbox!.pulls.find(p=>p.number===number) ?? pull) || blocked()) return done(error ?? blocked() ?? "Request changed before merging. Refresh and try again.");
+      adapter!.mergeIndividual(fresh, !stacks!.graph.byReview[reviewKey(fresh.identity)], done);
+    });
+  }, failure => {
     state.merging = undefined;
-    const failure = processError(outcome);
-    if (failure === undefined) notify(`Merged #${number}`);
-    else state.mergeErrors[number] = failure;
-    if (state.mergeAll) {
-      if (failure === undefined) state.mergeAll.done++;
-      else stopMergeAll();
-    }
+    if (failure) { state.mergeErrors[number] = failure; if (state.mergeAll) stopMergeAll(); }
+    else { verifying=number; notify(`Merge requested for #${number}; waiting for GitHub confirmation.`); }
     refresh();
-  }, { priority: true });
+  });
+  draw();
 }
 
 /** Merges the ready pull requests one at a time, each after a fresh list, stopping at the first failure. */
 function mergeAll(): void {
-  if (!state.inbox || state.merging !== undefined || state.mergeAll) return;
+  if (!state.inbox?.complete || stacks?.busy || state.merging !== undefined || state.mergeAll) return;
   mergeQueue = mergeCandidates(state).map((p) => p.number);
   if (mergeQueue.length === 0) return;
   state.mergeAll = { total: mergeQueue.length, done: 0 };
@@ -141,6 +156,11 @@ function useSnapshot(next: Snapshot): void {
   worktree = (snapshot.worktrees.find((w) => w.main) ?? snapshot.worktrees[0])?.id;
   if (!first || !worktree) return;
   github = new GitHub(queue, worktree, Date.now, seconds => setTimer("ci-backoff", seconds));
+  adapter = new PRStackAdapter(queue, worktree, inbox => {
+    state.inbox=inbox; state.fetchedAt=Date.now(); doctor?.updateInbox(inbox.repo,inbox.pulls);
+  }, outcome=>github?.observe(outcome));
+  stacks = new InboxStackController(adapter, draw);
+  stacks.activate();
   doctor = new DoctorController(github, queue, {
     changed: draw,
     now: Date.now,
@@ -157,6 +177,9 @@ function useSnapshot(next: Snapshot): void {
 
 function pageMessage(m: PageMessage): void {
   switch (m.type) {
+    case "stack":
+      if (m.action === "refresh" || m.action === "continue") github?.retry();
+      return stacks?.handle(m);
     case "ready": return draw();
     case "refresh": return refresh(true);
     case "merge": return merge(m.number);
@@ -203,6 +226,8 @@ definePlugin({
         loadView = storageGet("view-v1");
         scopeTouched = false;
         return;
+      case "deactivate": shuttingDown=true; stopMergeAll(); adapter?.dispose(); stacks?.dispose(); return;
+      case "stacksChanged": stacks?.refreshNative(false); return;
       case "stored":
         if (event.id === loadCache && !event.error) { cached = event.value; doctor?.restore(cached); }
         if (event.id === loadView && !event.error && !scopeTouched && object(event.value) && typeof event.value.mineOnly === "boolean") { state.mineOnly = event.value.mineOnly; draw(); }
