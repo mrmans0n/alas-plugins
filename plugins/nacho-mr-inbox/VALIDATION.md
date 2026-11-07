@@ -38,3 +38,9 @@ Alas against a real project; write down failures here.
 ## API 17 change
 
 The `requires` visibility change (API 17, panel icon) was verified only by typecheck, tests and build, not yet inside an Alas build with API 17.
+
+## Stack support (API 18)
+
+Focused automated coverage includes qualified source/target project identity, full heads, cursor paging through 500 and refusal beyond the bound, optional/hidden/inaccessible dependency metadata, retained known dependencies on failure, closed and cross-project blockers, required merged context, and fresh-batch ordering. Production-main tests exercise native dispatch without raw glab, independent Add all exclusions and Mine scope, train/auto-merge selection, pipeline retry ownership, and Queue -> waiting -> Stop -> Continue -> verified retarget -> provider-confirmed completion.
+
+A process success does not demonstrate a provider merge. Queue states, closed states, missing members, changed heads, and partial snapshots remain distinct. Stop-before-retarget, cancellation behind occupied process slots, and ownership through an already-started process have targeted regressions. UI bundles and JavaScriptCore/browser fixture checks are recorded in the implementation report; these do not claim authenticated live-provider mutation or native-dialog execution.

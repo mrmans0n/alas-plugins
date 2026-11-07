@@ -1,5 +1,6 @@
 import type { Outcome, ProcessResult } from "@alas/plugin";
 import { validRepo } from "./doctor.ts";
+import { fullSHA, type StackReview } from "../../../shared/inbox-stacks.ts";
 
 export interface Progress { done: number; running: number; total: number }
 export interface Pipeline { id: number; status: string; sha: string; progress: Progress | null }
@@ -28,6 +29,10 @@ export interface MergeRequest {
   /** Resolvable threads not yet resolved. */
   unresolved: number;
   pipeline: Pipeline | null;
+  sourceProject?: string;
+  targetProject?: string;
+  state?: StackReview["state"];
+  queued?: boolean;
 }
 
 export interface Car { iid: number; status: string; pipeline: { status: string; progress: Progress | null } | null }
@@ -48,6 +53,10 @@ export interface Inbox {
   trains: Train[];
   /** The most recently merged first. */
   merged: Merged[];
+  reviews?: StackReview[];
+  complete?: boolean;
+  cursor?: string;
+  defaultBranch?: string;
 }
 
 export const MERGED_RECENT_MS = 24 * 3600_000;
@@ -111,7 +120,19 @@ function mergeRequest(node: unknown, base: string): MergeRequest | undefined {
     changesRequestedBy: reviewers.filter((r: any) => r?.mergeRequestInteraction?.reviewState === "REQUESTED_CHANGES" && typeof r.username === "string").map((r: any) => r.username),
     unresolved: Math.max(0, nat(node.resolvableDiscussionsCount) - nat(node.resolvedDiscussionsCount)),
     pipeline: id !== undefined && typeof p.status === "string" ? { id, status: p.status, sha: str(p.sha) ?? "", progress: progress(p) } : null,
+    sourceProject: validRepo(node.sourceProject?.fullPath) ? node.sourceProject.fullPath : undefined,
+    targetProject: validRepo(node.targetProject?.fullPath) ? node.targetProject.fullPath : undefined,
+    state: node.state === "opened" || node.state === "OPENED" ? "open" : node.state === "merged" || node.state === "MERGED" ? "merged" : node.state === "closed" || node.state === "CLOSED" ? "closed" : "unknown",
+    queued: node.autoMergeEnabled === true,
   };
+}
+
+/** Qualified provider identity; never infer a source project from a branch name. */
+export function parseStackReview(node: unknown, host: string, project: string): StackReview | undefined {
+  const mr = mergeRequest(node, `https://${host}/${project}/-/merge_requests/`);
+  if (!mr || mr.url !== `https://${host}/${project}/-/merge_requests/${mr.iid}` || mr.targetProject !== project) return undefined;
+  return { identity: { host, repo: project, number: mr.iid }, sourceRepo: mr.sourceProject, branch: mr.branch, base: mr.target, sha: fullSHA(mr.sha) ? mr.sha : undefined,
+    title: mr.title, url: mr.url, author: mr.author, state: mr.state ?? "unknown", ready: mr.state === "open" && addMode(mr) === "now", canQueue: mr.state === "open" && !!addMode(mr), status: bucketOf(mr), queued: mr.queued, blockersComplete: false };
 }
 
 function trains(nodes: unknown): Train[] {
@@ -155,9 +176,20 @@ export function parseInbox(stdout: string): Inbox | string {
     const mr = mergeRequest(n, base);
     if (mr && !mrs.has(mr.iid)) mrs.set(mr.iid, mr);
   }
+  const connection = project.mergeRequests;
+  const info = connection.pageInfo;
+  const cursor = info?.hasNextPage === true && typeof info.endCursor === "string" && info.endCursor.length > 0 && info.endCursor.length <= 2048 ? info.endCursor : undefined;
+  const reviews = [...mrs.values()].flatMap(m => {
+    const raw = connection.nodes.find((n: any) => n?.iid === String(m.iid));
+    const review = parseStackReview(raw, host, project.fullPath);
+    if (review) review.queued ||= trains(project.mergeTrains?.nodes).some(t => t.cars.some(c => c.iid === m.iid));
+    return review ? [review] : [];
+  });
   return {
     project: project.fullPath, webUrl: project.webUrl, host, user: str(json.data.currentUser?.username) ?? "",
     mrs: [...mrs.values()], trains: trains(project.mergeTrains?.nodes), merged: merged(project.merged?.nodes, base),
+    reviews, cursor, defaultBranch: str(project.repository?.rootRef) ?? undefined,
+    complete: !firstError && info?.hasNextPage === false && mrs.size === connection.nodes.length && reviews.length === mrs.size && reviews.every(r => r.state === "open"),
   };
 }
 
@@ -177,7 +209,7 @@ export const isFailing = (mr: MergeRequest) => mr.pipeline?.status === "FAILED" 
 
 /** GitLab already decided: mergeable now, or mergeable once the running pipeline passes. */
 export function addMode(mr: MergeRequest): "now" | "whenGreen" | undefined {
-  if (mr.draft || isFailing(mr)) return undefined;
+  if (mr.draft || isFailing(mr) || mr.state && mr.state !== "open" || mr.queued) return undefined;
   if (mr.status === "MERGEABLE") return "now";
   if (mr.status === "CI_STILL_RUNNING") return "whenGreen";
   return undefined;

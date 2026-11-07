@@ -3,12 +3,14 @@
 
 import type { DoctorModel } from "./doctor-view.ts";
 import type { InboxModel } from "./view.ts";
+import { parseStackPageMessage, type InboxStackModel, type StackPageMessage } from "../../../shared/inbox-stack-controller.ts";
 
 /** Plugin → page: the inbox, or CI Doctor while it shows a pull request. */
-export type PluginMessage = { type: "state"; inbox: InboxModel; doctor?: DoctorModel };
+export type PluginMessage = { type: "state"; inbox: InboxModel; doctor?: DoctorModel; stacks?: InboxStackModel };
 
 /** Page → plugin. */
 export type PageMessage =
+  | StackPageMessage
   | { type: "ready" }
   | { type: "refresh" }
   | { type: "add"; iid: number }
@@ -36,6 +38,7 @@ export function parsePageMessage(message: unknown): PageMessage | undefined {
   if (typeof message !== "object" || message === null || Array.isArray(message)) return undefined;
   const m = message as Record<string, unknown>;
   switch (m.type) {
+    case "stack": return parseStackPageMessage(message);
     case "ready":
     case "refresh":
     case "addAll":

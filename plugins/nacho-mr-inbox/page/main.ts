@@ -1,3 +1,4 @@
+import { stackBadge, stackPanel } from "../../../shared/stack-page.ts";
 // The MR Inbox page, in the tab and the rail: draws the state the plugin posts and sends back what the
 // user did. It keeps only view state (the group filter, an unsent question); the plugin runs every action
 // and answers with the whole state again. GitLab data only ever goes in as text, never as HTML.
@@ -196,13 +197,13 @@ function carEl(c: CarView, index: number): HTMLElement {
   const body = el(c.url?.startsWith("https://") ? "a" : "span", `car ${tone(c.tone)}${c.mine ? " mine" : ""}`, el("span", "num", `!${c.iid}`), c.mine && el("span", "you", "YOU"), el("span", "car-label", c.label));
   if (body instanceof HTMLAnchorElement) { body.href = c.url!; body.rel = "noreferrer"; }
   body.title = title;
-  return body;
+  return el("span", "", body, c.identity && stackBadge(state?.stacks, c.identity, post));
 }
 
 function trainStrip(t: TrainView): HTMLElement {
   if (compact()) {
     return el("section", "section", el("h4", "section-head tone-accent", el("span", "dot"), `🚂 Train → ${t.target}`, el("span", "count", String(t.cars.length))),
-      ...t.cars.map((c, i) => el("div", `stop ${tone(c.tone)}${c.mine ? " mine" : ""}`, el("span", "num", String(i + 1)), c.url ? link(`!${c.iid}`, c.url, "stop-link", c.title) : el("span", "", `!${c.iid}`), c.mine && el("span", "you", "YOU"), el("span", "grow"), el("span", "when", c.label))));
+      ...t.cars.map((c, i) => el("div", `stop ${tone(c.tone)}${c.mine ? " mine" : ""}`, el("span", "num", String(i + 1)), c.url ? link(`!${c.iid}`, c.url, "stop-link", c.title) : el("span", "", `!${c.iid}`), c.mine && el("span", "you", "YOU"), c.identity && stackBadge(state?.stacks, c.identity, post), el("span", "grow"), el("span", "when", c.label))));
   }
   const cars = el("div", "train-cars");
   t.cars.forEach((c, i) => { if (i > 0) cars.append(el("span", "coupler")); cars.append(carEl(c, i)); });
@@ -214,6 +215,7 @@ const chip = (c: Chip) => el("span", `chip ${tone(c.tone)}`, c.text);
 function row(r: Row, sectionTone: Tone): HTMLElement {
   const now = Date.now();
   const actions = el("div", "actions",
+    r.identity && stackBadge(state?.stacks, r.identity, post),
     r.doctor && button([pulseIcon(), !compact() && "CI Doctor"], () => post({ type: "doctor", iid: r.iid }), sectionTone === "danger" ? "doctor-hot" : "ghost", false, "CI Doctor"),
     link("↗", r.url, "btn ghost", "Open on GitLab"),
   );
@@ -227,7 +229,7 @@ function row(r: Row, sectionTone: Tone): HTMLElement {
     const a = r.add;
     actions.append(a.busy
       ? button([spinner(), " Adding…"], () => {}, "merging", true)
-      : button(compact() ? a.short : a.label, () => post({ type: "add", iid: r.iid }), a.look, a.disabled));
+      : button(compact() ? a.short : a.label, () => r.stackAction && r.identity ? post({ type: "stack", action: "native", key: `${r.identity.host.toLowerCase()}|${r.identity.repo.toLowerCase()}#${r.iid}`, nativeAction: "landThrough" }) : post({ type: "add", iid: r.iid }), a.look, a.disabled));
   }
   const ago = agoLabel(r.updatedAt, now);
   return el("article", `pr ${tone(sectionTone)}${r.mine ? " mine" : ""}`,
@@ -287,6 +289,15 @@ function inbox(m: InboxModel): HTMLElement[] {
   if (!m.trainsEnabled) out.push(el("div", "banner tone-dim", "Merge trains are off for this project: buttons merge when the pipeline passes."));
   const body = el("div", "body");
   body.append(...m.trains.map(trainStrip));
+  const stacks = state?.stacks;
+  const filteredKeys = filter === undefined ? [] : m.stackRows.filter(r => !m.sections.some(s => s.key === filter && s.rows.some(shown => shown.iid === r.iid))).flatMap(r => r.identity ? [`${r.identity.host.toLowerCase()}|${r.identity.repo.toLowerCase()}#${r.iid}`] : []);
+  const inspectorModel = stacks?.selected ? { ...stacks, selected: { ...stacks.selected, outsideFilter: [...new Set([...stacks.selected.outsideFilter, ...filteredKeys])] } } : stacks;
+  const inspector = stackPanel(inspectorModel, post, review => {
+    if (review.state !== "open") return undefined;
+    const r = m.stackRows.find(r => r.identity?.host === review.identity.host && r.identity?.repo === review.identity.repo && r.iid === review.identity.number);
+    return r ? row(r, r.add ? "success" : r.retry ? "danger" : "warn") : undefined;
+  });
+  if (inspector) body.append(inspector);
   if (compact()) {
     body.append(el("section", "section", el("h4", "section-head tone-accent", el("span", "dot"), "Yours", el("span", "count", String(m.mine.length))), ...m.mine.map((r) => row(r, r.add ? "success" : r.retry ? "danger" : "warn"))),
       el("div", "dim clear-line", "Open MR Inbox from the repository menu for every MR."));

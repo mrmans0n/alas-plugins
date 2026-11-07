@@ -183,3 +183,15 @@ appended argument itself and checks it against a strict pattern first.
   incomplete history cannot prove that a job passed.
 
 See [validation notes](VALIDATION.md) for automated checks and the manual checklist.
+
+### Stacks
+
+Requires Alas plugin API 18. A clickable **Stack n/m** badge groups branch-based and explicit GitLab dependencies; **gg** marks native stacks. The inspector includes ancestors and other authors even with Mine enabled, preserves the merge-train strip, and offers links, Refresh, and the existing per-MR controls. Train cars also carry stack badges.
+
+For gg, Open, Sync, Rebase, Land stack, and Land through this open Alas's native workflow and confirmation. Land stack covers the complete chain; Land through this covers the selected prefix. An individual **Land this** is available only when all its predecessors have merged. No raw glab merge runs for native gg members. Remote-only or unresolved ownership stays read-only with a reason.
+
+Other verified linear chains offer **Queue stack** and **Queue through this** with a confirmation listing exact MRs, authors, heads, and final base. They submit one MR to the train (or auto-merge when trains are off), wait for GitLab to report it merged, then explicitly retarget the next descendant if needed and verify its unchanged head. Command acceptance, an existing train car, and auto-merge are queued states, not merged outcomes. Changed heads, dependencies, membership, blocked ancestors, or incomplete reads stop the operation. There is no automatic rebase, history rewrite, or branch cleanup request. Project branch-deletion settings still apply when GitLab lands an MR.
+
+Stop prevents further writes and waits for any process already running before releasing project ownership. Continue refreshes and revalidates the frozen scope; reopening the plugin never resumes a saved operation automatically. Native gg, individual actions, legacy Add all, stack operations, and CI retries share the host's project mutation reservation.
+
+Open MRs and optional dependency metadata each page 50 at a time, up to 500. Required historical/native/explicit context resolves up to 50 requests per refresh, including nested blockers. GitLab's optional `blockingMergeRequests` query is separate from the primary inbox query so older hosts keep their list. Unsupported, inaccessible, hidden, malformed, or truncated dependencies remain explicitly unknown and preserve known membership. Closed blockers remain blockers. Cycles, branching, and cross-project dependencies can be inspected but cannot be queued as a linear stack. Add all excludes every known or unresolved stack member; individual actions retain their one-MR scope.

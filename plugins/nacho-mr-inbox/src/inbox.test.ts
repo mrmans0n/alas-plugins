@@ -6,7 +6,7 @@ const WEB = "https://gitlab.example.com/acme/shop";
 const jobs = (total: number, done: number, running: number) => ({ jobs: { count: total }, done: { count: done }, running: { count: running } });
 /** One open MR node as the manifest's query returns it. */
 export const node = (iid: number, fields: object = {}) => ({
-  iid: String(iid), title: `MR ${iid}`, webUrl: `${WEB}/-/merge_requests/${iid}`, draft: false, updatedAt: `2026-10-${String(10 + iid).padStart(2, "0")}T00:00:00Z`,
+  state: "opened", autoMergeEnabled: false, sourceProject: { fullPath: "acme/shop" }, targetProject: { fullPath: "acme/shop" }, iid: String(iid), title: `MR ${iid}`, webUrl: `${WEB}/-/merge_requests/${iid}`, draft: false, updatedAt: `2026-10-${String(10 + iid).padStart(2, "0")}T00:00:00Z`,
   author: { username: "nacho", avatarUrl: "https://secure.gravatar.com/avatar/abc?s=80&d=identicon" },
   sourceBranch: `nacho/mr-${iid}`, targetBranch: "main", diffHeadSha: "a".repeat(40), detailedMergeStatus: "MERGEABLE", conflicts: false,
   approvalsLeft: 0, approvalsRequired: 1, reviewers: { nodes: [{ username: "ana", mergeRequestInteraction: { reviewState: "APPROVED" } }] },
@@ -16,7 +16,7 @@ export const node = (iid: number, fields: object = {}) => ({
 });
 export const reply = (nodes: unknown[], extra: { trains?: unknown[]; merged?: unknown[]; user?: string } = {}) => JSON.stringify({ data: {
   currentUser: { username: extra.user ?? "nacho" },
-  project: { fullPath: "acme/shop", webUrl: WEB, mergeTrains: { nodes: extra.trains ?? [] }, mergeRequests: { nodes }, merged: { nodes: extra.merged ?? [] } },
+  project: { fullPath: "acme/shop", webUrl: WEB, repository: { rootRef: "main" }, mergeTrains: { nodes: extra.trains ?? [] }, mergeRequests: { nodes, pageInfo: { hasNextPage: false, endCursor: null } }, merged: { nodes: extra.merged ?? [] } },
 } });
 const parsed = (nodes: unknown[], extra = {}) => parseInbox(reply(nodes, extra)) as Inbox;
 
@@ -27,7 +27,7 @@ test("parses MRs, skipping malformed, repeated and off-host ones", () => {
   assert.equal(inbox.user, "nacho");
   assert.deepEqual(inbox.mrs.map((m) => m.iid), [1, 2]);
   assert.deepEqual(inbox.mrs[0], {
-    iid: 1, title: "MR 1", url: `${WEB}/-/merge_requests/1`, draft: false, author: "nacho", avatar: "https://secure.gravatar.com/avatar/abc?s=80&d=identicon",
+    sourceProject: "acme/shop", targetProject: "acme/shop", state: "open", queued: false, iid: 1, title: "MR 1", url: `${WEB}/-/merge_requests/1`, draft: false, author: "nacho", avatar: "https://secure.gravatar.com/avatar/abc?s=80&d=identicon",
     branch: "nacho/mr-1", target: "main", sha: "a".repeat(40), updatedAt: "2026-10-11T00:00:00Z", status: "MERGEABLE", conflicts: false,
     approvalsLeft: 0, approvalsRequired: 1, changesRequestedBy: [], unresolved: 0,
     pipeline: { id: 1001, status: "SUCCESS", sha: "a".repeat(40), progress: { done: 4, running: 0, total: 4 } },
@@ -69,7 +69,7 @@ test("trains keep car order; cars without an iid are dropped", () => {
 });
 
 test("merged MRs keep the query's merge order and drop repeats", () => {
-  const m = (iid: number, mergedAt: string) => ({ iid: String(iid), title: `M${iid}`, webUrl: `${WEB}/-/merge_requests/${iid}`, sourceBranch: "b", mergedAt, author: { username: "bob" } });
+  const m = (iid: number, mergedAt: string) => ({ state: "opened", autoMergeEnabled: false, sourceProject: { fullPath: "acme/shop" }, targetProject: { fullPath: "acme/shop" }, iid: String(iid), title: `M${iid}`, webUrl: `${WEB}/-/merge_requests/${iid}`, sourceBranch: "b", mergedAt, author: { username: "bob" } });
   assert.deepEqual(parsed([], { merged: [m(5, "2026-10-21T10:00:00Z"), m(4, "2026-10-20T10:00:00Z"), m(5, "x")] }).merged.map((x) => x.iid), [5, 4]);
 });
 
@@ -129,7 +129,7 @@ test("time labels are unchanged from pr-inbox", () => {
 });
 
 test("a project path that is not a plain group/project path is rejected", () => {
-  const withPath = (fullPath: string) => JSON.stringify({ data: { project: { fullPath, webUrl: WEB, mergeTrains: { nodes: [] }, mergeRequests: { nodes: [node(1)] }, merged: { nodes: [] } } } });
+  const withPath = (fullPath: string) => JSON.stringify({ data: { project: { fullPath, webUrl: WEB, repository: { rootRef: "main" }, mergeTrains: { nodes: [] }, mergeRequests: { nodes: [node(1)] }, merged: { nodes: [] } } } });
   for (const bad of ["acme/../shop", "acme/shop; rm", "acme/my shop", "shop"]) assert.equal(parseInbox(withPath(bad)), "glab returned an unexpected reply.", bad);
   assert.equal((parseInbox(withPath("acme/team/sub/shop")) as Inbox).project, "acme/team/sub/shop");
 });
