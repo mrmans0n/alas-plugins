@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { testHost } from "./test.ts";
 import { definePlugin } from "./index.ts";
-import { stackList, stackOpen, stackAcquire, stackRelease } from "./stacks.ts";
+import { parseStackInventory, stackList, stackOpen, stackAcquire, stackRelease } from "./stacks.ts";
 
 test("stack SDK helpers decode scoped inventory and reject malformed successful replies", () => {
   const events: string[] = [];
@@ -39,4 +39,11 @@ test("native open only acknowledges presentation and reservation tokens remain o
   assert.deepEqual(testHost.takeSent().at(-1)?.params, { token: "opaque-project-reservation" });
   testHost.reply(release, { released: true });
   assert.equal(released, true);
+});
+
+test("native applicability is an explicit boolean and is never inferred from failure", () => {
+  const base = { complete: false, busy: false, stacks: [] };
+  assert.equal(parseStackInventory(base)?.applicable, undefined);
+  assert.equal(parseStackInventory({ ...base, applicable: false })?.applicable, false);
+  assert.equal(parseStackInventory({ ...base, applicable: "false" }), undefined);
 });

@@ -25,7 +25,7 @@ export function parseStackPageMessage(value: unknown): StackPageMessage | undefi
 export interface InboxStackModel {
   busy: boolean;
   badges: Record<string, { key: string; label: string; stack: string }>;
-  selected?: { key: string; name: string; base: string; entries: StackReview[]; ordered: boolean; issues: string[]; native?: NativeStack; outsideFilter: string[]; mode: "merge" | "queue"; canPrepare: boolean };
+  selected?: { key: string; name: string; base: string; entries: StackReview[]; ordered: boolean; issues: string[]; native?: NativeStack; outsideFilter: string[]; mode: "merge" | "queue"; canPrepare: boolean; canPrepareThrough: boolean };
   confirmation?: { members: StackReview[]; finalBase: string; mode: "merge" | "queue"; through: boolean };
   operation?: { phase: StackOperation["phase"]; done: number; total: number; error?: string; message?: string };
   error?: string;
@@ -40,7 +40,7 @@ export class InboxStackController {
   private adapter: StackAdapter;
   private changed: () => void;
   private provider: StackProviderSnapshot = { reviews: [], complete: false };
-  private inventory: StackInventory = { complete: true, busy: false, stacks: [] };
+  private inventory: StackInventory = { complete: false, busy: false, stacks: [] };
   private selected?: string;
   private prepared?: { scope: FrozenScope; through: boolean };
   private operation?: StackOperation;
@@ -69,10 +69,12 @@ export class InboxStackController {
   get busy(): boolean { return active(this.operation) || this.pending || this.individual || this.inventory.busy || this.nativeLoading; }
   private draw(): void { if (!this.disposed) this.changed(); }
   private rebuild(): void {
+    const nativeUnknown = !this.inventory.complete && this.inventory.applicable !== false;
     const unmapped = this.inventory.stacks.find(s => !s.complete && !!s.base && !s.entries.some(e => e.number)
       && s.reviewNumbers === undefined && this.provider.reviews.some(r => r.identity.host.toLowerCase() === s.host.toLowerCase() && r.identity.repo.toLowerCase() === s.repo.toLowerCase()));
-    this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete && !unmapped, native: this.inventory.stacks,
-      error: unmapped ? `Native review mapping for ${unmapped.name} is unavailable. Refresh native stacks before running provider actions.` : this.provider.error });
+    this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete && !nativeUnknown && !unmapped, native: this.inventory.stacks,
+      error: unmapped ? `Native review mapping for ${unmapped.name} is unavailable. Refresh native stacks before running provider actions.`
+        : nativeUnknown ? this.inventory.error ?? "Native stack ownership is unknown. Refresh native stacks before running provider actions." : this.provider.error });
   }
   private applyProvider(snapshot: StackProviderSnapshot): void {
     if (!snapshot.complete) {
@@ -122,7 +124,7 @@ export class InboxStackController {
             ...stack.entries.flatMap(e => e.number ? [e.number] : []), ...(stack.reviewNumbers ?? [])])];
           retained.set(stack.id, { ...stack, ...(numbers.length ? { reviewNumbers: numbers } : {}) });
         }
-        this.inventory = { complete: false, busy: fresh?.busy ?? this.inventory.busy,
+        this.inventory = { complete: false, busy: fresh?.busy ?? this.inventory.busy, ...(fresh?.applicable !== undefined ? { applicable: fresh.applicable } : {}),
           stacks: [...retained.values()].map(s => {
             const canNavigate = !!s.worktree && s.actions.includes("open");
             return { ...s, complete: false, actions: canNavigate ? ["open" as const] : [],
@@ -341,11 +343,16 @@ export class InboxStackController {
       badges[key] = { key, stack: component.id, label: `${component.native ? "gg · " : ""}Stack${position ? ` ${position}/${total}` : ""}` };
     }
     const component = this.selected ? this.graph.byReview[this.selected] : undefined;
+    const member = component?.members.find(r => reviewKey(r.identity) === this.selected);
+    const readyScope = (through: boolean) => {
+      if (!component || component.native || this.busy || through && !member) return false;
+      const scope = stackScope(component, through ? member!.identity : undefined).scope;
+      return !!scope && (this.adapter.mode !== "merge" || scope.members.every(r => r.ready));
+    };
     return { busy: this.busy, badges,
       ...(component ? { selected: { key: this.selected!, name: component.name, base: component.finalBase, entries: component.order ?? component.members, ordered: !!component.order || !!component.native?.entries.length && [...component.native.entries].sort((a, b) => a.position - b.position).every((e, i) => e.position === i + 1), issues: component.issues, native: component.native,
         outsideFilter: mineOnly && viewer ? component.members.filter(r => !!r.author && r.author.toLowerCase() !== viewer.toLowerCase()).map(r => reviewKey(r.identity)) : [],
-        mode: this.adapter.mode, canPrepare: component.complete && !!component.order && !component.native && !this.busy && !this.nativeLoading
-          && (this.adapter.mode !== "merge" || component.members.every(r => r.state === "merged" || r.ready)) } } : {}),
+        mode: this.adapter.mode, canPrepare: readyScope(false), canPrepareThrough: readyScope(true) } } : {}),
       ...(this.prepared ? { confirmation: { members: this.prepared.scope.members, finalBase: this.prepared.scope.finalBase, mode: this.adapter.mode, through: this.prepared.through } } : {}),
       ...(this.operation ? { operation: { phase: this.operation.phase, done: this.operation.completed.length, total: this.operation.scope.members.length, error: this.operation.error, message: this.waitingMessage } } : {}),
       error: this.error ?? this.graph.error, nativeError: this.nativeError };

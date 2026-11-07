@@ -11,7 +11,12 @@ export interface NativeStack {
    * omitted means unknown; [] confirms no saved published review mapping. */
   reviewNumbers?: number[];
 }
-export interface StackInventory { complete: boolean; busy: boolean; stacks: NativeStack[]; fetchedAt?: number; error?: string }
+export interface StackInventory {
+  complete: boolean; busy: boolean; stacks: NativeStack[]; fetchedAt?: number; error?: string;
+  /** False only when the host explicitly rules native workflows out for this context.
+   * An omitted value on an incomplete or failed read remains unknown. */
+  applicable?: boolean;
+}
 export interface StackOpenParams { stack: string; fingerprint: string; action: NativeStackAction; entry?: string }
 
 const actions = ["open", "sync", "rebase", "land", "landThrough"];
@@ -34,6 +39,7 @@ function validStack(v: unknown): v is NativeStack {
 }
 export function parseStackInventory(value: unknown): StackInventory | undefined {
   if (!object(value) || typeof value.complete !== "boolean" || typeof value.busy !== "boolean"
+    || value.applicable !== undefined && typeof value.applicable !== "boolean"
     || !Array.isArray(value.stacks) || value.stacks.length > 500 || !value.stacks.every(validStack)
     || new Set(value.stacks.map(s => s.id)).size !== value.stacks.length
     || value.fetchedAt !== undefined && (typeof value.fetchedAt !== "number" || !Number.isFinite(value.fetchedAt) || value.fetchedAt < 0)

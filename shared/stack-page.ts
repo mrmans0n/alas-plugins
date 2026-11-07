@@ -87,7 +87,7 @@ export function stackPanel(model: InboxStackModel | undefined, post: Post, rende
       const prefix = selected.mode === "queue" ? "Queue" : "Merge";
       controls.append(button(`${prefix} stack…`, () => post({ type: "stack", action: "prepare", key: selected.key }), !selected.canPrepare, selected.issues[0] ?? "All remaining requests must be ready."));
       const member = selected.entries.find(r => reviewKey(r.identity) === selected.key);
-      controls.append(button(`${prefix} through this…`, () => post({ type: "stack", action: "prepare", key: selected.key, through: true }), !selected.canPrepare || member?.state !== "open", selected.issues[0]));
+      controls.append(button(`${prefix} through this…`, () => post({ type: "stack", action: "prepare", key: selected.key, through: true }), !selected.canPrepareThrough || member?.state !== "open", selected.issues[0]));
     }
     panel.append(controls);
     const visibleIssues = new Set(selected.issues);

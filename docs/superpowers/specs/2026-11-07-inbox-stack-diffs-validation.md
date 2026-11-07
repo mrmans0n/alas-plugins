@@ -36,3 +36,9 @@ API18 payload validation, foreign tokens, stale fingerprints, project scope, old
 Final functional commits before the display/validation summary: Alas `79bef44b8`, alas-plugins `18765b0`. After review, the queued status summary was clarified and checked with the final built page; it does not change execution policy.
 
 Final logs: `/private/tmp/stack-final-tests.log`, `/private/tmp/stack-final-shared-tests.log`, `/private/tmp/stack-script-tests.log`, `/private/tmp/stack-repository-build.log`, `/private/tmp/pr-stack-jsc-final.log`, `/private/tmp/mr-stack-jsc-final.log`, `/private/tmp/pr-stack-caps-jsc-final.log`, `/private/tmp/mr-stack-caps-jsc-final.log`, `/private/tmp/alas-stack-repair-core-final-green.log`, `/private/tmp/alas-stack-repair-app-green.log`. Earlier initial native and full npm evidence are separately recorded by their scoped test counts above.
+
+## PR review follow-up
+
+Hosted review found an initial native-discovery failure could enable generic writes, and full-chain readiness could disable a valid ready prefix. The controller now starts with unknown native ownership and blocks provider actions until complete discovery or an explicit host `applicable: false` decision. Failed refreshes never reuse an older not-applicable decision, and known native members remain protected. The optional applicability field is type-checked by the SDK and documented by the native API.
+
+Full and selected-prefix readiness are now evaluated separately from their exact frozen scopes. A failing later descendant cannot disable a ready prefix. Assertion-level regressions failed before the repair; SDK18, shared30, PR116, MR127, combined typecheck/build and both bare JavaScriptCore workflow/capacity replays passed after it. Hosted CI and a fresh current-head review remain the merge gates.

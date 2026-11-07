@@ -8,7 +8,7 @@ import { buildStacks, individualBlocker, stackScope } from "./inbox-stacks.ts";
 import { createStackOperation } from "./stack-operation.ts";
 
 const review = (n: number, fields: Partial<StackReview> = {}): StackReview => ({ identity: { host: "github.com", repo: "o/r", number: n }, sourceRepo: "o/r", branch: `f${n}`, base: n === 1 ? "main" : "f1", sha: String(n).repeat(40), title: `Change ${n}`, url: `https://github.com/o/r/pull/${n}`, author: "nacho", state: "open", ready: true, ...fields });
-function fixture(options: { pendingWrite?: boolean; queue?: boolean; retargetLag?: boolean; stored?: unknown; holdRestore?: boolean } = {}) {
+function fixture(options: { pendingWrite?: boolean; queue?: boolean; retargetLag?: boolean; stored?: unknown; holdRestore?: boolean; native?: "failed" | "incomplete" | "notApplicable" } = {}) {
   definePlugin({ handle() {} }); testHost.takeSent();
   let data = [review(1), review(2)];
   let settle: ((error?: string) => void) | undefined;
@@ -35,7 +35,10 @@ function fixture(options: { pendingWrite?: boolean; queue?: boolean; retargetLag
         if (m.method === "storage/set" && flags.failSave) { testHost.dispatch({ jsonrpc: "2.0", id: m.id, error: { code: -32000, message: "Storage is full." } }); continue; }
         if (m.method === "storage/get" && options.holdRestore) restores.push(m);
         else if (m.method === "storage/get") testHost.reply(m.id, { value: options.stored ?? null });
-        else if (m.method === "stacks/list") testHost.reply(m.id, { inventory: { complete: true, busy: false, stacks: [] } });
+        else if (m.method === "stacks/list") {
+          if (options.native === "failed") testHost.replyError(m.id, -32000, "Native discovery failed");
+          else testHost.reply(m.id, { inventory: { complete: !options.native, busy: false, stacks: [], ...(options.native === "notApplicable" ? { applicable: false } : {}) } });
+        }
         else if (m.method === "stacks/acquire") testHost.reply(m.id, { token: "reservation" });
         else if (m.method === "stacks/release") { released++; testHost.reply(m.id, { released: true }); }
         else if (m.method === "storage/set") testHost.reply(m.id, {});
@@ -85,10 +88,13 @@ test("Stop marks its phase before synchronous queued-write cancellation settles"
   const flush = () => {
     for (let round = 0; round < 20; round++) { const sent = testHost.takeSent(); if (!sent.length) return;
       for (const m of sent) { if (m.method === "stacks/acquire") testHost.reply(m.id, { token: "owner" });
+        else if (m.method === "storage/get") testHost.reply(m.id, { value: null });
+        else if (m.method === "stacks/list") testHost.reply(m.id, { inventory: { complete: true, busy: false, stacks: [] } });
         else if (m.method === "stacks/release") { releases++; testHost.reply(m.id, { released: true }); }
         else if (m.method === "storage/set") testHost.reply(m.id, {}); else assert.fail(m.method); }
     }
   };
+  controller.activate(); flush();
   controller.prepare("github.com|o/r#1", false); controller.confirm(); flush();
   assert.ok(cancel); const before = refreshes;
   controller.stop(); flush();
@@ -103,6 +109,45 @@ test("storage failure or foreign ownership prevents the first provider write", (
     assert.equal(f.controller.model().operation?.phase, "failed");
     assert.ok(f.controller.model().operation?.error);
   }
+});
+
+test("failed or incomplete initial native inventory cannot enable generic provider actions", () => {
+  for (const native of ["failed", "incomplete"] as const) {
+    const f = fixture({ native }); f.start(); f.flush();
+    assert.equal(f.controller.graph.complete, false);
+    assert.ok(individualBlocker(f.controller.graph, review(1).identity));
+    assert.equal(f.submitted, 0);
+    assert.equal(f.controller.model().confirmation, undefined);
+    assert.ok(f.controller.model().error);
+  }
+  const f = fixture({ native: "notApplicable" });
+  assert.equal(f.controller.graph.complete, true, "the host can explicitly rule out native workflows for this context");
+  f.controller.refreshNative(true); const failed = testHost.takeSent()[0];
+  testHost.replyError(failed.id, -32000, "Discovery failed after the context changed");
+  assert.equal(f.controller.graph.complete, false, "a failed refresh cannot reuse an older not-applicable decision");
+});
+
+test("ready prefixes have independent eligibility from later unready descendants", () => {
+  const f = fixture(); f.update([review(1), review(2, { ready: false, status: "failing" })]);
+  f.controller.handle({ type: "stack", action: "open", key: "github.com|o/r#1" });
+  assert.equal(f.controller.model().selected?.canPrepare, false);
+  assert.equal(f.controller.model().selected?.canPrepareThrough, true);
+  f.controller.prepare("github.com|o/r#1", true);
+  assert.deepEqual(f.controller.model().confirmation?.members.map(r => r.identity.number), [1]);
+  f.controller.handle({ type: "stack", action: "open", key: "github.com|o/r#2" });
+  assert.equal(f.controller.model().selected?.canPrepareThrough, false);
+});
+
+test("an explicit non-native context keeps previously known gg members protected", () => {
+  const f = fixture();
+  f.controller.refreshNative(true); const initial = testHost.takeSent()[0];
+  const native = { id: "known", name: "feature", base: "main", host: "github.com", repo: "o/r", fingerprint: "v1", complete: true, worktree: "wt", actions: ["open", "land"], entries: [1, 2].map(n => ({ id: `entry-${n}`, sha: String(n).repeat(40), position: n, number: n, title: `Change ${n}` })) };
+  testHost.reply(initial.id, { inventory: { complete: true, busy: false, stacks: [native] } });
+  f.controller.refreshNative(true); const unavailable = testHost.takeSent()[0];
+  testHost.reply(unavailable.id, { inventory: { complete: false, applicable: false, busy: false, stacks: [] } });
+  assert.equal(f.controller.graph.byReview["github.com|o/r#1"].native?.id, "known");
+  assert.ok(individualBlocker(f.controller.graph, review(1).identity));
+  f.start(); f.flush(); assert.equal(f.submitted, 0);
 });
 
 test("accepted queueing waits for provider merge before retargeting or submitting the next request", () => {
