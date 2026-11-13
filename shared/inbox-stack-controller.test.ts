@@ -127,6 +127,24 @@ test("failed or incomplete initial native inventory cannot enable generic provid
   assert.equal(f.controller.graph.complete, false, "a failed refresh cannot reuse an older not-applicable decision");
 });
 
+test("long diagnostics on an unrelated native stack do not disable ready provider actions", () => {
+  const f = fixture();
+  f.controller.refreshNative(true);
+  const request = testHost.takeSent().find(m => m.method === "stacks/list");
+  const reason = "Resolve unintegrated work before landing. ".repeat(150);
+  testHost.reply(request.id, { inventory: { complete: true, busy: false, stacks: [{
+    id: "unintegrated", name: "other", host: "github.com", repo: "o/r", base: "main",
+    fingerprint: "v1", complete: false, entries: [], reviewNumbers: [3], actions: ["open"],
+    unavailableActions: { land: reason, landThrough: reason },
+  }] } });
+  assert.equal(f.controller.model().nativeError, undefined);
+  assert.equal(f.controller.graph.complete, true);
+  assert.equal(individualBlocker(f.controller.graph, review(1).identity), undefined);
+  assert.ok(individualBlocker(f.controller.graph, review(3).identity), "the incomplete native member remains protected");
+  f.start(); f.flush();
+  assert.equal(f.submitted, 1, "the independent provider stack can still submit its ready root");
+});
+
 test("ready prefixes have independent eligibility from later unready descendants", () => {
   const f = fixture(); f.update([review(1), review(2, { ready: false, status: "failing" })]);
   f.controller.handle({ type: "stack", action: "open", key: "github.com|o/r#1" });

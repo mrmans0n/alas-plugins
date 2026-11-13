@@ -8,6 +8,7 @@ let review=original();
 const native={id:'native',name:'Native',base:'main',host:'github.com',repo:'o/r',fingerprint:'native-fingerprint',worktree:'wt',complete:true,entries:[{id:'e1',number:1,sha,position:1,title:'PR 1'}],actions:['open','landThrough']};
 let nativeStacks:unknown[]=[];
 let holdAcquire=false,holdList=false,holdInventory=false;
+let malformedInventory=false;
 let acquire:any,list:any,inventory:any;
 const rawWrites:string[]=[];
 let state:any;
@@ -23,7 +24,7 @@ function drain():void {
         case 'web/post':state=m.params.message;break;
         case 'workspace/snapshot':reply({snapshot:{worktrees:[{id:'wt',branch:'main',main:true,current:true,sessions:[]}]}});break;
         case 'storage/get':reply({value:null});break;
-        case 'stacks/list':if(holdInventory)inventory=m;else reply({inventory:{complete:true,busy:false,stacks:nativeStacks}});break;
+        case 'stacks/list':if(holdInventory)inventory=m;else if(malformedInventory)reply({inventory:null});else reply({inventory:{complete:true,busy:false,stacks:nativeStacks}});break;
         case 'stacks/acquire':if(holdAcquire)acquire=m;else reply({token:'owned'});break;
         case 'stacks/release':releases++;reply({released:true});break;
         case 'process/run':
@@ -65,4 +66,21 @@ test('native inventory still refreshing at final provider preflight blocks raw g
   assert.equal(rawWrites.length,before);
   assert.match(state.inbox.stackRows[0].error??'',/refresh|native|changed/i);
   holdInventory=false;testHost.reply(inventory.id,{inventory:{complete:true,busy:false,stacks:[]}});drain();
+});
+
+test('manual Refresh retries malformed native inventory and restores merge eligibility only after a valid reply',()=>{
+  reset();const before=rawWrites.length;
+  assert.equal(state.inbox.stackRows[0].merge.disabled,false);
+  malformedInventory=true;changed();
+  assert.equal(state.inbox.stackRows[0].merge.disabled,true);
+  assert.ok(state.stacks.nativeError);
+  page({type:'refresh'});
+  assert.equal(state.inbox.stackRows[0].merge.disabled,true,'provider success cannot override unknown native ownership');
+  malformedInventory=false;
+  holdInventory=true;page({type:'refresh'});assert.ok(inventory,'manual Refresh must retry native discovery');
+  assert.equal(state.inbox.stackRows[0].merge.disabled,true,'native discovery must settle before merges become eligible');
+  holdInventory=false;testHost.reply(inventory.id,{inventory:{complete:true,busy:false,stacks:[]}});drain();
+  assert.equal(state.inbox.stackRows[0].merge.disabled,false);
+  assert.equal(state.stacks.nativeError,undefined);
+  assert.equal(rawWrites.length,before,'refresh recovery never starts a provider mutation');
 });

@@ -47,3 +47,32 @@ test("native applicability is an explicit boolean and is never inferred from fai
   assert.equal(parseStackInventory({ ...base, applicable: false })?.applicable, false);
   assert.equal(parseStackInventory({ ...base, applicable: "false" }), undefined);
 });
+
+test("native diagnostics and commit titles do not invalidate stack ownership", () => {
+  definePlugin({ handle() {} });
+  const inventory = {
+    complete: false, busy: false, applicable: true,
+    stacks: [{
+      id: "native", name: "feature", host: "gitlab.example.com", repo: "o/r", base: "main",
+      fingerprint: "v1", complete: false, entries: [{ id: "entry", sha: "a".repeat(40), position: 1, number: 7, title: "Change" }],
+      actions: ["open"],
+    }],
+  };
+  const stack = inventory.stacks[0];
+  const replies = [
+    { ...inventory, error: "Worktree refresh failed.\n".repeat(400) },
+    { ...inventory, stacks: [{ ...stack, unavailableActions: { land: "Unintegrated work.\n".repeat(300) } }] },
+    { ...inventory, stacks: [{ ...stack, entries: [{ ...stack.entries[0], title: "Long commit subject ".repeat(300) }] }] },
+  ];
+  for (const reply of replies) {
+    let result: unknown;
+    let error: unknown;
+    const id = stackList(true, outcome => { result = outcome.result; error = outcome.error; });
+    testHost.takeSent();
+    testHost.reply(id, { inventory: reply });
+    assert.equal(error, undefined, "host presentation text must not become a malformed stacks/list reply");
+    assert.deepEqual(result, reply);
+  }
+  assert.equal(parseStackInventory({ ...inventory, error: 123 }), undefined);
+  assert.equal(parseStackInventory({ ...inventory, stacks: [{ ...stack, unavailableActions: { land: false } }] }), undefined);
+});
