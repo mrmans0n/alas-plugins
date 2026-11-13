@@ -53,7 +53,7 @@ const draw = () => {
 };
 
 function refresh(manual = false): void {
-  if (manual) github?.retry();
+  if (manual) { github?.retry(); stacks?.refreshNative(true); }
   if (!worktree || shuttingDown) return;
   if (listing) {
     again = true;

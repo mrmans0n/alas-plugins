@@ -23,9 +23,11 @@ const actions = ["open", "sync", "rebase", "land", "landThrough"];
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const string = (v: unknown, max = 1024): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
 const positive = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) > 0;
+// Native diagnostics aggregate worktree failures and unintegrated commits. The
+// reply contract does not cap presentation text; rejecting it loses ownership.
 function validEntry(v: unknown): v is NativeStackEntry {
   return object(v) && string(v.id) && string(v.sha, 64) && /^[0-9a-f]{7,64}$/i.test(v.sha) && positive(v.position)
-    && (v.number === undefined || positive(v.number)) && typeof v.title === "string" && v.title.length <= 4096
+    && (v.number === undefined || positive(v.number)) && typeof v.title === "string"
     && (v.state === undefined || string(v.state, 40));
 }
 function validStack(v: unknown): v is NativeStack {
@@ -35,7 +37,7 @@ function validStack(v: unknown): v is NativeStack {
     && Array.isArray(v.entries) && v.entries.length <= 500 && v.entries.every(validEntry)
     && Array.isArray(v.actions) && v.actions.every(a => typeof a === "string" && actions.includes(a))
     && (v.reviewNumbers === undefined || Array.isArray(v.reviewNumbers) && v.reviewNumbers.length <= 500 && v.reviewNumbers.every(positive))
-    && (v.unavailableActions === undefined || object(v.unavailableActions) && Object.entries(v.unavailableActions).every(([key, reason]) => actions.includes(key) && string(reason, 4000)));
+    && (v.unavailableActions === undefined || object(v.unavailableActions) && Object.entries(v.unavailableActions).every(([key, reason]) => actions.includes(key) && typeof reason === "string"));
 }
 export function parseStackInventory(value: unknown): StackInventory | undefined {
   if (!object(value) || typeof value.complete !== "boolean" || typeof value.busy !== "boolean"
@@ -43,7 +45,7 @@ export function parseStackInventory(value: unknown): StackInventory | undefined 
     || !Array.isArray(value.stacks) || value.stacks.length > 500 || !value.stacks.every(validStack)
     || new Set(value.stacks.map(s => s.id)).size !== value.stacks.length
     || value.fetchedAt !== undefined && (typeof value.fetchedAt !== "number" || !Number.isFinite(value.fetchedAt) || value.fetchedAt < 0)
-    || value.error !== undefined && !string(value.error, 8000)) return undefined;
+    || value.error !== undefined && typeof value.error !== "string") return undefined;
   return value as unknown as StackInventory;
 }
 

@@ -106,6 +106,10 @@ match both the target repository and its base commit; a reused branch alone is
 insufficient. Ancestor reads are bounded at 50 per refresh. Individual, bulk,
 stack and native gg mutations share the host's project ownership gate.
 
+**Refresh** retries both GitHub data and native stack discovery. A failed or
+malformed native inventory keeps merge buttons disabled until discovery succeeds;
+refreshing GitHub data alone cannot establish native ownership.
+
 ## CI Doctor
 
 Choose **CI Doctor** on an open PR to inspect Actions workflow runs, separate

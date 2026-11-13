@@ -9,7 +9,7 @@ const page = (message: object) => testHost.notify("web/message", { tab: 0, messa
 const done = (value: unknown) => ({ exit: 0, stdout: typeof value === "string" ? value : JSON.stringify(value), stderr: "", timedOut: false, truncated: false });
 let data: any[] = [], trainEnabled = true, failList = false, failProject = false;
 let model: any, acquisitions = 0, releases = 0;
-let native: any[] = [];
+let native: unknown[] = [], malformedNative = false;
 const calls: any[] = [], notices: string[] = [], saves: any[] = [];
 const stored = new Map<string, unknown>();
 const blockers = (raw: any) => ({ ...raw, blockingMergeRequests: raw.blockingMergeRequests ?? { totalCount: 0, hiddenCount: 0, visibleMergeRequests: [] } });
@@ -23,7 +23,10 @@ function flush(): void {
       if (m.method === "workspace/snapshot") testHost.reply(m.id, { snapshot: { worktrees: [{ id: "main", main: true, current: false, branch: "main", sessions: [] }] } });
       else if (m.method === "storage/get") testHost.reply(m.id, { value: stored.get(m.params.key) ?? null });
       else if (m.method === "storage/set") { saves.push(m.params); stored.set(m.params.key, m.params.value); testHost.reply(m.id, {}); }
-      else if (m.method === "stacks/list") testHost.reply(m.id, { inventory: { complete: true, busy: false, stacks: native } });
+      else if (m.method === "stacks/list") {
+        calls.push(m);
+        testHost.reply(m.id, { inventory: malformedNative ? null : { complete: true, busy: false, stacks: native } });
+      }
       else if (m.method === "stacks/open") { calls.push(m); testHost.reply(m.id, { opened: true }); }
       else if (m.method === "stacks/acquire") { acquisitions++; testHost.reply(m.id, { token: `owner-${acquisitions}` }); }
       else if (m.method === "stacks/release") { releases++; testHost.reply(m.id, { released: true }); }
@@ -62,6 +65,29 @@ test("API18 activation loads real stack inventory and project identity", () => {
   assert.equal(model.inbox.project, repo);
   assert.equal(model.inbox.addAll.count, 2);
   assert.equal(model.stacks.busy, false);
+});
+
+test("Refresh recovers ready MR actions after a malformed native inventory without bypassing ownership", () => {
+  malformedNative = true;
+  testHost.notify("stacks/changed"); flush();
+  assert.ok(model.stacks.nativeError);
+  const blocked = model.inbox.sections[0].rows[0];
+  assert.deepEqual(blocked.chips.map((chip: { text: string }) => chip.text), ["✓ pipeline", "✓ approved"]);
+  assert.equal(blocked.add.disabled, true);
+  calls.length = 0;
+  page({ type: "add", iid: blocked.iid }); flush();
+  assert.equal(writes().length, 0);
+
+  malformedNative = false;
+  page({ type: "refresh" }); flush();
+  assert.equal(calls.find(c => c.method === "stacks/list")?.params.refresh, true);
+  assert.equal(model.stacks.nativeError, undefined);
+  assert.equal(model.inbox.sections[0].rows[0].add.disabled, false);
+  const before = acquisitions;
+  page({ type: "add", iid: blocked.iid }); flush();
+  assert.equal(writes().length, 1);
+  assert.equal(acquisitions, before + 1);
+  assert.equal(releases, acquisitions);
 });
 
 test("individual train and auto-merge actions pin host and full head under ownership", () => {

@@ -158,3 +158,19 @@ Native individual rows retain **Land this…** / **Land…**. The production-mai
 native fixture confirms root-entry native presentation, blocked descendants,
 next-member eligibility after a verified merged ancestor, and no raw gh merge.
 The final focused suite has 112 passing tests; whole typecheck and PR build pass.
+
+Manual Refresh recovery has a production-main regression in `main-preflight.test.ts`.
+It supplies a malformed native inventory, confirms that successful GitHub reads
+cannot enable merges, and then holds a retried native read until a valid inventory
+reply restores eligibility. Recovery must not start provider writes. Run the
+focused check with
+`node --test plugins/nacho-pr-inbox/src/main-preflight.test.ts`.
+
+Verified on 2026-11-13 with the focused SDK/shared/inbox checks, focused TypeScript
+checking, and both inbox builds. SDK/shared regressions cover long native
+diagnostics without discarding ownership or enabling incomplete native members.
+Browser smoke verification used the built plugin and page bundles with fixture
+host/provider replies. Clicking Refresh changed the rendered green, approved PR's
+merge button from disabled to enabled after valid native inventory with a long
+refusal reason for another stack. No live merges were attempted; the installed
+host's failing reply was not captured.

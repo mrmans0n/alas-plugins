@@ -44,3 +44,17 @@ The `requires` visibility change (API 17, panel icon) was verified only by typec
 Focused automated coverage includes qualified source/target project identity, full heads, cursor paging through 500 and refusal beyond the bound, optional/hidden/inaccessible dependency metadata, retained known dependencies on failure, closed and cross-project blockers, required merged context, and fresh-batch ordering. Production-main tests exercise native dispatch without raw glab, independent Add all exclusions and Mine scope, train/auto-merge selection, pipeline retry ownership, and Queue -> waiting -> Stop -> Continue -> verified retarget -> provider-confirmed completion.
 
 A process success does not demonstrate a provider merge. Queue states, closed states, missing members, changed heads, and partial snapshots remain distinct. Stop-before-retarget, cancellation behind occupied process slots, and ownership through an already-started process have targeted regressions. UI bundles and JavaScriptCore/browser fixture checks are recorded in the implementation report; these do not claim authenticated live-provider mutation or native-dialog execution.
+
+The production-main regression also covers a green, approved MR disabled by a
+malformed native stack inventory. The tab/rail Refresh action reloads native
+ownership as well as GitLab data, restores the action only after valid inventory,
+and still acquires and releases the project mutation reservation before adding.
+Verified on 2026-11-13 with the focused SDK/shared/inbox checks, focused TypeScript
+checking, and both inbox builds. The shared regressions cover long host diagnostic
+text and keep incomplete native members protected while independent actions work.
+
+Browser smoke verification used the built plugin and page bundles with fixture
+host/provider replies. The green, approved MR's rendered merge button was disabled
+after malformed inventory and enabled after clicking Refresh with valid inventory
+containing a long refusal reason for another stack. No live merges were attempted;
+the installed host's failing reply was not captured.

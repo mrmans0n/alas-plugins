@@ -51,7 +51,10 @@ const draw = () => {
 };
 
 function refresh(manual = false): void {
-  if (manual) gitlab?.retry();
+  if (manual) {
+    gitlab?.retry();
+    stacks?.refreshNative(true);
+  }
   if (!worktree || shuttingDown) return;
   if (manual || state.trainsEnabled === undefined) {
     queue.run("project", worktree, [], (outcome) => {

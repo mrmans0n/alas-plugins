@@ -2,7 +2,7 @@
   "id": "io.nlopez.nacho-pr-inbox",
   "name": "Nacho's PR Inbox",
   "summary": "PR Inbox with on-demand CI failure evidence, bounded history and reviewed agent investigation briefs.",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "api": 18,
   "requires": { "codeHost": "github" },
   "entry": "plugin.js",
