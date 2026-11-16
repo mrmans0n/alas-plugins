@@ -9,7 +9,7 @@ const page = (message: object) => testHost.notify("web/message", { tab: 0, messa
 const done = (value: unknown) => ({ exit: 0, stdout: typeof value === "string" ? value : JSON.stringify(value), stderr: "", timedOut: false, truncated: false });
 let data: any[] = [], trainEnabled = true, failList = false, failProject = false;
 let model: any, acquisitions = 0, releases = 0;
-let native: unknown[] = [], malformedNative = false;
+let native: unknown[] = [], malformedNative = false, staleCache = false;
 const calls: any[] = [], notices: string[] = [], saves: any[] = [];
 const stored = new Map<string, unknown>();
 const blockers = (raw: any) => ({ ...raw, blockingMergeRequests: raw.blockingMergeRequests ?? { totalCount: 0, hiddenCount: 0, visibleMergeRequests: [] } });
@@ -25,7 +25,8 @@ function flush(): void {
       else if (m.method === "storage/set") { saves.push(m.params); stored.set(m.params.key, m.params.value); testHost.reply(m.id, {}); }
       else if (m.method === "stacks/list") {
         calls.push(m);
-        testHost.reply(m.id, { inventory: malformedNative ? null : { complete: true, busy: false, stacks: native } });
+        const stale = staleCache && !m.params.refresh;
+        testHost.reply(m.id, { inventory: malformedNative ? null : { complete: !stale, busy: false, stacks: native, ...(stale ? { error: "Native stack inventory is stale. Refresh before taking an action." } : {}) } });
       }
       else if (m.method === "stacks/open") { calls.push(m); testHost.reply(m.id, { opened: true }); }
       else if (m.method === "stacks/acquire") { acquisitions++; testHost.reply(m.id, { token: `owner-${acquisitions}` }); }
@@ -88,6 +89,18 @@ test("Refresh recovers ready MR actions after a malformed native inventory witho
   assert.equal(writes().length, 1);
   assert.equal(acquisitions, before + 1);
   assert.equal(releases, acquisitions);
+});
+
+test("native invalidation recovers stale MR ownership without a user Refresh or a provider write", () => {
+  refresh([node(1), node(2)]);
+  calls.length = 0;
+  staleCache = true;
+  testHost.notify("stacks/changed"); flush();
+  assert.equal(model.stacks.nativeError, undefined);
+  assert.equal(model.stacks.nativeRefreshing, false);
+  assert.equal(model.inbox.sections[0].rows[0].add.disabled, false);
+  assert.equal(writes().length, 0);
+  staleCache = false;
 });
 
 test("individual train and auto-merge actions pin host and full head under ownership", () => {

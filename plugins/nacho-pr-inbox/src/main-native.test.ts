@@ -7,6 +7,7 @@ const node=(n:number,base:string)=>({number:n,title:`PR ${n}`,url:`https://githu
 const reviews=[node(1,'main'),node(2,'f1')];
 const native={id:'native',name:'Native',base:'main',host:'github.com',repo:'o/r',fingerprint:'native-fingerprint',worktree:'wt',complete:true,entries:reviews.map((r,i)=>({id:`e${r.number}`,number:r.number,sha:r.headRefOid,position:i+1,title:r.title})),actions:['open','land','landThrough']};
 let state:any;
+let staleCache = false;
 const opened:any[]=[];
 const providerWrites:string[]=[];
 function drain():void {
@@ -18,7 +19,10 @@ function drain():void {
         case 'web/post':state=m.params.message;break;
         case 'workspace/snapshot':reply({snapshot:{worktrees:[{id:'wt',branch:'main',main:true,current:true,sessions:[]}]}});break;
         case 'storage/get':reply({value:null});break;
-        case 'stacks/list':reply({inventory:{complete:true,busy:false,stacks:[native]}});break;
+        case 'stacks/list': {
+          const stale = staleCache && !m.params.refresh;
+          reply({inventory:{complete:!stale,busy:false,stacks:[native],...(stale?{error:'Native stack inventory is stale. Refresh before taking an action.'}:{})}});break;
+        }
         case 'stacks/open':opened.push(m.params);reply({opened:true});break;
         case 'process/run':{
           const {id,args=[]}=m.params;let data:any;
@@ -51,4 +55,14 @@ test('native individual actions land only the eligible selected entry through na
   page({type:'merge',number:2});
   assert.deepEqual(opened[1],{stack:'native',fingerprint:'native-fingerprint',action:'landThrough',entry:'e2'});
   assert.deepEqual(providerWrites,[]);
+});
+
+test('native invalidation recovers stale ownership without a user Refresh or a provider write',()=>{
+  staleCache=true;
+  testHost.notify('stacks/changed');drain();
+  assert.equal(state.stacks.nativeError,undefined);
+  assert.equal(state.stacks.nativeRefreshing,false);
+  assert.equal(state.inbox.stackRows.find((r:any)=>r.number===2).merge.disabled,false);
+  assert.deepEqual(providerWrites,[]);
+  staleCache=false;
 });
