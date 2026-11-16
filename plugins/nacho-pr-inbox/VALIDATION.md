@@ -174,3 +174,23 @@ host/provider replies. Clicking Refresh changed the rendered green, approved PR'
 merge button from disabled to enabled after valid native inventory with a long
 refusal reason for another stack. No live merges were attempted; the installed
 host's failing reply was not captured.
+
+## Stale inventory recovery, 2026-11-16
+
+The shared controller upgrades incomplete cache-only reads to one fresh native
+discovery, retaining known membership and blocking writes while it settles.
+Fresh-read failures stop rather than retrying indefinitely.
+
+Verified with 47 passing tests across `shared/inbox-stack-controller.test.ts`,
+`main-native.test.ts`, `native-invalidation.test.ts`, and MR Inbox's `main.test.ts`.
+Both inbox builds and focused SDK/shared/inbox TypeScript checking passed.
+Repository-wide checking encountered missing generated `sprites.gen.ts` and
+`helper-source.ts` in unrelated plugins.
+
+A temporary host ran both built plugin bundles with fixture provider replies.
+Browser checks covered both pages at 900 px and both rails at 260 px: one warning,
+the inline Refresh native stacks action, disabled refresh/merge controls while
+discovery was held, and restored merge eligibility after valid inventory.
+Automatic recovery required no page action. No live provider mutations or
+installed-plugin replacement were performed. The temporary host was removed.
+

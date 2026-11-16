@@ -60,8 +60,15 @@ export function stackPanel(model: InboxStackModel | undefined, post: Post, rende
   if (!model || !model.selected && !model.confirmation && !model.operation && !model.error && !model.nativeError) return undefined;
   installStyle();
   const root = element("section", "stack-region"); root.setAttribute("aria-label", "Stack details");
-  if (model.error) root.append(element("p", "stack-issue", model.error));
-  if (model.nativeError && (model.selected || Object.values(model.badges).some(b => b.label.startsWith("gg")))) root.append(element("p", "stack-detail", `gg actions unavailable: ${model.nativeError}`));
+  if (model.error && model.error !== model.nativeError) root.append(element("p", "stack-issue", model.error));
+  if (model.nativeError) {
+    const recovery = element("div", "stack-panel");
+    recovery.append(element("p", "stack-issue", model.nativeError));
+    const controls = element("div", "stack-controls");
+    controls.append(button(model.nativeRefreshing ? "Refreshing native stacks…" : "Refresh native stacks", () => post({ type: "stack", action: "refresh" }), model.nativeRefreshing));
+    recovery.append(controls);
+    root.append(recovery);
+  }
   const selected = model.selected;
   if (selected) {
     const marker = selected.mode === "queue" ? "!" : "#";

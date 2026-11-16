@@ -190,10 +190,13 @@ Requires Alas plugin API 18. A clickable **Stack n/m** badge groups branch-based
 
 For gg, Open, Sync, Rebase, Land stack, and Land through this open Alas's native workflow and confirmation. Land stack covers the complete chain; Land through this covers the selected prefix. An individual **Land this** is available only when all its predecessors have merged. No raw glab merge runs for native gg members. Remote-only or unresolved ownership stays read-only with a reason.
 
+Native inventory invalidation automatically triggers read-only stack discovery.
+If discovery fails, use the inline **Refresh native stacks** button to retry.
 The inbox's **Refresh** retries native stack discovery as well as GitLab data.
-Failed discovery disables merge actions until ownership is known, even when CI
-and approval are green. Long native diagnostics remain readable instead of
-invalidating the inventory.
+Writes remain blocked until ownership is known, even when CI and approval are
+green. Native inventory recovery does not perform git mutations or run Sync,
+Rebase, or Land. Long native diagnostics remain readable instead of invalidating
+the inventory.
 
 Other verified linear chains offer **Queue stack** and **Queue through this** with a confirmation listing exact MRs, authors, heads, and final base. They submit one MR to the train (or auto-merge when trains are off), wait for GitLab to report it merged, then explicitly retarget the next descendant if needed and verify its unchanged head. Command acceptance, an existing train car, and auto-merge are queued states, not merged outcomes. Changed heads, dependencies, membership, blocked ancestors, or incomplete reads stop the operation. There is no automatic rebase, history rewrite, or branch cleanup request. Project branch-deletion settings still apply when GitLab lands an MR.
 

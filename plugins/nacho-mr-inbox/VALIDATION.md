@@ -58,3 +58,18 @@ host/provider replies. The green, approved MR's rendered merge button was disabl
 after malformed inventory and enabled after clicking Refresh with valid inventory
 containing a long refusal reason for another stack. No live merges were attempted;
 the installed host's failing reply was not captured.
+
+## Stale inventory recovery, 2026-11-16
+
+PR and MR Inbox share automatic recovery of incomplete cache-only native reads.
+The focused controller and production-main checks passed, 47 tests total across
+both inboxes. Both builds and focused SDK/shared/inbox TypeScript checking passed.
+Repository-wide checking encountered missing generated files in unrelated plugins.
+
+Browser checks used both built plugin bundles with fixture host/provider replies.
+The MR tab at 900 px and rail at 260 px showed one actionable native warning.
+Clicking Refresh native stacks disabled that button and merge actions while the
+native reply was held; valid inventory removed the warning and restored merge
+eligibility. Automatic stale-cache recovery required no page action.
+No live provider writes or installed-plugin replacement were performed.
+

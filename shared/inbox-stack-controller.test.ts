@@ -209,6 +209,45 @@ test("late native replies cannot erase newer inventory and failed refresh preser
   assert.match(f.controller.model().badges["github.com|o/r#1"].label, /gg/);
 });
 
+test("stale cached inventory refreshes automatically, retaining native ownership until discovery settles", () => {
+  const f = fixture();
+  f.controller.refreshNative(false);
+  const cached = testHost.takeSent()[0];
+  assert.equal(cached.params.refresh, false);
+  const stack = { id: "native", worktree: "wt", name: "feature", base: "main", host: "github.com", repo: "o/r", fingerprint: "v1", complete: true, actions: ["open", "land"], entries: [1, 2].map(n => ({ id: `gg-${n}`, sha: String(n).repeat(40), position: n, number: n, title: `Change ${n}` })) };
+  testHost.reply(cached.id, { inventory: { complete: false, busy: false, error: "Native stack inventory is stale. Refresh before taking an action.", stacks: [stack] } });
+  const discovery = testHost.takeSent().find(m => m.method === "stacks/list");
+  assert.ok(discovery, "invalidation must not leave the user to refresh stale host data");
+  assert.equal(discovery.params.refresh, true);
+  assert.equal(f.controller.model().nativeRefreshing, true);
+  assert.ok(individualBlocker(f.controller.graph, review(1).identity));
+  assert.match(f.controller.model().badges["github.com|o/r#1"].label, /gg/);
+  testHost.reply(discovery.id, { inventory: { complete: true, busy: false, stacks: [stack] } });
+  assert.equal(f.controller.model().nativeRefreshing, false);
+  assert.equal(f.controller.model().nativeError, undefined);
+  f.controller.handle({ type: "stack", action: "open", key: "github.com|o/r#1" });
+  assert.deepEqual(f.controller.model().selected?.native?.actions, ["open", "land"]);
+  assert.equal(f.submitted, 0, "inventory recovery never submits provider mutations");
+});
+
+test("failed automatic discovery stops after one attempt and remains explicitly refreshable", () => {
+  const f = fixture();
+  f.controller.refreshNative(false);
+  testHost.replyError(testHost.takeSent()[0].id, -32000, "Cached read failed");
+  const discovery = testHost.takeSent().find(m => m.method === "stacks/list");
+  assert.ok(discovery);
+  testHost.replyError(discovery.id, -32000, "Native discovery failed");
+  assert.equal(f.controller.model().nativeRefreshing, false);
+  assert.equal(f.controller.model().nativeError, "Native discovery failed");
+  assert.ok(individualBlocker(f.controller.graph, review(1).identity));
+  assert.deepEqual(testHost.takeSent(), [], "a failed fresh read must not loop");
+  f.controller.handle({ type: "stack", action: "refresh" });
+  f.flush();
+  assert.equal(f.controller.model().nativeError, undefined);
+  assert.equal(individualBlocker(f.controller.graph, review(1).identity), undefined);
+  assert.equal(f.submitted, 0);
+});
+
 test("a failed manual refresh stops an active stack instead of continuing from cached state", () => {
   const f = fixture({ queue: true }); f.start(); f.flush();
   f.failRefresh(); f.controller.handle({ type: "stack", action: "refresh" }); f.flush();

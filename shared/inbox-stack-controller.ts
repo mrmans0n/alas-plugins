@@ -24,6 +24,7 @@ export function parseStackPageMessage(value: unknown): StackPageMessage | undefi
 }
 export interface InboxStackModel {
   busy: boolean;
+  nativeRefreshing?: boolean;
   badges: Record<string, { key: string; label: string; stack: string }>;
   selected?: { key: string; name: string; base: string; entries: StackReview[]; ordered: boolean; issues: string[]; native?: NativeStack; outsideFilter: string[]; mode: "merge" | "queue"; canPrepare: boolean; canPrepareThrough: boolean };
   confirmation?: { members: StackReview[]; finalBase: string; mode: "merge" | "queue"; through: boolean };
@@ -110,9 +111,13 @@ export class InboxStackController {
     // An inventory invalidation can reveal native ownership after provider preflight.
     // Cancel queued writes before they acquire a process slot; running ones still settle.
     this.adapter.cancelPendingWrites?.();
+    this.draw();
     stackList(refresh, outcome => {
       if (this.disposed || generation !== this.nativeGeneration) return;
-      this.nativeLoading = false;
+      // A cache-only read may report invalidation or expiry, not a discovery failure.
+      // Rebuild once in that case; never retry a failed fresh read automatically.
+      const discover = !refresh && !outcome.result?.complete && outcome.result?.applicable !== false;
+      this.nativeLoading = discover;
       const fresh = outcome.result;
       if (fresh?.complete) { this.inventory = fresh; this.nativeError = fresh.error; }
       else {
@@ -133,6 +138,7 @@ export class InboxStackController {
         this.nativeError = reason;
       }
       this.rebuild(); this.draw();
+      if (discover) { this.refreshNative(true); return; }
       if (active(this.operation) && !this.pending) this.cycle();
     });
   }
@@ -349,7 +355,7 @@ export class InboxStackController {
       const scope = stackScope(component, through ? member!.identity : undefined).scope;
       return !!scope && (this.adapter.mode !== "merge" || scope.members.every(r => r.ready));
     };
-    return { busy: this.busy, badges,
+    return { busy: this.busy, nativeRefreshing: this.nativeLoading, badges,
       ...(component ? { selected: { key: this.selected!, name: component.name, base: component.finalBase, entries: component.order ?? component.members, ordered: !!component.order || !!component.native?.entries.length && [...component.native.entries].sort((a, b) => a.position - b.position).every((e, i) => e.position === i + 1), issues: component.issues, native: component.native,
         outsideFilter: mineOnly && viewer ? component.members.filter(r => !!r.author && r.author.toLowerCase() !== viewer.toLowerCase()).map(r => reviewKey(r.identity)) : [],
         mode: this.adapter.mode, canPrepare: readyScope(false), canPrepareThrough: readyScope(true) } } : {}),
