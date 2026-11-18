@@ -84,10 +84,15 @@ export class MRStackAdapter implements StackAdapter {
           attempted.add(`base:${branch}`);
           this.graphql(current.host, current.project, `repository{commit(ref:$ref){sha}} mergeRequests(sourceBranches:[$branch],first:5){nodes{${REVIEW_FIELDS} ${BLOCKERS}} pageInfo{hasNextPage}}`, ["-f", `branch=${branch}`, "-f", `ref=refs/heads/${branch}`], (data, error) => {
             const connection = data?.project?.mergeRequests, target = data?.project?.repository?.commit?.sha;
-            if (error || !Array.isArray(connection?.nodes) || connection.pageInfo?.hasNextPage !== false || !fullSHA(target)) { finish(error ?? "Historical ancestor branch information is incomplete."); return; }
+            if (error) { finish(error); return; }
+            // An unresolved ancestor only taints the requests that target this branch. Long-lived
+            // branches (release or staging) routinely have unrelated closed requests or moved tips,
+            // and one of them must not make every other stack in the project read-only.
+            const unresolved = () => { for (const r of reviews) if (r.base === branch && r.identity.repo === current.project) r.blockersComplete = false; next(); };
+            if (!Array.isArray(connection?.nodes) || connection.pageInfo?.hasNextPage !== false || !fullSHA(target)) { unresolved(); return; }
             const candidates = connection.nodes.map((raw: unknown) => parseStackReview(raw, current.host, current.project));
             const matches = candidates.filter((r: StackReview | undefined) => r && r.sourceRepo === current.project && r.branch === branch && r.sha === target && r.state !== "open");
-            if (candidates.some((r: StackReview | undefined) => !r) || connection.nodes.length && matches.length !== 1) { finish("Historical ancestor branch identity is unresolved or ambiguous."); return; }
+            if (candidates.some((r: StackReview | undefined) => !r) || connection.nodes.length && matches.length !== 1) { unresolved(); return; }
             for (const review of matches as StackReview[]) {
               if (!reviews.some(old => reviewKey(old.identity) === reviewKey(review.identity))) {
                 reviews.push(review); applyDependencies(review, connection.nodes.find((raw: any) => raw.iid === String(review.identity.number))?.blockingMergeRequests);

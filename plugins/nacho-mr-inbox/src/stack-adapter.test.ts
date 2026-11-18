@@ -133,7 +133,12 @@ test("cold-start historical ancestors determine the final base and reject reused
     f.answer({ data: { project: { repository: { commit: { sha: matches ? "a".repeat(40) : "b".repeat(40) } }, mergeRequests: { nodes: [{ ...node(1), state: "merged", blockingMergeRequests: { totalCount: 0, hiddenCount: 0, visibleMergeRequests: [] } }], pageInfo: { hasNextPage: false } } } } });
     const graph = buildStacks(snapshot.reviews, snapshot);
     if (matches) { assert.equal(graph.components[0].finalBase, "main"); assert.equal(graph.components[0].complete, true); }
-    else { assert.equal(snapshot.complete, false); assert.match(snapshot.error, /historical|ancestor|branch/i); }
+    else {
+      assert.equal(snapshot.error, undefined, "one unresolved branch must not taint the whole inbox");
+      assert.equal(snapshot.reviews.find((r: any) => r.base === "nacho/mr-1").blockersComplete, false);
+      assert.ok(graph.blocked[reviewKey(snapshot.reviews.find((r: any) => r.base === "nacho/mr-1").identity)]);
+      assert.equal(graph.components[0].complete, false, "the affected stack stays read-only");
+    }
   }
 });
 
