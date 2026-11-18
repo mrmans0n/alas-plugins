@@ -108,6 +108,22 @@
       "id": "io.nlopez.nacho-mr-inbox",
       "versions": [
         {
+          "version": "0.4.3",
+          "api": 18,
+          "capabilities": [
+            "workspace.read",
+            "process.exec",
+            "timers",
+            "notify",
+            "session.write",
+            "network"
+          ],
+          "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.3/plugin.json",
+          "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.3/plugin.js",
+          "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.3/ui.js",
+          "hash": "45600af8c464d807fc8d5121d1f9497b8c7d58647fa4fa88f66def8ee4c56772"
+        },
+        {
           "version": "0.4.2",
           "api": 18,
           "capabilities": [
