@@ -95,7 +95,7 @@ test('late verification refresh starts a new provider read after its request', (
 });
 test('reused historical branch without matching target OID cannot establish ancestry', () => {
   const adapter=new PRStackAdapter({run(id,_wt,_args,done){done(result(id==='list'?fixture([{...node,baseRefName:'parent',baseRefOid:'b'.repeat(40)}]):JSON.stringify({data:{repository:{pullRequests:{nodes:[{...node,number:2,headRepository:{nameWithOwner:'o/r'},headRefName:'parent',state:'MERGED'}],pageInfo:{hasNextPage:false}}}}})));}},'wt',()=>{});
-  adapter.refresh([],snapshot=>{assert.equal(snapshot?.complete,false);assert.equal(snapshot?.reviews.length,1);assert.match(snapshot?.error??'',/identity|ancestor|branch/i);});
+  adapter.refresh([],snapshot=>{assert.equal(snapshot?.reviews.length,1);assert.equal(snapshot?.error,undefined,'one unresolved branch must not taint the whole inbox');assert.equal(snapshot?.reviews[0].blockersComplete,false,'only requests targeting it are blocked');});
 });
 
 test('shutdown while retarget verification is pending prevents a new provider write', () => {

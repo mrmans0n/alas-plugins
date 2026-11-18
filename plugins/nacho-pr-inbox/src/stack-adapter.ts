@@ -68,12 +68,15 @@ export class PRStackAdapter implements StackAdapter {
           if (error) { finish(error); return; }
           const connection = data?.repository?.pullRequests;
           const nodes = missing ? [data?.repository?.pullRequest] : connection?.nodes;
-          if (!Array.isArray(nodes) || !missing && connection?.pageInfo?.hasNextPage !== false) { finish('Dependency information is incomplete.'); return; }
+          // An unresolved ancestor only taints the requests that target that branch, so unrelated
+          // long-lived branches cannot make every other stack read-only.
+          const unresolved = () => { for (const r of reviews) if (r.base === ancestor!.base && r.identity.repo === ancestor!.identity.repo) r.blockersComplete = false; next(); };
+          if (!Array.isArray(nodes) || !missing && connection?.pageInfo?.hasNextPage !== false) { if (missing) finish('Dependency information is incomplete.'); else unresolved(); return; }
           let parsed = nodes.map(n=>parseStackReview(n,inbox!.host!,inbox!.repo));
           if(!missing && nodes.length) {
             const target=inbox!.baseHeads?.[ancestor!.identity.number];
             parsed=parsed.filter(r=>r && r.sourceRepo?.toLowerCase()===ancestor!.identity.repo.toLowerCase() && r.branch===ancestor!.base && !!target && r.sha===target);
-            if(parsed.length!==1) { finish('Historical ancestor branch identity is unresolved or ambiguous.'); return; }
+            if(parsed.length!==1) { unresolved(); return; }
           }
           if (parsed.some(r=>!r) || missing && parsed[0]?.identity.number!==id.number) { finish('A required request is missing or inaccessible.'); return; }
           for (const r of parsed as StackReview[]) if (!reviews.some(old=>key(old)===key(r))) {

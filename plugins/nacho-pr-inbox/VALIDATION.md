@@ -194,3 +194,12 @@ discovery was held, and restored merge eligibility after valid inventory.
 Automatic recovery required no page action. No live provider mutations or
 installed-plugin replacement were performed. The temporary host was removed.
 
+
+## Scoped ancestor failures, 2026-11-18
+
+An unresolvable historical ancestor branch (for example a long-lived release branch
+with old closed requests and a moved tip) now blocks only the requests targeting it
+and their stack, instead of making the whole inbox incomplete. Unit tests cover the
+reused-head case in both adapters; the full inbox suites passed. Verified against
+android_stb data, where `OEM-Release-*` and `a14_staging` triggered the failure. No
+browser check or live provider writes were performed.
