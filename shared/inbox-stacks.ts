@@ -35,6 +35,8 @@ export interface StackGraph {
   blocked: Record<string, string>;
   complete: boolean;
   error?: string;
+  /** Why a request outside any known stack cannot merge on its own; native gg freshness never blocks it. */
+  individualError?: string;
 }
 export interface FrozenScope {
   stack: string;
@@ -51,8 +53,9 @@ const branchKey = (host: string, repo: string, branch: string): string => `${hos
 const sameRepo = (a: ReviewIdentity, b: ReviewIdentity): boolean => a.host.toLowerCase() === b.host.toLowerCase() && a.repo.toLowerCase() === b.repo.toLowerCase();
 
 /** Membership is established before any inbox filter is applied. Unknown blockers stay in the graph. */
-export function buildStacks(reviews: StackReview[], options: { complete: boolean; native?: NativeStack[]; error?: string }): StackGraph {
-  const result: StackGraph = { components: [], byReview: {}, blocked: {}, complete: options.complete, error: options.error };
+export function buildStacks(reviews: StackReview[], options: { complete: boolean; native?: NativeStack[]; error?: string; nativeError?: string }): StackGraph {
+  const result: StackGraph = { components: [], byReview: {}, blocked: {}, complete: options.complete && !options.nativeError, error: options.nativeError ?? options.error,
+    ...(options.complete ? {} : { individualError: options.error ?? "The request list is incomplete." }) };
   const nodes = new Map<string, StackReview>();
   const leaders = new Map<string, string>();
   const parents = new Map<string, Set<string>>();
@@ -153,11 +156,13 @@ export function buildStacks(reviews: StackReview[], options: { complete: boolean
     if (members.some(r => r.state === "unknown")) problems.push("A dependency is missing or inaccessible.");
     if (members.some(r => r.state === "closed")) problems.push("A dependency was closed without merging.");
     for (const key of keys) if (result.blocked[key]) problems.push(result.blocked[key]);
+    // Unknown native ownership still blocks stack-wide writes.
+    if (options.nativeError) problems.push(options.nativeError);
     const finalBase = native?.base ?? order?.[0]?.base ?? "";
     if (!finalBase) problems.push("The final base branch is unknown.");
     const component: StackComponent = {
       id: native?.id ?? keys[0], name: native?.name ?? `Stack · ${members.length} requests`, members, order, native,
-      issues: [...new Set(problems)], complete: options.complete && !problems.length,
+      issues: [...new Set(problems)], complete: result.complete && !problems.length,
       finalBase, fingerprint: JSON.stringify({ native: native?.fingerprint, members: (order ?? members).map(r => [reviewKey(r.identity), r.sha, r.sourceRepo, r.branch, r.base, (r.blockers ?? []).map(reviewKey).sort()]) }),
     };
     result.components.push(component);
@@ -186,7 +191,7 @@ export function stackScope(stack: StackComponent, through?: ReviewIdentity): { s
 /** Individual merge buttons retain their scope. A prefix merge must have a different label. */
 export function individualBlocker(graph: StackGraph, identity: ReviewIdentity): string | undefined {
   const component = graph.byReview[reviewKey(identity)];
-  if (!component) return graph.complete ? undefined : graph.error ?? "The request list is incomplete.";
+  if (!component) return graph.individualError;
   const member = component.members.find(r => reviewKey(r.identity) === reviewKey(identity));
   if (!member) return "Request identity is unavailable.";
   if (component.native && !component.complete) return component.issues[0] ?? "Native stack order is unavailable.";
@@ -201,5 +206,5 @@ export function individualBlocker(graph: StackGraph, identity: ReviewIdentity): 
   }
   if (blockers.length) return `Depends on #${blockers[0].identity.number}. Use the stack action to include its predecessors.`;
   if (member.blockersComplete === false) return "Dependency information is incomplete.";
-  return graph.complete ? undefined : graph.error ?? "The request list is incomplete.";
+  return graph.individualError;
 }

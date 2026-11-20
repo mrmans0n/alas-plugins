@@ -57,11 +57,13 @@ function copyLinks(panel: HTMLElement, reviews: StackReview[], trigger: HTMLButt
 
 /** Provider pages supply their existing row renderer, preserving every individual action. */
 export function stackPanel(model: InboxStackModel | undefined, post: Post, renderEntry?: (review: StackReview) => HTMLElement | undefined): HTMLElement | undefined {
-  if (!model || !model.selected && !model.confirmation && !model.operation && !model.error && !model.nativeError) return undefined;
+  // Native gg health only gates stack actions, so its warning lives inside an open stack, not over the whole inbox.
+  if (!model || !model.selected && !model.confirmation && !model.operation && !model.error) return undefined;
   installStyle();
   const root = element("section", "stack-region"); root.setAttribute("aria-label", "Stack details");
+  const selected = model.selected;
   if (model.error && model.error !== model.nativeError) root.append(element("p", "stack-issue", model.error));
-  if (model.nativeError) {
+  if (model.nativeError && selected) {
     const recovery = element("div", "stack-panel");
     recovery.append(element("p", "stack-issue", model.nativeError));
     const controls = element("div", "stack-controls");
@@ -69,7 +71,6 @@ export function stackPanel(model: InboxStackModel | undefined, post: Post, rende
     recovery.append(controls);
     root.append(recovery);
   }
-  const selected = model.selected;
   if (selected) {
     const marker = selected.mode === "queue" ? "!" : "#";
     const panel = element("section", "stack-panel");

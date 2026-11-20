@@ -58,29 +58,25 @@ test('source repository, source branch or head changing during preflight prevent
     assert.match(state.inbox.stackRows[0].error??'',/changed/i);
   }
 });
-test('native inventory still refreshing at final provider preflight blocks raw gh',()=>{
+test('a native refresh during final provider preflight does not block a standalone merge',()=>{
   reset();const before=rawWrites.length;
   holdList=true;page({type:'merge',number:1});assert.ok(list);
   holdInventory=true;changed();assert.ok(inventory);
   holdList=false;testHost.reply(list.id,result(payload()));drain();
-  assert.equal(rawWrites.length,before);
-  assert.match(state.inbox.stackRows[0].error??'',/refresh|native|changed/i);
+  assert.equal(rawWrites.length,before+1);
   holdInventory=false;testHost.reply(inventory.id,{inventory:{complete:true,busy:false,stacks:[]}});drain();
 });
 
-test('manual Refresh retries malformed native inventory and restores merge eligibility only after a valid reply',()=>{
+test('malformed native inventory warns but keeps a standalone merge enabled; manual Refresh retries it',()=>{
   reset();const before=rawWrites.length;
   assert.equal(state.inbox.stackRows[0].merge.disabled,false);
   malformedInventory=true;changed();
-  assert.equal(state.inbox.stackRows[0].merge.disabled,true);
   assert.ok(state.stacks.nativeError);
-  page({type:'refresh'});
-  assert.equal(state.inbox.stackRows[0].merge.disabled,true,'provider success cannot override unknown native ownership');
+  assert.equal(state.inbox.stackRows[0].merge.disabled,false,'native gg health only gates stack actions');
   malformedInventory=false;
   holdInventory=true;page({type:'refresh'});assert.ok(inventory,'manual Refresh must retry native discovery');
-  assert.equal(state.inbox.stackRows[0].merge.disabled,true,'native discovery must settle before merges become eligible');
+  assert.equal(state.inbox.stackRows[0].merge.disabled,false,'a background native refresh does not disable merges');
   holdInventory=false;testHost.reply(inventory.id,{inventory:{complete:true,busy:false,stacks:[]}});drain();
-  assert.equal(state.inbox.stackRows[0].merge.disabled,false);
   assert.equal(state.stacks.nativeError,undefined);
   assert.equal(rawWrites.length,before,'refresh recovery never starts a provider mutation');
 });

@@ -41,7 +41,7 @@ const queue = new ProcessQueue((id, wt, args, done) => processRun(id, wt, { args
 
 /** Sends the state to the tab's and the rail's pages; one that is not shown drops it. */
 const draw = () => {
-  state.graph = stacks?.graph; state.stackBusy = stacks?.busy;
+  state.graph = stacks?.graph; state.stackBusy = stacks?.mutating;
   const message: PluginMessage = { type: "state", stacks: stacks?.model(state.inbox?.user, state.mineOnly), inbox: inboxModel(state, Date.now()), ...(doctor?.state.target ? { doctor: doctorModel(doctor.state) } : {}) };
   webPost(TAB, message);
   webPost(PANEL, message);
@@ -107,7 +107,7 @@ function add(iid: number): boolean {
   const when = mr && addMode(mr);
   if (!worktree || !inbox || !mr || !when || state.busy !== undefined || !SHA.test(mr.sha)) return false;
   const member = inbox.reviews?.find(r => r.identity.number === iid && r.identity.repo === inbox.project);
-  if (!stacks || !adapter || !inbox.complete || !member || stacks.busy) return false;
+  if (!stacks || !adapter || !inbox.complete || !member || stacks.mutating) return false;
   const blocked = () => individualBlocker(stacks!.graph, member.identity);
   const native = stacks.graph.byReview[reviewKey(member.identity)]?.native;
   if (blocked()) { state.errors[iid] = blocked()!; draw(); return false; }
@@ -118,7 +118,7 @@ function add(iid: number): boolean {
     adapter!.refresh(stacks!.requiredIdentities, (snapshot, error) => {
       if (snapshot) stacks!.updateProvider(snapshot);
       const fresh = snapshot?.reviews.find(r => reviewKey(r.identity) === reviewKey(member.identity));
-      if (shuttingDown || stacks!.nativeRefreshing || error || !snapshot?.complete || !fresh || fresh.sha !== member.sha || fresh.sourceRepo !== member.sourceRepo || fresh.branch !== member.branch || fresh.base !== member.base || fresh.state !== "open" || !fresh.canQueue || fresh.queued || blocked() || stacks!.graph.byReview[reviewKey(member.identity)]?.native) return done(error ?? blocked() ?? "MR changed before queueing. Refresh and try again.");
+      if (shuttingDown || error || !snapshot?.complete || !fresh || fresh.sha !== member.sha || fresh.sourceRepo !== member.sourceRepo || fresh.branch !== member.branch || fresh.base !== member.base || fresh.state !== "open" || !fresh.canQueue || fresh.queued || blocked() || stacks!.graph.byReview[reviewKey(member.identity)]?.native) return done(error ?? blocked() ?? "MR changed before queueing. Refresh and try again.");
       adapter!.submit(fresh, done);
     });
   }, failure => {
@@ -134,7 +134,7 @@ function add(iid: number): boolean {
 
 /** Adds the ready MRs one at a time, each after a fresh list, stopping at the first failure. */
 function addAll(): void {
-  if (!state.inbox?.complete || stacks?.busy || state.busy !== undefined || state.addAll) return;
+  if (!state.inbox?.complete || stacks?.mutating || state.busy !== undefined || state.addAll) return;
   addQueue = addCandidates(state).map((m) => m.iid);
   if (addQueue.length === 0) return;
   state.addAll = { total: addQueue.length, done: 0 };

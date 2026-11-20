@@ -9,7 +9,7 @@ const head='a'.repeat(40);
 const review={number:1,title:'One',url:'https://github.com/o/r/pull/1',state:'OPEN',isDraft:false,headRefName:'feature',headRefOid:head,headRepository:{nameWithOwner:'o/r'},baseRefName:'main',baseRefOid:'b'.repeat(40),updatedAt:'2026-11-07T00:00:00Z',mergeable:'MERGEABLE',reactions:{nodes:[{user:{login:'chatgpt-codex-connector'}}]},commits:{nodes:[{commit:{statusCheckRollup:{state:'SUCCESS'}}}]}};
 const page=JSON.stringify({data:{repository:{nameWithOwner:'o/r',url:'https://github.com/o/r',defaultBranchRef:{name:'main'},pullRequests:{nodes:[review],pageInfo:{hasNextPage:false,endCursor:null}}}}});
 const result=(stdout='')=>({result:{exit:0,stdout,stderr:'',truncated:false,timedOut:false}});
-test('native invalidation after provider validation cancels a raw merge queued behind running reads',()=>{
+test('native invalidation does not cancel a standalone merge queued behind running reads',()=>{
   definePlugin({handle(){}});
   testHost.dispatch({jsonrpc:'2.0',id:0,method:'alas/activate',params:{api:18,project:{id:'p',name:'P'},grants:[]}});testHost.takeSent();
   const spawned:string[]=[];
@@ -48,13 +48,13 @@ test('native invalidation after provider validation cancels a raw merge queued b
   assert.equal(callbackCount,0,'merge is queued while the reservation remains owned');
   assert.equal(released,0);
   controller.refreshNative(false);
-  assert.equal(callbackCount,0,'caller settles after the release reply');
   const inventory=host(true);assert.ok(inventory);
-  assert.equal(callbackCount,1);assert.match(error??'',/stopped|cancelled/);
-  assert.equal(released,1);assert.equal(controller.nativeRefreshing,true);
+  assert.equal(callbackCount,0,'a standalone merge pinned to its head is not cancelled by native invalidation');
+  assert.equal(controller.nativeRefreshing,true);
   while(pending.length)pending.shift()!.done(result());
-  assert.deepEqual(spawned,['list','ci-api','ci-api'],'freeing process slots cannot spawn the invalidated merge');
+  assert.deepEqual(spawned,['list','ci-api','ci-api','merge'],'the merge runs once a process slot frees');
+  host();
+  assert.equal(callbackCount,1);assert.equal(error,undefined);assert.equal(released,1);
   testHost.reply(inventory.id,{inventory:{complete:true,busy:false,stacks:[]}});
   assert.equal(controller.nativeRefreshing,false);assert.equal(controller.busy,false);
-  assert.equal(released,1);assert.equal(callbackCount,1);
 });

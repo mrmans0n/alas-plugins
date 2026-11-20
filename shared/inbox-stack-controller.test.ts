@@ -111,11 +111,11 @@ test("storage failure or foreign ownership prevents the first provider write", (
   }
 });
 
-test("failed or incomplete initial native inventory cannot enable generic provider actions", () => {
+test("failed or incomplete initial native inventory blocks stack actions but not an individual merge", () => {
   for (const native of ["failed", "incomplete"] as const) {
     const f = fixture({ native }); f.start(); f.flush();
     assert.equal(f.controller.graph.complete, false);
-    assert.ok(individualBlocker(f.controller.graph, review(1).identity));
+    assert.equal(individualBlocker(f.controller.graph, review(1).identity), undefined, "native gg health only gates stack actions");
     assert.equal(f.submitted, 0);
     assert.equal(f.controller.model().confirmation, undefined);
     assert.ok(f.controller.model().error);
@@ -239,12 +239,12 @@ test("failed automatic discovery stops after one attempt and remains explicitly 
   testHost.replyError(discovery.id, -32000, "Native discovery failed");
   assert.equal(f.controller.model().nativeRefreshing, false);
   assert.equal(f.controller.model().nativeError, "Native discovery failed");
-  assert.ok(individualBlocker(f.controller.graph, review(1).identity));
+  assert.equal(f.controller.graph.complete, false);
   assert.deepEqual(testHost.takeSent(), [], "a failed fresh read must not loop");
   f.controller.handle({ type: "stack", action: "refresh" });
   f.flush();
   assert.equal(f.controller.model().nativeError, undefined);
-  assert.equal(individualBlocker(f.controller.graph, review(1).identity), undefined);
+  assert.equal(f.controller.graph.complete, true);
   assert.equal(f.submitted, 0);
 });
 
@@ -288,13 +288,15 @@ test("opening native membership fetches missing context without inferring merged
   assert.equal(controller.model().selected?.entries.find(r => r.identity.number === 1)?.state, "merged");
 });
 
-test("unreadable local native mapping cannot fall through to generic actions", () => {
+test("unreadable local native mapping cannot fall through to generic stack actions", () => {
   const f = fixture();
   f.controller.refreshNative(true); const request = testHost.takeSent()[0];
   const native = { id: "unmapped", name: "feature", base: "main", host: "github.com", repo: "o/r", fingerprint: "v1", complete: false, actions: ["open"], entries: [{ id: "entry", sha: "1".repeat(40), position: 1, title: "Local entry" }] };
   testHost.reply(request.id, { inventory: { complete: false, busy: false, stacks: [native], error: "Local mapping unreadable" } });
   assert.equal(f.controller.graph.complete, false);
-  assert.match(individualBlocker(f.controller.graph, review(1).identity) ?? "", /native|mapping/i);
+  assert.match(f.controller.graph.error ?? "", /native|mapping/i);
+  f.controller.prepare("github.com|o/r#1", false);
+  assert.equal(f.controller.model().confirmation, undefined, "stack writes wait for native mapping");
   assert.ok(f.controller.model().error);
   f.controller.refreshNative(true); const fresh = testHost.takeSent()[0];
   testHost.reply(fresh.id, { inventory: { complete: true, busy: false, stacks: [{ ...native, reviewNumbers: [] }] } });
