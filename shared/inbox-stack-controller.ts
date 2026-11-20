@@ -67,15 +67,17 @@ export class InboxStackController {
     if (native) for (const number of [...native.entries.flatMap(e => e.number ? [e.number] : []), ...(native.reviewNumbers ?? [])]) ids.push({ host: native.host, repo: native.repo, number });
     return [...new Map(ids.map(id => [reviewKey(id), id])).values()];
   }
-  get busy(): boolean { return active(this.operation) || this.pending || this.individual || this.inventory.busy || this.nativeLoading; }
+  get busy(): boolean { return this.mutating || this.nativeLoading; }
+  /** A write is in flight; a background native refresh alone does not block individual merges. */
+  get mutating(): boolean { return active(this.operation) || this.pending || this.individual || this.inventory.busy; }
   private draw(): void { if (!this.disposed) this.changed(); }
   private rebuild(): void {
     const nativeUnknown = !this.inventory.complete && this.inventory.applicable !== false;
     const unmapped = this.inventory.stacks.find(s => !s.complete && !!s.base && !s.entries.some(e => e.number)
       && s.reviewNumbers === undefined && this.provider.reviews.some(r => r.identity.host.toLowerCase() === s.host.toLowerCase() && r.identity.repo.toLowerCase() === s.repo.toLowerCase()));
-    this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete && !nativeUnknown && !unmapped, native: this.inventory.stacks,
-      error: unmapped ? `Native review mapping for ${unmapped.name} is unavailable. Refresh native stacks before running provider actions.`
-        : nativeUnknown ? this.inventory.error ?? "Native stack ownership is unknown. Refresh native stacks before running provider actions." : this.provider.error });
+    this._graph = buildStacks(this.provider.reviews, { complete: this.provider.complete, native: this.inventory.stacks, error: this.provider.error,
+      nativeError: unmapped ? `Native review mapping for ${unmapped.name} is unavailable. Refresh native stacks before running provider actions.`
+        : nativeUnknown ? this.inventory.error ?? "Native stack ownership is unknown. Refresh native stacks before running provider actions." : undefined });
   }
   private applyProvider(snapshot: StackProviderSnapshot): void {
     if (!snapshot.complete) {
@@ -108,9 +110,10 @@ export class InboxStackController {
   refreshNative(refresh: boolean): void {
     const generation = ++this.nativeGeneration;
     this.nativeLoading = true;
-    // An inventory invalidation can reveal native ownership after provider preflight.
-    // Cancel queued writes before they acquire a process slot; running ones still settle.
-    this.adapter.cancelPendingWrites?.();
+    // An inventory invalidation can reveal native ownership after a stack operation's preflight.
+    // Cancel its queued writes before they acquire a process slot; running ones still settle.
+    // Individual merges are scoped to one request and pinned to its head, so they keep going.
+    if (active(this.operation)) this.adapter.cancelPendingWrites?.();
     this.draw();
     stackList(refresh, outcome => {
       if (this.disposed || generation !== this.nativeGeneration) return;
@@ -317,7 +320,7 @@ export class InboxStackController {
   }
   /** Existing individual/bulk provider actions participate in the same host reservation. */
   runMutation(execute: (done: (error?: string) => void) => void, done: (error?: string) => void): void {
-    if (this.busy || this.disposed) { done("A project mutation is already running."); return; }
+    if (this.mutating || this.disposed) { done("A project mutation is already running."); return; }
     this.touched = true; this.individual = true; this.draw();
     stackAcquire(outcome => {
       if (outcome.error) { this.individual = false; this.draw(); done(outcome.error.message); return; }
@@ -361,6 +364,6 @@ export class InboxStackController {
         mode: this.adapter.mode, canPrepare: readyScope(false), canPrepareThrough: readyScope(true) } } : {}),
       ...(this.prepared ? { confirmation: { members: this.prepared.scope.members, finalBase: this.prepared.scope.finalBase, mode: this.adapter.mode, through: this.prepared.through } } : {}),
       ...(this.operation ? { operation: { phase: this.operation.phase, done: this.operation.completed.length, total: this.operation.scope.members.length, error: this.operation.error, message: this.waitingMessage } } : {}),
-      error: this.error ?? this.graph.error, nativeError: this.nativeError };
+      error: this.error ?? this.provider.error, nativeError: this.nativeError ?? (this.graph.error !== this.provider.error ? this.graph.error : undefined) };
   }
 }

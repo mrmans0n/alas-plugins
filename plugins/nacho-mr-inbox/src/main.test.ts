@@ -68,27 +68,25 @@ test("API18 activation loads real stack inventory and project identity", () => {
   assert.equal(model.stacks.busy, false);
 });
 
-test("Refresh recovers ready MR actions after a malformed native inventory without bypassing ownership", () => {
+test("a malformed native inventory does not block a standalone MR; Refresh clears the warning", () => {
   malformedNative = true;
   testHost.notify("stacks/changed"); flush();
   assert.ok(model.stacks.nativeError);
-  const blocked = model.inbox.sections[0].rows[0];
-  assert.deepEqual(blocked.chips.map((chip: { text: string }) => chip.text), ["✓ pipeline", "✓ approved"]);
-  assert.equal(blocked.add.disabled, true);
+  const row = model.inbox.sections[0].rows[0];
+  assert.deepEqual(row.chips.map((chip: { text: string }) => chip.text), ["✓ pipeline", "✓ approved"]);
+  assert.equal(row.add.disabled, false, "native gg health only gates stack actions");
   calls.length = 0;
-  page({ type: "add", iid: blocked.iid }); flush();
-  assert.equal(writes().length, 0);
-
-  malformedNative = false;
-  page({ type: "refresh" }); flush();
-  assert.equal(calls.find(c => c.method === "stacks/list")?.params.refresh, true);
-  assert.equal(model.stacks.nativeError, undefined);
-  assert.equal(model.inbox.sections[0].rows[0].add.disabled, false);
   const before = acquisitions;
-  page({ type: "add", iid: blocked.iid }); flush();
+  page({ type: "add", iid: row.iid }); flush();
   assert.equal(writes().length, 1);
   assert.equal(acquisitions, before + 1);
   assert.equal(releases, acquisitions);
+
+  malformedNative = false;
+  calls.length = 0;
+  page({ type: "refresh" }); flush();
+  assert.equal(calls.find(c => c.method === "stacks/list")?.params.refresh, true);
+  assert.equal(model.stacks.nativeError, undefined);
 });
 
 test("native invalidation recovers stale MR ownership without a user Refresh or a provider write", () => {

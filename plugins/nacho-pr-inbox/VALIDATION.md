@@ -203,3 +203,12 @@ and their stack, instead of making the whole inbox incomplete. Unit tests cover 
 reused-head case in both adapters; the full inbox suites passed. Verified against
 android_stb data, where `OEM-Release-*` and `a14_staging` triggered the failure. No
 browser check or live provider writes were performed.
+
+## Standalone merges ignore native gg freshness, 2026-11-20
+
+A request outside any known stack is now gated only by its own provider state. A stale,
+refreshing, or failed native gg inventory still blocks stack-wide actions and native
+lands, but no longer disables or cancels an individual merge (the write stays pinned to
+the reviewed head). The native warning and its Refresh control now show only inside an
+open stack. Unit suites in both inboxes and the shared controller passed. No browser
+check or live provider writes were performed.
