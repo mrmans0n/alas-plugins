@@ -6,7 +6,7 @@ Usage: update-index.py <folder> <tag> <plugin.json> <hash>
 Only the released version's entry is written. Other versions are kept as they are, including
 WebAssembly-era entries (api 1 to 3, a "wasm" URL and no "entry"), which Alas skips.
 A manifest with a page (API 12 `web`) also gets the release's page asset as `web`, named like the file.
-The version gets today's UTC date as `released`; the plugin gets the manifest's `author` and `icon`.
+The version gets today's UTC date as `released`; the plugin gets the manifest's `author`, `authorGitHub` and `icon`.
 """
 import datetime
 import json
@@ -26,7 +26,7 @@ if plugin is None:
 plugin["name"] = manifest["name"]
 plugin["summary"] = manifest.get("summary", "")
 plugin["homepage"] = f"{REPO}/tree/main/plugins/{folder}"
-for key in ("author", "icon"):
+for key in ("author", "authorGitHub", "icon"):
     if manifest.get(key):
         plugin[key] = manifest[key]
 

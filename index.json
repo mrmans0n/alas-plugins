@@ -34,7 +34,8 @@
       "name": "Agent Usage",
       "summary": "A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/agent-usage",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "chart.bar.xaxis"
     },
     {
@@ -87,7 +88,8 @@
       "name": "Kanban",
       "summary": "A ticket board for the project. Starting a ticket starts an agent in a new worktree.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/kanban",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "square.split.3x1"
     },
     {
@@ -113,7 +115,8 @@
       "name": "Linear",
       "summary": "Your assigned Linear issues in a panel. Start one to run an agent on it and comment back when it finishes.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/linear-bridge",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "checklist"
     },
     {
@@ -259,7 +262,8 @@
       "name": "Nacho's MR Inbox",
       "summary": "The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-mr-inbox",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "arrow.triangle.merge"
     },
     {
@@ -632,7 +636,8 @@
       "name": "Nacho's PR Inbox",
       "summary": "PR Inbox with on-demand CI failure evidence, bounded history and reviewed agent investigation briefs.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-pr-inbox",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "arrow.triangle.pull"
     },
     {
@@ -668,7 +673,8 @@
       "name": "Notion Context",
       "summary": "Adds a Notion page's content to every prompt sent to agents in the project.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/notion-context",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "doc.text"
     },
     {
@@ -704,7 +710,8 @@
       "name": "Pixel Office",
       "summary": "Your project as a pixel-art office: a desk per worktree, a character per agent session.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/pixel-office",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "building.2"
     },
     {
@@ -732,7 +739,8 @@
       "name": "Prompt Library",
       "summary": "Slash prompts for everyday requests (/review, /explain, /tests, /commit, /fix) plus your own, all editable in its Configure\u2026 sheet.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "text.book.closed"
     },
     {
@@ -757,7 +765,8 @@
       "name": "Test & Benchmark Explorer",
       "summary": "Browse local test and benchmark evidence, compare results and check source freshness.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/test-benchmark-explorer",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "testtube.2"
     },
     {
@@ -782,7 +791,8 @@
       "name": "Worktree Setup",
       "summary": "Sets up each new worktree: copies files like .env from the main worktree and runs your setup command, on this Mac or an SSH host.",
       "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/worktree-setup",
-      "author": "mrmans0n",
+      "author": "Nacho Lopez",
+      "authorGitHub": "mrmans0n",
       "icon": "wrench.and.screwdriver"
     }
   ]
