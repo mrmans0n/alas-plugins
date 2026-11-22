@@ -130,7 +130,7 @@ the latest request the plugin sent with that method. `--png <file>` saves the la
 ## Adding a plugin
 
 1. Copy an existing plugin folder into `plugins/<your-plugin>` and change its `plugin.json`:
-   a unique reverse-DNS `id`, `name`, a one-line `summary`, `version`, `"api": 4` (5 for
+   a unique reverse-DNS `id`, `name`, a one-line `summary`, an `author` name and `authorGitHub` login, an SF Symbol `icon`, `version`, `"api": 4` (5 for
    commands, panels, settings, network, timers and events; 6 for the Changes, Run and session
    slots, badges, runs, reviews, processes and files; 7 for slash prompts and prompt context;
    8 for commands that open a tab and the `progress` and `link` view nodes; 9 for a configure
