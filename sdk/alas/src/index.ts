@@ -46,6 +46,10 @@ export interface Manifest {
   name: string;
   /** One line for the catalog. */
   summary?: string;
+  /** Who made it, shown in the catalog. */
+  author?: string;
+  /** An SF Symbol name for the catalog, such as `"square.split.3x1"`; the name's initial without one. */
+  icon?: string;
   version: string;
   api: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18;
   /** The script, relative to the plugin folder. */

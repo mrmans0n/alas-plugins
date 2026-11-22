@@ -14,7 +14,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.2.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.2.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.2.0/ui.js",
-          "hash": "d68aabd699f07f89bc81aab6e7d4b46982bfa2170724d151dc0309c6821a0769"
+          "hash": "d68aabd699f07f89bc81aab6e7d4b46982bfa2170724d151dc0309c6821a0769",
+          "released": "2026-10-09"
         },
         {
           "version": "0.1.0",
@@ -26,12 +27,15 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.1.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/agent-usage-v0.1.0/ui.js",
-          "hash": "96635da2668ece0cf8edb7a212db0a4f79fe2831a0cf0633daa971ff14d16676"
+          "hash": "96635da2668ece0cf8edb7a212db0a4f79fe2831a0cf0633daa971ff14d16676",
+          "released": "2026-10-05"
         }
       ],
       "name": "Agent Usage",
       "summary": "A dashboard of your agents' turns, tokens, cost and usage-limit hits, per day, agent, model and worktree.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/agent-usage"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/agent-usage",
+      "author": "mrmans0n",
+      "icon": "chart.bar.xaxis"
     },
     {
       "id": "io.nlopez.kanban",
@@ -48,7 +52,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.4.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.4.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.4.0/ui.js",
-          "hash": "e443db999660526d742a62c8ed035e08f67f7e98d066ccf0a4eae9ea39f88d78"
+          "hash": "e443db999660526d742a62c8ed035e08f67f7e98d066ccf0a4eae9ea39f88d78",
+          "released": "2026-10-05"
         },
         {
           "version": "0.3.0",
@@ -61,7 +66,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.3.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.3.0/plugin.js",
-          "hash": "ef6b21dfbdfd14171047661f3cb50987a011ed68526c0f613ccc667d44149f2c"
+          "hash": "ef6b21dfbdfd14171047661f3cb50987a011ed68526c0f613ccc667d44149f2c",
+          "released": "2026-10-01"
         },
         {
           "version": "0.2.0",
@@ -74,12 +80,15 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.2.0/plugin.json",
           "wasm": "https://github.com/mrmans0n/alas-plugins/releases/download/kanban-v0.2.0/plugin.wasm",
-          "hash": "b133ea4046fa1f5cf0dc72d20e0cea7dedb3df8a4c5e720cdb31c47d5e1bc602"
+          "hash": "b133ea4046fa1f5cf0dc72d20e0cea7dedb3df8a4c5e720cdb31c47d5e1bc602",
+          "released": "2026-10-01"
         }
       ],
       "name": "Kanban",
       "summary": "A ticket board for the project. Starting a ticket starts an agent in a new worktree.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/kanban"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/kanban",
+      "author": "mrmans0n",
+      "icon": "square.split.3x1"
     },
     {
       "id": "io.nlopez.linear-bridge",
@@ -97,12 +106,15 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/linear-bridge-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/linear-bridge-v0.1.0/plugin.js",
-          "hash": "de77059cf6cad471f381a2c904d3e49847abffca5691b765970eb935de1104a1"
+          "hash": "de77059cf6cad471f381a2c904d3e49847abffca5691b765970eb935de1104a1",
+          "released": "2026-10-02"
         }
       ],
       "name": "Linear",
       "summary": "Your assigned Linear issues in a panel. Start one to run an agent on it and comment back when it finishes.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/linear-bridge"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/linear-bridge",
+      "author": "mrmans0n",
+      "icon": "checklist"
     },
     {
       "id": "io.nlopez.nacho-mr-inbox",
@@ -121,7 +133,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.4/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.4/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.4/ui.js",
-          "hash": "4f370a8c8db7f8d4705b3da5f645aad2b4534df3e21974c99eeace3c3c5ac4c6"
+          "hash": "4f370a8c8db7f8d4705b3da5f645aad2b4534df3e21974c99eeace3c3c5ac4c6",
+          "released": "2026-11-20"
         },
         {
           "version": "0.4.3",
@@ -137,7 +150,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.3/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.3/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.3/ui.js",
-          "hash": "45600af8c464d807fc8d5121d1f9497b8c7d58647fa4fa88f66def8ee4c56772"
+          "hash": "45600af8c464d807fc8d5121d1f9497b8c7d58647fa4fa88f66def8ee4c56772",
+          "released": "2026-11-18"
         },
         {
           "version": "0.4.2",
@@ -153,7 +167,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.2/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.2/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.2/ui.js",
-          "hash": "87b289c6c905465df94d8b11e146a5359558f6bcb47b5cb8e5621f60619f2db5"
+          "hash": "87b289c6c905465df94d8b11e146a5359558f6bcb47b5cb8e5621f60619f2db5",
+          "released": "2026-11-16"
         },
         {
           "version": "0.4.1",
@@ -169,7 +184,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.1/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.1/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.1/ui.js",
-          "hash": "26abc53dbbd70bb5b597c5ef1ef6c785668a825c06c340d99875ba9b0362c1b8"
+          "hash": "26abc53dbbd70bb5b597c5ef1ef6c785668a825c06c340d99875ba9b0362c1b8",
+          "released": "2026-11-13"
         },
         {
           "version": "0.4.0",
@@ -185,7 +201,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.4.0/ui.js",
-          "hash": "43b19afc98d9b29591b77967ce33e6c51688822e86c98cf86c3296cef0333577"
+          "hash": "43b19afc98d9b29591b77967ce33e6c51688822e86c98cf86c3296cef0333577",
+          "released": "2026-11-10"
         },
         {
           "version": "0.3.0",
@@ -201,7 +218,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.3.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.3.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.3.0/ui.js",
-          "hash": "4c04444f5ad6d1791da9fd8693a92f123c7092001a0735d6b6a56139f979e2f5"
+          "hash": "4c04444f5ad6d1791da9fd8693a92f123c7092001a0735d6b6a56139f979e2f5",
+          "released": "2026-10-22"
         },
         {
           "version": "0.2.0",
@@ -217,7 +235,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.2.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.2.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.2.0/ui.js",
-          "hash": "f10184165cca72487502f71de236f75150fa5580185a4e5ca16935595b532008"
+          "hash": "f10184165cca72487502f71de236f75150fa5580185a4e5ca16935595b532008",
+          "released": "2026-10-22"
         },
         {
           "version": "0.1.0",
@@ -233,12 +252,15 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.1.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-mr-inbox-v0.1.0/ui.js",
-          "hash": "bdc89bb9c82b1f6cff05b4ce6aa547425c1ee3c9f60ff9b4d0af78e41b81644a"
+          "hash": "bdc89bb9c82b1f6cff05b4ce6aa547425c1ee3c9f60ff9b4d0af78e41b81644a",
+          "released": "2026-10-22"
         }
       ],
       "name": "Nacho's MR Inbox",
       "summary": "The GitLab project's open merge requests by what they need, its merge train, add-to-train and job retry, with CI Doctor for GitLab CI.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-mr-inbox"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-mr-inbox",
+      "author": "mrmans0n",
+      "icon": "arrow.triangle.merge"
     },
     {
       "id": "io.nlopez.nacho-pr-inbox",
@@ -257,7 +279,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.4/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.4/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.4/ui.js",
-          "hash": "aa29f80b3f0a687eb5b08933cb49532ceb22a2a56f444914a577bec794855054"
+          "hash": "aa29f80b3f0a687eb5b08933cb49532ceb22a2a56f444914a577bec794855054",
+          "released": "2026-11-20"
         },
         {
           "version": "0.16.3",
@@ -273,7 +296,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.3/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.3/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.3/ui.js",
-          "hash": "1725ad2f814b17ab3a3c6d80947263523a836a13c6dd499b89063623f2b14ff2"
+          "hash": "1725ad2f814b17ab3a3c6d80947263523a836a13c6dd499b89063623f2b14ff2",
+          "released": "2026-11-18"
         },
         {
           "version": "0.16.2",
@@ -289,7 +313,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.2/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.2/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.2/ui.js",
-          "hash": "53f292a3d3211a21458a796bdc230fbb605c126b48b5f021787a6186d6190972"
+          "hash": "53f292a3d3211a21458a796bdc230fbb605c126b48b5f021787a6186d6190972",
+          "released": "2026-11-16"
         },
         {
           "version": "0.16.1",
@@ -305,7 +330,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.1/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.1/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.1/ui.js",
-          "hash": "9b2c3635ec7d0493c86698cd893e91acf6a594aa273b92c0f388c233b4c83a19"
+          "hash": "9b2c3635ec7d0493c86698cd893e91acf6a594aa273b92c0f388c233b4c83a19",
+          "released": "2026-11-13"
         },
         {
           "version": "0.16.0",
@@ -321,7 +347,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.16.0/ui.js",
-          "hash": "09e8dc6a8ea6a63566cbad1dcf46a0deb4e2169982b3cce68966d854aa87e84c"
+          "hash": "09e8dc6a8ea6a63566cbad1dcf46a0deb4e2169982b3cce68966d854aa87e84c",
+          "released": "2026-11-10"
         },
         {
           "version": "0.15.0",
@@ -337,7 +364,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.15.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.15.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.15.0/ui.js",
-          "hash": "26ec12063701bec4bb98709b80592086a25831ab4892738a424a3d1759ae64c3"
+          "hash": "26ec12063701bec4bb98709b80592086a25831ab4892738a424a3d1759ae64c3",
+          "released": "2026-10-22"
         },
         {
           "version": "0.14.0",
@@ -353,7 +381,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.14.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.14.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.14.0/ui.js",
-          "hash": "a1c62ef75a30de4076eea324a696f0a02e9598da21383f5c753452676f4d6373"
+          "hash": "a1c62ef75a30de4076eea324a696f0a02e9598da21383f5c753452676f4d6373",
+          "released": "2026-10-22"
         },
         {
           "version": "0.13.1",
@@ -369,7 +398,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.13.1/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.13.1/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.13.1/ui.js",
-          "hash": "3cf1522fe1d2cbc3904d0df519bc27b4bf595dbb6a6126ad6efcaf919f02c553"
+          "hash": "3cf1522fe1d2cbc3904d0df519bc27b4bf595dbb6a6126ad6efcaf919f02c553",
+          "released": "2026-10-20"
         },
         {
           "version": "0.13.0",
@@ -384,7 +414,8 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.13.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.13.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.13.0/ui.js",
-          "hash": "e697d0ef7de9dbd784fec307523c13dd5e7b0992ed217e75dc2cc9f7bef6cea8"
+          "hash": "e697d0ef7de9dbd784fec307523c13dd5e7b0992ed217e75dc2cc9f7bef6cea8",
+          "released": "2026-10-20"
         },
         {
           "version": "0.12.0",
@@ -398,7 +429,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.12.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.12.0/plugin.js",
-          "hash": "a284457f0e716d87c077bc93ce0d5c977b7249b5b8ac46d0e66e65b70c6d7ea9"
+          "hash": "a284457f0e716d87c077bc93ce0d5c977b7249b5b8ac46d0e66e65b70c6d7ea9",
+          "released": "2026-10-16"
         },
         {
           "version": "0.11.0",
@@ -411,7 +443,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.11.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.11.0/plugin.js",
-          "hash": "91a886a27391557d24ab4b15a72e38b3bf3444636b8b277e07dfa7307714089c"
+          "hash": "91a886a27391557d24ab4b15a72e38b3bf3444636b8b277e07dfa7307714089c",
+          "released": "2026-10-15"
         },
         {
           "version": "0.10.1",
@@ -424,7 +457,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.10.1/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.10.1/plugin.js",
-          "hash": "53aaa8a9947237e5ed067c2a4245cfde566f4a0af5123248f2240beb3add6145"
+          "hash": "53aaa8a9947237e5ed067c2a4245cfde566f4a0af5123248f2240beb3add6145",
+          "released": "2026-10-11"
         },
         {
           "version": "0.10.0",
@@ -437,7 +471,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.10.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.10.0/plugin.js",
-          "hash": "f5abeec55f8a3aa981d46f5dc371b1fdd0626d6417516abae402535b057364f1"
+          "hash": "f5abeec55f8a3aa981d46f5dc371b1fdd0626d6417516abae402535b057364f1",
+          "released": "2026-10-11"
         },
         {
           "version": "0.9.1",
@@ -450,7 +485,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.9.1/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.9.1/plugin.js",
-          "hash": "2d86bf974d94802f218fedf11235e1ee1fdf879ee1b653eef22cb3ced215bd64"
+          "hash": "2d86bf974d94802f218fedf11235e1ee1fdf879ee1b653eef22cb3ced215bd64",
+          "released": "2026-10-11"
         },
         {
           "version": "0.9.0",
@@ -463,7 +499,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.9.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.9.0/plugin.js",
-          "hash": "889b4ab769bafb93c978ebc541290329951ae40663e301179a1f5b08200d8f8f"
+          "hash": "889b4ab769bafb93c978ebc541290329951ae40663e301179a1f5b08200d8f8f",
+          "released": "2026-10-09"
         },
         {
           "version": "0.8.1",
@@ -476,7 +513,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.8.1/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.8.1/plugin.js",
-          "hash": "985e47809305d080921c1fba8bf3fc36b777f275ad619767678fd290be9fb5f9"
+          "hash": "985e47809305d080921c1fba8bf3fc36b777f275ad619767678fd290be9fb5f9",
+          "released": "2026-10-08"
         },
         {
           "version": "0.8.0",
@@ -489,7 +527,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.8.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.8.0/plugin.js",
-          "hash": "6d8c5c249ccd77adefe6a17fdd4ca58cf612cc1bf024da359c56f2f4d006ef76"
+          "hash": "6d8c5c249ccd77adefe6a17fdd4ca58cf612cc1bf024da359c56f2f4d006ef76",
+          "released": "2026-10-08"
         },
         {
           "version": "0.7.0",
@@ -502,7 +541,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.7.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.7.0/plugin.js",
-          "hash": "eb99bfc065ed3232f184f0812a7cdf9598b594115e3bf2364159d5a7b0fd6d82"
+          "hash": "eb99bfc065ed3232f184f0812a7cdf9598b594115e3bf2364159d5a7b0fd6d82",
+          "released": "2026-10-08"
         },
         {
           "version": "0.6.0",
@@ -515,7 +555,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.6.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.6.0/plugin.js",
-          "hash": "c458bcd0adea38315ae14c6d1fbc6b5fb9aaccc923d5162d4f83f3ab56d1429f"
+          "hash": "c458bcd0adea38315ae14c6d1fbc6b5fb9aaccc923d5162d4f83f3ab56d1429f",
+          "released": "2026-10-08"
         },
         {
           "version": "0.5.0",
@@ -528,7 +569,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.5.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.5.0/plugin.js",
-          "hash": "ec6dec7932f98c9bf70a62e3991268b41d4e28f7c8181ee5531ee2ea973d706c"
+          "hash": "ec6dec7932f98c9bf70a62e3991268b41d4e28f7c8181ee5531ee2ea973d706c",
+          "released": "2026-10-08"
         },
         {
           "version": "0.4.0",
@@ -541,7 +583,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.4.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.4.0/plugin.js",
-          "hash": "36b25b25bde0c778a6d60babcb14c9322ec6081d3093480e717b7d5e07df30ae"
+          "hash": "36b25b25bde0c778a6d60babcb14c9322ec6081d3093480e717b7d5e07df30ae",
+          "released": "2026-10-06"
         },
         {
           "version": "0.3.0",
@@ -554,7 +597,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.3.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.3.0/plugin.js",
-          "hash": "d455bb2bb7b7cb2de3a7b35663d6fbe1ad7f2647dd03e752f4d9eecb0a953af1"
+          "hash": "d455bb2bb7b7cb2de3a7b35663d6fbe1ad7f2647dd03e752f4d9eecb0a953af1",
+          "released": "2026-10-06"
         },
         {
           "version": "0.2.0",
@@ -567,7 +611,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.2.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.2.0/plugin.js",
-          "hash": "796e5462754d214a080d4bb26c6b4e94724e98b36259bb43a52ef25e841b5ae8"
+          "hash": "796e5462754d214a080d4bb26c6b4e94724e98b36259bb43a52ef25e841b5ae8",
+          "released": "2026-10-03"
         },
         {
           "version": "0.1.0",
@@ -580,12 +625,15 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/nacho-pr-inbox-v0.1.0/plugin.js",
-          "hash": "677c68379fa683810b13c54b30b5bbd88613c90530383cb54461c149e8b631b4"
+          "hash": "677c68379fa683810b13c54b30b5bbd88613c90530383cb54461c149e8b631b4",
+          "released": "2026-10-03"
         }
       ],
       "name": "Nacho's PR Inbox",
       "summary": "PR Inbox with on-demand CI failure evidence, bounded history and reviewed agent investigation briefs.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-pr-inbox"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/nacho-pr-inbox",
+      "author": "mrmans0n",
+      "icon": "arrow.triangle.pull"
     },
     {
       "id": "io.nlopez.notion-context",
@@ -600,7 +648,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.2.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.2.0/plugin.js",
-          "hash": "3b6ad68b58fa410b492b2bbf567c3e1e2cf23e4b3e02b1fd9bdd4c6ebdd9df53"
+          "hash": "3b6ad68b58fa410b492b2bbf567c3e1e2cf23e4b3e02b1fd9bdd4c6ebdd9df53",
+          "released": "2026-10-03"
         },
         {
           "version": "0.1.0",
@@ -612,12 +661,15 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/notion-context-v0.1.0/plugin.js",
-          "hash": "7b37699e294370f0951c027b489c2011d6d3b277498dce225b378abba611d88e"
+          "hash": "7b37699e294370f0951c027b489c2011d6d3b277498dce225b378abba611d88e",
+          "released": "2026-10-03"
         }
       ],
       "name": "Notion Context",
       "summary": "Adds a Notion page's content to every prompt sent to agents in the project.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/notion-context"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/notion-context",
+      "author": "mrmans0n",
+      "icon": "doc.text"
     },
     {
       "id": "io.nlopez.pixel-office",
@@ -632,7 +684,8 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.2.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.2.0/plugin.js",
-          "hash": "991079df7c73f028e57e2f59aff6a22a541264b3248355d53eba2d896410aa66"
+          "hash": "991079df7c73f028e57e2f59aff6a22a541264b3248355d53eba2d896410aa66",
+          "released": "2026-10-01"
         },
         {
           "version": "0.1.0",
@@ -644,12 +697,15 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.1.0/plugin.json",
           "wasm": "https://github.com/mrmans0n/alas-plugins/releases/download/pixel-office-v0.1.0/plugin.wasm",
-          "hash": "dae0dfb71af7ecc4f9acb16f1f81a8c9dd329c10710b68ad2dae25bab04f044e"
+          "hash": "dae0dfb71af7ecc4f9acb16f1f81a8c9dd329c10710b68ad2dae25bab04f044e",
+          "released": "2026-10-01"
         }
       ],
       "name": "Pixel Office",
       "summary": "Your project as a pixel-art office: a desk per worktree, a character per agent session.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/pixel-office"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/pixel-office",
+      "author": "mrmans0n",
+      "icon": "building.2"
     },
     {
       "id": "io.nlopez.prompt-library",
@@ -660,7 +716,8 @@
           "capabilities": [],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.2.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.2.0/plugin.js",
-          "hash": "c03171e69c55ecf182ddc174b6dce767ac4e4844173896dd8c7178981b480c45"
+          "hash": "c03171e69c55ecf182ddc174b6dce767ac4e4844173896dd8c7178981b480c45",
+          "released": "2026-10-03"
         },
         {
           "version": "0.1.0",
@@ -668,12 +725,15 @@
           "capabilities": [],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/prompt-library-v0.1.0/plugin.js",
-          "hash": "5ef1970c147983835840132f4fcbfc4b18b790d68e2bde9bce32ad66a9762e96"
+          "hash": "5ef1970c147983835840132f4fcbfc4b18b790d68e2bde9bce32ad66a9762e96",
+          "released": "2026-10-03"
         }
       ],
       "name": "Prompt Library",
       "summary": "Slash prompts for everyday requests (/review, /explain, /tests, /commit, /fix) plus your own, all editable in its Configure\u2026 sheet.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/prompt-library",
+      "author": "mrmans0n",
+      "icon": "text.book.closed"
     },
     {
       "id": "io.nlopez.test-benchmark-explorer",
@@ -690,12 +750,15 @@
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/test-benchmark-explorer-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/test-benchmark-explorer-v0.1.0/plugin.js",
           "web": "https://github.com/mrmans0n/alas-plugins/releases/download/test-benchmark-explorer-v0.1.0/ui.js",
-          "hash": "2b7e76382b65c758bf144b4c8f0ad16403194fdc7dcca9441873f9677de3c645"
+          "hash": "2b7e76382b65c758bf144b4c8f0ad16403194fdc7dcca9441873f9677de3c645",
+          "released": "2026-10-16"
         }
       ],
       "name": "Test & Benchmark Explorer",
       "summary": "Browse local test and benchmark evidence, compare results and check source freshness.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/test-benchmark-explorer"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/test-benchmark-explorer",
+      "author": "mrmans0n",
+      "icon": "testtube.2"
     },
     {
       "id": "io.nlopez.worktree-setup",
@@ -712,12 +775,15 @@
           ],
           "manifest": "https://github.com/mrmans0n/alas-plugins/releases/download/worktree-setup-v0.1.0/plugin.json",
           "entry": "https://github.com/mrmans0n/alas-plugins/releases/download/worktree-setup-v0.1.0/plugin.js",
-          "hash": "9fdea0dba520892f089c64bf7265665fbbe0cb80cb79c498805d2264e1a00247"
+          "hash": "9fdea0dba520892f089c64bf7265665fbbe0cb80cb79c498805d2264e1a00247",
+          "released": "2026-10-04"
         }
       ],
       "name": "Worktree Setup",
       "summary": "Sets up each new worktree: copies files like .env from the main worktree and runs your setup command, on this Mac or an SSH host.",
-      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/worktree-setup"
+      "homepage": "https://github.com/mrmans0n/alas-plugins/tree/main/plugins/worktree-setup",
+      "author": "mrmans0n",
+      "icon": "wrench.and.screwdriver"
     }
   ]
 }
